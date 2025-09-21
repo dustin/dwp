@@ -1,34 +1,36 @@
-source,target,value
+start_beach,end_beach,runs
 Maliko,Kahului Harbor,34
 Sugar Beach,Kam I,27
 Sugar Beach,Kalepolepo,25
 Keālia Boardwalk,Ulua,15
-Green Church,Wailea,13
 Green Church,Kalepolepo,13
+Green Church,Wailea,13
 Keālia Boardwalk,Wailea,12
 Green Church,Ulua,8
 Green Church,Kam I,7
-Maliko,Kanaha,7
 Keālia Boardwalk,Keawakapu,7
+Maliko,Kanaha,7
 Sugar Beach,Keawakapu,5
 Green Church,Keawakapu,3
 Green Church,Ohukai Rd,3
-Maliko,Sugar Cove,2
-Sugar Cove,Kanaha,2
+Baldwin Beach,Kanaha,2
 China Walls,Kaiko'os,2
-Keālia Boardwalk,Ohukai Rd,2
-Sugar Beach,Kam II,2
+China Walls,Kaimana,2
 Coconut Channel,Ulua,2
+Green Church,Maluaka,2
 Keālia Boardwalk,Kam I,2
 Keālia Boardwalk,Kam II,2
-Green Church,Maluaka,2
-Baldwin Beach,Kanaha,2
-China Walls,Kaimana,2
-Coconut Channel,Po'olenlena,1
-Ohukai Rd,Kalepolepo,1
-Green Church,Mokapu,1
-Kam II,Kam I,1
+Keālia Boardwalk,Ohukai Rd,2
+Maliko,Sugar Cove,2
+Sugar Beach,Kam II,2
+Sugar Cove,Kanaha,2
+Coconut Channel,Po'olenalena,1
 Coconut Channel,Wailea,1
+Green Church,Mokapu,1
+Green Church,Po'olenalena,1
 Kaiko'os,Tonggs,1
+Kam II,Kam I,1
 Keālia Boardwalk,Coconut Channel,1
+Keālia Boardwalk,Maluaka,1
+Ohukai Rd,Kalepolepo,1
 Sugar Beach,Ohukai Rd,1

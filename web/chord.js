@@ -138,9 +138,9 @@ function render(beaches) {
 
 async function doChord() {
     const data = await d3.csv("export.csv", d => {}, d => {return {
-        source: d.source,
-        target: d.target,
-        value: +d.value,
+        source: d.start_beach,
+        target: d.end_beach,
+        value: +d.runs,
     }});
 
     render(data);
