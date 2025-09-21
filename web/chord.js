@@ -1,5 +1,5 @@
 function renderChord(beaches) {
-  const height = 750,
+  const height = 800,
         width = height;
 
     var svg = d3.select("#chord").append("svg")
@@ -10,14 +10,12 @@ function renderChord(beaches) {
   const innerR = 285;
   const outerR = 300;
 
-  const beachNames = Array.from(new Set(beaches.flatMap(d => [d.start_beach, d.end_beach]))).sort(d3.ascending);
+  const popularity = d3.rollup(beaches, d => d.length, d => d.start_beach);
+  const beachNames = Array.from(new Set(beaches.flatMap(d => [d.start_beach, d.end_beach]))).sort(
+                          (a, b) => d3.descending(popularity[a], popularity[b]));
   const index = new Map(beachNames.map((name, i) => [name, i]));
   const matrix = Array.from(index, () => new Array(beachNames.length).fill(0));
   for (const {start_beach, end_beach} of beaches) matrix[index.get(start_beach)][index.get(end_beach)] += 1;
-
-  function degreesToRadians(degrees) {
-    return degrees * (Math.PI / 180);
-  }
 
   const color = d3.scaleOrdinal(beachNames, d3.schemeCategory10);
     
