@@ -1,4 +1,4 @@
-function render(beaches) {
+function renderChord(beaches) {
   const height = 750,
         width = height;
 
@@ -10,10 +10,10 @@ function render(beaches) {
   const innerR = 285;
   const outerR = 300;
 
-  const beachNames = Array.from(new Set(beaches.flatMap(d => [d.source, d.target]))).sort(d3.ascending);
+  const beachNames = Array.from(new Set(beaches.flatMap(d => [d.start_beach, d.end_beach]))).sort(d3.ascending);
   const index = new Map(beachNames.map((name, i) => [name, i]));
   const matrix = Array.from(index, () => new Array(beachNames.length).fill(0));
-  for (const {source, target, value} of beaches) matrix[index.get(source)][index.get(target)] += value;
+  for (const {start_beach, end_beach} of beaches) matrix[index.get(start_beach)][index.get(end_beach)] += 1;
 
   function degreesToRadians(degrees) {
     return degrees * (Math.PI / 180);
@@ -137,11 +137,7 @@ function render(beaches) {
 }
 
 async function doChord() {
-    const data = await d3.csv("export.csv", d => {}, d => {return {
-        source: d.start_beach,
-        target: d.end_beach,
-        value: +d.runs,
-    }});
+    const data = await d3.csv("dwlist.csv");
 
-    render(data);
+    renderChord(data);
 }
