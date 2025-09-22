@@ -29,14 +29,8 @@ function renderChord(beaches) {
     .innerRadius(outerR)
     .outerRadius(outerR + 20)
 
-  const sources = {};
-  
-  chords.forEach(c => {
-    const t = c.target.index;
-  
-    if (!sources[t]) sources[t] = [];
-    sources[t].push(c.source.index);
-  });
+    const sources = d3.rollup(chords, c => c.map(x => x.source.index), c => c.target.index);
+    console.log(sources);
 
   const pluralize = (n,s,p) => n == 1 ? s : p;
 
@@ -57,7 +51,7 @@ function renderChord(beaches) {
     .each(d => { d.angle = (d.startAngle + d.endAngle) / 2; })
     .attr('class', d => {
       const classes = ['labels'];
-      const inbound = sources[d.index] || [];
+      const inbound = sources.get(d.index) || [];
       inbound.forEach(src => classes.push(`target-of-${src}`));
       return classes.join(' ');
     })
@@ -79,7 +73,7 @@ function renderChord(beaches) {
     .append('path')
     .attr('class', d => {
       const classes = ['nodes'];
-      const inbound = sources[d.index] || [];
+      const inbound = sources.get(d.index) || [];
       inbound.forEach(src => classes.push(`target-of-${src}`));
       return classes.join(' ');
     })
