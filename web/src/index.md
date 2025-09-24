@@ -111,6 +111,8 @@ order by week_start`);
 hrs.forEach(d => d.week_start = new Date(d.week_start));
 ```
 
+<div class="card">
+
 ```js
       Plot.plot({
         width,
@@ -125,6 +127,8 @@ hrs.forEach(d => d.week_start = new Date(d.week_start));
         ]
       })
 ```
+
+</div>
 
 ## Distances
 
@@ -178,6 +182,17 @@ select
 from runs
 `);
 paddleUps.forEach(d => d.ts = new Date(d.ts * 1000));
+
+let paddleDist = Array.from(await sql`
+select
+  ts,
+  start_beach,
+  end_beach,
+  distance_to_first_paddle_up as dist
+from runs
+`);
+paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
+
 ```
 
 <div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
@@ -228,8 +243,44 @@ paddleUps.forEach(d => d.ts = new Date(d.ts * 1000));
                         ]
                         }))
   }</div>
-  <div class="card">${
+    <div class="card">${
     resize((width) => Plot.plot({
+                        title: "Distance to First Paddle Up",
+                        width,
+                        marks: [
+                          Plot.linearRegressionY(paddleDist, {x: "ts", y: "dist", stroke: "#606"}),
+                          Plot.dot(paddleDist,
+                            {x: "ts", y: "dist", r: 5,
+                            fill: "start_beach",
+                            title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
+                                          d.end_beach, "paddled up within",
+                                          (d.dist || 0).toFixed(0), "meters", d.foil
+                                         ].join(' '))
+                            }),
+                        ]
+                        }))
+  }</div>
+
+</div>
+
+```js
+const colorLegend = Plot.legend({color: { domain: Array.from(await sql`
+   select distinct  start_beach from runs
+   `).map(d => d.start_beach) }});
+```
+
+Broken down by start beach:  ${colorLegend}
+
+## Paddling
+
+The number of times I've had to paddle up on a run has changed quite a bit from
+the beginning.  At first, "I paddled up one time the whole outing" meant
+something very different than it does now.
+
+<div class="card">
+
+```js
+Plot.plot({
                         title: "Paddle Ups",
                         width, color: { legend: true },
                         marks: [
@@ -243,17 +294,10 @@ paddleUps.forEach(d => d.ts = new Date(d.ts * 1000));
                                          ].join(' '))
                             }),
                         ]
-                        }))
-  }</div>
-</div>
-
-```js
-const colorLegend = Plot.legend({color: { domain: Array.from(await sql`
-   select distinct  start_beach from runs
-   `).map(d => d.start_beach) }});
+                        })
 ```
 
-Broken down by start beach:  ${colorLegend}
+</div>
 
 ## Speed
 
@@ -293,6 +337,8 @@ const weekSpeedA = Array.from(weekSpeed, ([weekTime, runs]) => ({
 }));
 ```
 
+<div class="card">
+
 ```js
 Plot.plot({
   width,
@@ -316,6 +362,8 @@ Plot.plot({
 
 ```
 
+</div>
+
 ## Starts and Ends
 
 This shows where I start and end my runs.
@@ -326,7 +374,7 @@ beach's arc, it'll highlight the places I've gone from that beach.
 ```js
 function renderChord(beaches) {
   const height = 800,
-        width = height;
+        width = Math.max(height, 1000);
 
     var svg = d3.create('svg')
       .attr("viewBox", [-width / 2, -height / 2, width, height]);
@@ -460,7 +508,5 @@ function renderChord(beaches) {
 ```
 
 ```js
-renderChord(Array.from(await sql`
-select start_beach, end_beach from runs
-`))
+renderChord(Array.from(await sql`select start_beach, end_beach from runs`))
 ```
