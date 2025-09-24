@@ -53,7 +53,9 @@ CREATE TABLE dwlist(
   longest_segment_distance double,
   longest_segment_start timestamptz,
   longest_segment_end timestamptz,
-  paddle_up_count int
+  paddle_up_count int,
+  distance_to_first_paddle_up double,
+  distance_computed double -- the distance from WS is unreliable
 );
 
 create view dwlist_resolved as
