@@ -49,7 +49,11 @@ CREATE TABLE dwlist(
   max_speed_1k double,
   max_distance double, -- max distance to land
   min_foiling_hr double,
-  avg_foiling_hr double
+  avg_foiling_hr double,
+  longest_segment_distance double,
+  longest_segment_start timestamptz,
+  longest_segment_end timestamptz,
+  paddle_up_count int
 );
 
 create view dwlist_resolved as
