@@ -12,13 +12,57 @@ create temp table allthethings as
      "Speed (m/s)" * 3.6 as speed,
      Heading as heading,
      HR as hr,
-     "Distance (m)" as distance,
+     "Distance (m)" as distance_orig,
+     0::double as distance,
+     0::double as avg_speed_15s,
+     0::double as avg_speed_1k,
      "Calories (SUM)" as calories
   from read_csv("/Users/dustin/Library/Mobile Documents/iCloud~TNT~Waterspeed/Documents/runs/*.csv")
   where regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') not in (select distinct filename from dws);
 
-alter table allthethings add column avg_speed_15s double;
-alter table allthethings add column avg_speed_1k double;
+CREATE or replace TEMP TABLE tmp_distance AS
+WITH points AS (
+    SELECT
+        filename,
+        tsi,
+        -- Your installation expects (lat, lon)
+        ST_Point(lat, lon)                                   AS pt,
+        LAG(ST_Point(lat, lon)) OVER (
+            PARTITION BY filename
+            ORDER BY tsi
+        )                                                   AS prev_pt
+    FROM allthethings
+),
+segments AS (
+    SELECT
+        filename,
+        tsi,
+        pt,
+        prev_pt,
+        CASE
+            WHEN prev_pt IS NULL THEN 0
+            ELSE ST_Distance_Sphere(prev_pt, pt)
+        END                                                 AS seg_dist
+    FROM points
+)
+SELECT
+    filename,
+    tsi,
+    SUM(seg_dist) OVER (
+        PARTITION BY filename
+        ORDER BY tsi
+        ROWS UNBOUNDED PRECEDING
+    )                                                     AS distance
+FROM segments;
+
+MERGE INTO allthethings AS tgt
+USING tmp_distance AS src
+ON  tgt.filename = src.filename
+AND tgt.tsi   = src.tsi
+WHEN MATCHED THEN
+    UPDATE SET distance = src.distance;
+
+drop table tmp_distance;
 
 UPDATE allthethings AS tgt
 SET    avg_speed_15s = src.avg_15s
@@ -167,5 +211,168 @@ FROM   (select dwid, max(avg_speed_1k) as maxspeed
   where l.id = x.dwid
   and max_speed_1k is null;
 
+-- Find the longest segments
+
+UPDATE dwlist AS dl
+SET
+    longest_segment_distance = bi.total_distance,
+    longest_segment_start    = bi.start_ts,
+    longest_segment_end      = bi.end_ts
+FROM (
+    SELECT
+        dwid,
+        start_ts,
+        end_ts,
+        total_distance
+    FROM (
+        WITH flagged AS (
+            SELECT
+                dwid,
+                ts,
+                speed,
+                distance,
+                (speed > 11)               AS fast          -- boolean
+            FROM dws
+        ),
+        island_start AS (
+            SELECT
+                *,
+                CASE
+                    WHEN fast
+                         AND ( LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
+                               OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE )
+                    THEN 1
+                    ELSE 0
+                END                       AS is_start
+            FROM flagged
+        ),
+        grouped AS (
+            SELECT
+                *,
+                SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
+            FROM island_start
+        ),
+        island_stats AS (
+            SELECT
+                dwid,
+                grp,
+                MIN(ts)                                            AS start_ts,
+                MAX(ts)                                            AS end_ts,
+                MAX(distance) - MIN(distance)                      AS total_distance,
+                EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))            AS duration_sec
+            FROM grouped
+            WHERE fast
+            GROUP BY dwid, grp
+        )
+        SELECT
+            dwid,
+            start_ts,
+            end_ts,
+            total_distance,
+            ROW_NUMBER() OVER (PARTITION BY dwid
+                               ORDER BY total_distance DESC) AS rn
+        FROM island_stats
+    ) AS ranked
+    WHERE rn = 1
+) AS bi
+WHERE dl.id = bi.dwid;
+
+-- Paddle up counts
+
+UPDATE dwlist AS dl
+SET
+    paddle_up_count = pc.paddle_up_count
+FROM (
+    SELECT dwid, paddle_up_count
+    FROM (
+        WITH flagged AS (
+            SELECT dwid, ts, speed, distance, (speed > 11) AS fast FROM dws
+        ),
+        island_start AS (
+            SELECT *,
+                CASE
+                    WHEN fast
+                         AND (LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
+                              OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE)
+                    THEN 1 ELSE 0 END AS is_start
+            FROM flagged
+        ),
+        grouped AS (
+            SELECT *, SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
+            FROM island_start
+        ),
+        fast_islands AS (
+            SELECT dwid,
+                   grp,
+                   MIN(ts)                                   AS start_ts,
+                   MAX(ts)                                   AS end_ts,
+                   EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))   AS duration_sec
+            FROM grouped
+            WHERE fast
+            GROUP BY dwid, grp
+        ),
+        eligible_islands AS (
+            SELECT dwid, grp
+            FROM fast_islands
+            WHERE duration_sec >= 15
+        )
+        SELECT dwid,
+               COUNT(*) AS paddle_up_count
+        FROM eligible_islands
+        GROUP BY dwid
+    ) cnt
+) pc
+WHERE dl.id = pc.dwid;
+
+-- Find the distance to the first paddle up
+
+UPDATE dwlist AS dl
+SET    distance_to_first_paddle_up = fu.distance_to_first_paddle_up
+FROM (
+    SELECT dwid,
+           start_dist AS distance_to_first_paddle_up
+    FROM (
+        SELECT dwid,
+               start_ts,
+               start_dist,
+               ROW_NUMBER() OVER (PARTITION BY dwid ORDER BY start_ts) AS rn
+        FROM (
+            WITH flagged AS (
+                SELECT dwid, ts, speed, distance, (speed > 11) AS fast FROM dws
+            ),
+            island_start AS (
+                SELECT *,
+                    CASE
+                        WHEN fast
+                             AND (LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
+                                  OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE)
+                        THEN 1 ELSE 0 END AS is_start
+                FROM flagged
+            ),
+            grouped AS (
+                SELECT *, SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
+                FROM island_start
+            ),
+            fast_islands AS (
+                SELECT dwid,
+                       grp,
+                       MIN(ts)                                   AS start_ts,
+                       MIN(distance)                    AS start_dist,
+                       EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))   AS duration_sec
+                FROM grouped
+                WHERE fast
+                GROUP BY dwid, grp
+            )
+            SELECT dwid,
+                   start_ts,
+                   start_dist,
+                   duration_sec
+            FROM fast_islands
+            WHERE duration_sec >= 60          -- “more than a minute”
+        ) islands
+    ) numbered
+    WHERE rn = 1
+) fu
+WHERE dl.id = fu.dwid;
 
 commit;
