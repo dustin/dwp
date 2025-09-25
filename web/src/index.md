@@ -42,158 +42,68 @@ function minutes(x) {
     const s = Math.floor(60 * (x - m));
     return (m + ":" + (s < 10 ? "0" : "") + s);
 }
+
+let runCsv = (await FileAttachment("runs.csv").csv({typed: true}));
+runCsv.forEach(d => {
+  d.ts = new Date(d.ts * 1000);
+  d.longest_segment_start = new Date(d.longest_segment_start);
+  d.longest_segment_end = new Date(d.longest_segment_end);
+  d.foil = d.equip_2 || "unknown foil";
+  });
 ```
 
 ```js
-const totals = Array.from(await sql`
-select
-  count(*) as sessions,
-  sum(duration_sec) as time,
-  sum(distance_km) as dist,
-  sum(paddle_up_count) paddle_ups,
-  max(max_speed_kmh) as max_speed,
-  max(max_speed_1k) as  max_speed_1k,
-  max(longest_segment_distance) longest_seg,
-  max(max_distance) max_dist
-from runs
-`);
+const totals = {
+  sessions: runCsv.length,
+  time: d3.sum(runCsv, d => d.duration_sec),
+  dist: d3.sum(runCsv, d => d.distance_km),
+  paddle_ups: d3.sum(runCsv, d => d.paddle_up_count),
+
+  max_speed: d3.max(runCsv, d => d.max_speed_kmh),
+  max_speed_1k: d3.max(runCsv, d => d.max_speed_1k),
+  longest_seg: d3.max(runCsv, d => d.longest_segment_distance),
+  max_dist: d3.max(runCsv, d => d.max_distance)
+
+};
 ```
 
 <div class="grid grid-cols-4">
   <div class="card">
     <h2>Total Sessions</h2>
-    <span class="big">${comma(totals[0].sessions)}</span>
+    <span class="big">${comma(totals.sessions)}</span>
   </div>
   <div class="card">
     <h2>Total Time</h2>
-    <span class="big">${formatSeconds(totals[0].time)}</span>
+    <span class="big">${formatSeconds(totals.time)}</span>
   </div>
   <div class="card">
     <h2>Distance Traveled</h2>
-    <span class="big">${comma(totals[0].dist.toFixed(2))} km</span>
+    <span class="big">${comma(totals.dist.toFixed(2))} km</span>
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
-    <span class="big">${comma(totals[0].paddle_ups)}</span>
+    <span class="big">${comma(totals.paddle_ups)}</span>
   </div>
 
   <div class="card">
     <h2>Max Speed</h2>
-    <span class="big">${totals[0].max_speed.toFixed(2)} kph</span>
+    <span class="big">${totals.max_speed.toFixed(2)} kph</span>
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${minutes(1 / (totals[0].max_speed_1k / 60))} min/km</span>
+    <span class="big">${minutes(1 / (totals.max_speed_1k / 60))} min/km</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
-    <span class="big">${(totals[0].longest_seg / 1000).toFixed(2)} km</span>
+    <span class="big">${(totals.longest_seg / 1000).toFixed(2)} km</span>
   </div>
   <div class="card">
     <h2>Furthest From Land</h2>
-    <span class="big">${(totals[0].max_dist / 1000).toFixed(2)} km</span>
+    <span class="big">${(totals.max_dist / 1000).toFixed(2)} km</span>
   </div>
 </div>
 
-## Minimum Heart Rate on Foil (weekly)
-
-How low can I get my heart rate while riding on foil?
-
-```js
-let hrs = Array.from(await sql`
-select time_bucket(interval '1 week', date)::text as week_start,
-       min(min_foiling_hr) as min_hr,
-       max(min_foiling_hr) as max_hr
-  from runs
-where min_foiling_hr is not null
-group by week_start
-order by week_start`);
-hrs.forEach(d => d.week_start = new Date(d.week_start));
-```
-
-<div class="card">
-
-```js
-      Plot.plot({
-        width,
-        x: {type: "utc"},
-        y: {grid: true, label: "rate"},
-        marks: [
-          Plot.rect(hrs,
-                    {x: "week_start", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
-                     interval: d3.utcWeek, strokeWidth: 2,
-                     opacity: 0.3, tip: true}),
-          Plot.linearRegressionY(hrs, {x: "week_start", y: "min_hr", stroke: "#606"})
-        ]
-      })
-```
-
-</div>
-
 ## Distances
-
-```js
-let runDist = Array.from(await sql`
-select
-	ts,
-    distance_km as distance,
-    duration_sec as duration,
-	start_beach,
-	end_beach,
-    avg_speed_kmh as avg_speed, max_speed_kmh as max_speed,
-	name,
-	description,
-	feeling,
-	equip_1,
-	equip_2,
-	equip_3
-from runs
-order by distance_km desc
-`);
-runDist.forEach(d => d.ts = new Date(d.ts * 1000));
-
-let maxDist = Array.from(await sql`
-select ts, start_beach, end_beach, (max_distance / 1000) as max_distance
-from runs
-order by max_distance desc
-`);
-maxDist.forEach(d => d.ts = new Date(d.ts * 1000));
-
-let longestSegments = Array.from(await sql`
-select longest_segment_start as start,
-       longest_segment_end as end,
-       longest_segment_distance as dist,
-       start_beach, end_beach
-from runs
-order by dist desc
-`);
-longestSegments.forEach(d => {
-  d.start = new Date(d.start);
-  d.end = new Date(d.end);
-  });
-
-let paddleUps = Array.from(await sql`
-select
-  ts,
-  start_beach,
-  end_beach,
-  coalesce(equip_2, 'unknown foil') as foil,
-  coalesce(paddle_up_count, 0) as paddle_up_count
-from runs
-`);
-paddleUps.forEach(d => d.ts = new Date(d.ts * 1000));
-
-let paddleDist = Array.from(await sql`
-select
-  ts,
-  start_beach,
-  end_beach,
-  distance_to_first_paddle_up as dist
-from runs
-`);
-paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
-
-```
 
 <div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
   <div class="card">${
@@ -201,11 +111,11 @@ paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
                         title: "Total Distance Traveled",
                         width,
                         marks: [
-                          Plot.linearRegressionY(runDist, {x: "ts", y: "distance", stroke: "#606"}),
-                          Plot.dot(runDist,
-                            {x: "ts", y: "distance", fill: "start_beach", r: 5,
+                          Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_km", stroke: "#606"}),
+                          Plot.dot(runCsv,
+                            {x: "ts", y: "distance_km", fill: "start_beach", r: 5,
                             title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
-                                          d.end_beach, "went", d.distance.toFixed(2), "km"].join(' '))
+                                          d.end_beach, "went", d.distance_km.toFixed(2), "km"].join(' '))
                             }),
                         ]
                       })
@@ -216,12 +126,12 @@ paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
                         title: "Maximum Distance from Land",
                         width,
                         marks: [
-                          Plot.linearRegressionY(maxDist, {x: "ts", y: "max_distance", stroke: "#606"}),
-                          Plot.dot(maxDist,
+                          Plot.linearRegressionY(runCsv, {x: "ts", y: "max_distance", stroke: "#606"}),
+                          Plot.dot(runCsv,
                             {x: "ts", y: "max_distance", r: 5,
                             fill: "start_beach",
                             title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
-                                          d.end_beach, "hit", d.max_distance.toFixed(2), "km"].join(' '))
+                                          d.end_beach, "hit", (d.max_distance / 1000).toFixed(2), "km"].join(' '))
                             }),
                         ]
                         }))
@@ -231,13 +141,14 @@ paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
                         title: "Longest Segment on Foil",
                         width,
                         marks: [
-                          Plot.linearRegressionY(longestSegments, {x: "start", y: "dist", stroke: "#606"}),
-                          Plot.dot(longestSegments,
-                            {x: "start", y: "dist", r: 5,
+                          Plot.linearRegressionY(runCsv, {x: "longest_segment_start", y: "longest_segment_distance", stroke: "#606"}),
+                          Plot.dot(runCsv,
+                            {x: "longest_segment_start", y: "longest_segment_distance", r: 5,
                             fill: "start_beach",
-                            title: d => ([dateFmt(d.start) + ":", "from", d.start_beach, "to",
+                            title: d => ([dateFmt(d.longest_segment_start) + ":", "from", d.start_beach, "to",
                                           d.end_beach, "went",
-                                          (d.dist / 1000).toFixed(2), "km in", timeDiff(d.start, d.end)
+                                          (d.longest_segment_distance / 1000).toFixed(2), "km in",
+                                          timeDiff(d.longest_segment_start, d.longest_segment_end)
                                          ].join(' '))
                             }),
                         ]
@@ -248,13 +159,13 @@ paddleDist.forEach(d => d.ts = new Date(d.ts * 1000));
                         title: "Distance to First Paddle Up",
                         width,
                         marks: [
-                          Plot.linearRegressionY(paddleDist, {x: "ts", y: "dist", stroke: "#606"}),
-                          Plot.dot(paddleDist,
-                            {x: "ts", y: "dist", r: 5,
+                          Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_to_first_paddle_up", stroke: "#606"}),
+                          Plot.dot(runCsv,
+                            {x: "ts", y: "distance_to_first_paddle_up", r: 5,
                             fill: "start_beach",
                             title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
                                           d.end_beach, "paddled up within",
-                                          (d.dist || 0).toFixed(0), "meters", d.foil
+                                          (d.distance_to_first_paddle_up || 0).toFixed(0), "meters", d.foil
                                          ].join(' '))
                             }),
                         ]
@@ -281,20 +192,20 @@ something very different than it does now.
 
 ```js
 Plot.plot({
-                        title: "Paddle Ups",
-                        width, color: { legend: true },
-                        marks: [
-                          Plot.linearRegressionY(paddleUps, {x: "ts", y: "paddle_up_count", stroke: "#606"}),
-                          Plot.dot(paddleUps,
-                            {x: "ts", y: "paddle_up_count", r: 5,
-                            fill: "foil",
-                            title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
-                                          d.end_beach, "paddled up",
-                                          d.paddle_up_count, "times using the", d.foil
-                                         ].join(' '))
-                            }),
-                        ]
-                        })
+       title: "Paddle Ups",
+       width, color: { legend: true },
+       marks: [
+         Plot.linearRegressionY(runCsv, {x: "ts", y: "paddle_up_count", stroke: "#606"}),
+         Plot.dot(runCsv,
+           {x: "ts", y: "paddle_up_count", r: 5,
+           fill: "foil",
+           title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
+                         d.end_beach, "paddled up",
+                         d.paddle_up_count, "times using the", d.foil
+                        ].join(' '))
+           }),
+       ]
+       })
 ```
 
 </div>
@@ -360,6 +271,41 @@ Plot.plot({
   ]
 })
 
+```
+
+</div>
+
+## Minimum Heart Rate on Foil (weekly)
+
+How low can I get my heart rate while riding on foil?
+
+```js
+let hrs = Array.from(await sql`
+select time_bucket(interval '1 week', date)::text as week_start,
+       min(min_foiling_hr) as min_hr,
+       max(min_foiling_hr) as max_hr
+  from runs
+where min_foiling_hr is not null
+group by week_start
+order by week_start`);
+hrs.forEach(d => d.week_start = new Date(d.week_start));
+```
+
+<div class="card">
+
+```js
+      Plot.plot({
+        width,
+        x: {type: "utc"},
+        y: {grid: true, label: "rate"},
+        marks: [
+          Plot.rect(hrs,
+                    {x: "week_start", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
+                     interval: d3.utcWeek, strokeWidth: 2,
+                     opacity: 0.3, tip: true}),
+          Plot.linearRegressionY(hrs, {x: "week_start", y: "min_hr", stroke: "#606"})
+        ]
+      })
 ```
 
 </div>
