@@ -166,7 +166,7 @@ const outings = d3.rollups(runCsv,
   <div class="card">${
     resize((width) => Plot.plot({
                         title: "Total Distance Traveled",
-                        width,
+                        width, y: { label: "km" },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_km", stroke: "#606"}),
                           Plot.dot(runCsv,
@@ -181,7 +181,7 @@ const outings = d3.rollups(runCsv,
   <div class="card">${
     resize((width) => Plot.plot({
                         title: "Maximum Distance from Land",
-                        width,
+                        width, y: { label: "km", tickFormat: d => (d/1000).toFixed(0) },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "max_distance", stroke: "#606"}),
                           Plot.dot(runCsv,
@@ -196,7 +196,7 @@ const outings = d3.rollups(runCsv,
   <div class="card">${
     resize((width) => Plot.plot({
                         title: "Longest Segment on Foil",
-                        width,
+                        width, y: { label: "km", tickFormat: d => (d/1000).toFixed(0) },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "longest_segment_start", y: "longest_segment_distance", stroke: "#606"}),
                           Plot.dot(runCsv,
@@ -214,7 +214,7 @@ const outings = d3.rollups(runCsv,
     <div class="card">${
     resize((width) => Plot.plot({
                         title: "Distance to First Paddle Up",
-                        width,
+                        width, y: { label: "meters" },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_to_first_paddle_up", stroke: "#606"}),
                           Plot.dot(runCsv,
@@ -310,10 +310,9 @@ const weekSpeedA = Array.from(weekSpeed, ([weekTime, runs]) => ({
 ```js
 Plot.plot({
   width,
-  x: {type: "utc"},
+  x: {type: "utc"}, y: { label: "kph" },
   marks: [
-    Plot.linearRegressionY(paces, {x: "ts", y: "maxspeed", stroke:
-    "#606"}),
+    Plot.linearRegressionY(paces, {x: "ts", y: "maxspeed", stroke: "#606"}),
     Plot.rect(weekSpeedA,
       {x: "week_start", y1: "min_max", y2: "max_max", strokeWidth: 5,
        fill: '#050', stroke: '#030', interval: d3.utcWeek,
@@ -354,7 +353,7 @@ hrs.forEach(d => d.week_start = new Date(d.week_start));
       Plot.plot({
         width,
         x: {type: "utc"},
-        y: {grid: true, label: "rate"},
+        y: {grid: true, label: "heart bpm"},
         marks: [
           Plot.rect(hrs,
                     {x: "week_start", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
@@ -511,5 +510,5 @@ function renderChord(beaches) {
 ```
 
 ```js
-renderChord(Array.from(await sql`select start_beach, end_beach from runs`))
+renderChord(runCsv)
 ```
