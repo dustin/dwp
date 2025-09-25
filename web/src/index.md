@@ -2,15 +2,11 @@
 theme: dashboard
 title: downwind dashboard
 toc: true
-sql:
-  runs: runs.csv
 ---
 
 # Downwinding
 
 ```js
-import * as duckdb from "npm:@duckdb/duckdb-wasm";
-
 const dateFmt = d3.utcFormat("%Y-%m-%d");
 const comma = d3.format(',');
 
@@ -43,17 +39,16 @@ function minutes(x) {
     return (m + ":" + (s < 10 ? "0" : "") + s);
 }
 
-function toMonth(d) {
-  return new Date(d3.utcFormat("%Y-%m-01")(d));
-}
-
 let runCsv = (await FileAttachment("runs.csv").csv({typed: true}));
 runCsv.forEach(d => {
   d.ts = new Date(d.ts * 1000);
   d.longest_segment_start = new Date(d.longest_segment_start);
   d.longest_segment_end = new Date(d.longest_segment_end);
   d.foil = d.equip_2 || "unknown foil";
-  d.month = toMonth(d.ts);
+  d.month = new Date(d3.utcFormat("%Y-%m-01")(d.ts));
+  d.week = new Date(d.ts);
+  d.week.setHours(0,0,0,0);
+  d.week.setDate(d.ts.getDate() - d.ts.getDay());
   });
 ```
 
@@ -232,9 +227,7 @@ const outings = d3.rollups(runCsv,
 </div>
 
 ```js
-const colorLegend = Plot.legend({color: { domain: Array.from(await sql`
-   select distinct  start_beach from runs
-   `).map(d => d.start_beach) }});
+const colorLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.start_beach) })});
 ```
 
 Broken down by start beach:  ${colorLegend}
@@ -274,35 +267,19 @@ kilometer.  My peak speed would be better, but this is an interesting
 metric to me.
 
 ```js
-let paces = Array.from(await sql`
-with paced as NOT MATERIALIZED (
-  select ts, max_speed_1k, (1 / (max_speed_1k / 60)) as maxpace, start_beach, end_beach
-    from runs
-)
-
-select
-  ts, max_speed_1k as maxspeed, maxpace,
-  start_beach, end_beach
-from paced
-order by max_speed_1k desc
-`);
-paces.forEach(d => d.ts = new Date(d.ts * 1000));
-
-const weekSpeed = d3.group(paces, d => {
-  let weekStart = d.ts;
-  weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-  weekStart.setHours(0, 0, 0, 0);
-  return weekStart;
-});
-
-// Convert to array format
-const weekSpeedA = Array.from(weekSpeed, ([weekTime, runs]) => ({
-  week_start: weekTime,
-  run_count: runs.length,
-  min_max: d3.min(runs, d => d.maxspeed),
-  max_max: d3.max(runs, d => d.maxspeed),
-  runs: runs
-}));
+const weekSpeed = Array.from(
+  d3.rollup(
+    runCsv,
+    g => ({
+      min_speed: d3.min(g, d => d.max_speed_1k),
+      max_speed: d3.max(g, d => d.max_speed_1k),
+      run_count: g.length,
+      start_beach: g[0].start_beach,
+      end_beach:   g[0].end_beach,
+      maxpace: 1 / (d3.max(g, d => d.max_speed_1k) / 60),
+    }),
+    d => d.week
+  ), ([w,o]) => ({week: w, ...o}));
 ```
 
 <div class="card">
@@ -312,16 +289,16 @@ Plot.plot({
   width,
   x: {type: "utc"}, y: { label: "kph" },
   marks: [
-    Plot.linearRegressionY(paces, {x: "ts", y: "maxspeed", stroke: "#606"}),
-    Plot.rect(weekSpeedA,
-      {x: "week_start", y1: "min_max", y2: "max_max", strokeWidth: 5,
+    Plot.linearRegressionY(weekSpeed, {x: "week", y: "max_speed", stroke: "#606"}),
+    Plot.rect(weekSpeed,
+      {x: "week", y1: "min_speed", y2: "max_speed", strokeWidth: 5,
        fill: '#050', stroke: '#030', interval: d3.utcWeek,
        opacity: 0.3, tip: true,
        }),
-    Plot.dot(paces,
-      {x: "ts", y: "maxspeed", r: 5,
+    Plot.dot(weekSpeed,
+      {x: "week", y: "max_speed", r: 5,
       fill: "start_beach",
-      title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
+      title: d => ([dateFmt(d.week) + ":", "from", d.start_beach, "to",
                     d.end_beach, "hit", minutes(d.maxpace), "mins/km"].join(' '))
       }),
   ]
@@ -336,15 +313,15 @@ Plot.plot({
 How low can I get my heart rate while riding on foil?
 
 ```js
-let hrs = Array.from(await sql`
-select time_bucket(interval '1 week', date)::text as week_start,
-       min(min_foiling_hr) as min_hr,
-       max(min_foiling_hr) as max_hr
-  from runs
-where min_foiling_hr is not null
-group by week_start
-order by week_start`);
-hrs.forEach(d => d.week_start = new Date(d.week_start));
+const hrs = Array.from(
+  d3.rollup(
+    runCsv.filter(d => d.min_foiling_hr > 0),
+    g => ({
+      min_hr: d3.min(g, d => d.min_foiling_hr),
+      max_hr: d3.max(g, d => d.min_foiling_hr),
+    }),
+    d => d.week
+  ), ([w,o]) => ({week: w, ...o}));
 ```
 
 <div class="card">
@@ -356,10 +333,10 @@ hrs.forEach(d => d.week_start = new Date(d.week_start));
         y: {grid: true, label: "heart bpm"},
         marks: [
           Plot.rect(hrs,
-                    {x: "week_start", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
+                    {x: "week", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
                      interval: d3.utcWeek, strokeWidth: 2,
                      opacity: 0.3, tip: true}),
-          Plot.linearRegressionY(hrs, {x: "week_start", y: "min_hr", stroke: "#606"})
+          Plot.linearRegressionY(hrs, {x: "week", y: "min_hr", stroke: "#606"})
         ]
       })
 ```
