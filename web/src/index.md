@@ -43,12 +43,17 @@ function minutes(x) {
     return (m + ":" + (s < 10 ? "0" : "") + s);
 }
 
+function toMonth(d) {
+  return new Date(d3.utcFormat("%Y-%m-01")(d));
+}
+
 let runCsv = (await FileAttachment("runs.csv").csv({typed: true}));
 runCsv.forEach(d => {
   d.ts = new Date(d.ts * 1000);
   d.longest_segment_start = new Date(d.longest_segment_start);
   d.longest_segment_end = new Date(d.longest_segment_end);
   d.foil = d.equip_2 || "unknown foil";
+  d.month = toMonth(d.ts);
   });
 ```
 
@@ -63,7 +68,6 @@ const totals = {
   max_speed_1k: d3.max(runCsv, d => d.max_speed_1k),
   longest_seg: d3.max(runCsv, d => d.longest_segment_distance),
   max_dist: d3.max(runCsv, d => d.max_distance)
-
 };
 ```
 
@@ -102,6 +106,59 @@ const totals = {
     <span class="big">${(totals.max_dist / 1000).toFixed(2)} km</span>
   </div>
 </div>
+
+## Time on Water
+
+```js
+const outings = d3.rollups(runCsv,
+  rows => ({ total: rows.length,
+             totalDuration: d3.sum(rows, d => d.duration_sec),
+             regionCounts: d3.rollup(rows, v => ({
+             count: v.length, duration: d3.sum(v, d => d.duration_sec)
+             }), d => d.region ) }),
+  d => d.month
+).flatMap(([ts, { total, totalDuration, regionCounts }]) =>
+  Array.from(regionCounts, ([region, { count, duration }]) => ({
+    ts,
+    region,
+    count,
+    total,
+    duration,
+    totalDuration
+  }))
+);
+```
+
+<div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
+  <div class="card">${
+    resize((width) => Plot.plot({
+                        title: "Outings",
+                        color: { legend: true },
+                        width, x: { interval: Plot.utcInterval("month"), label: "" },
+                        marks: [
+                          Plot.barY(outings,{x:"ts",y:"count", fill: "region",
+                            // tip: { format: { y: d => `${d}` }, },
+                            title: d => `${d.region}\n${d.count} of ${d.total} runs`})
+                        ]
+                      })
+                      )
+  }</div>
+  <div class="card">${
+    resize((width) => Plot.plot({
+                        title: "Outings (Duration)",
+                        color: { legend: true },
+                        width, x: { interval: Plot.utcInterval("month"), label: "" },
+                        y: { tickFormat: d => formatSeconds(d).split(' ')[0] },
+                        marks: [
+                          Plot.barY(outings,{x:"ts",y:"duration", fill: "region",
+                            // tip: { format: { y: d => `${d}` }, },
+                            title: d => `${d.region}\n${formatSeconds(d.duration)} of ${formatSeconds(d.totalDuration)}`})
+                        ]
+                      })
+                      )
+  }</div>
+</div>
+
 
 ## Distances
 
