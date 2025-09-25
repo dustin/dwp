@@ -3,7 +3,7 @@ theme: dashboard
 title: downwind dashboard
 toc: true
 sql:
-  runs: runs.parquet
+  runs: runs.csv
 ---
 
 # Downwinding
