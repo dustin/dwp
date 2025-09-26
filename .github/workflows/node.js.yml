@@ -1,53 +1,52 @@
-name: Node.js CI + GitHub Pages
-
+name: Build and Deploy
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
-
 permissions:
   contents: read
-  pages: write
-  id-token: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
-
     defaults:
       run:
         working-directory: ./web
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Node 22.x
         uses: actions/setup-node@v4
         with:
           node-version: 22.x
           cache: npm
           cache-dependency-path: web/package-lock.json
-
       - name: Install dependencies
         run: npm ci
-
       - name: Build
         run: npm run build
-
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
         with:
+          name: dist
           path: ./web/dist
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - name: Deploy to GitHub Pages
-        id: deploy
-        uses: actions/deploy-pages@v4
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: ./dist
+      - name: Sync files to server
+        run: |
+          sudo apt-get update && sudo apt-get install -y rsync openssh-client
+          mkdir -p ~/.ssh
+          echo "${{ secrets.deploykey }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H aws1.sallings.org >> ~/.ssh/known_hosts
+          rsync -avz --delete ./dist/ deploy@aws1.sallings.org:/var/www/dwp/
