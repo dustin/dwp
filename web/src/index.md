@@ -192,7 +192,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       end_beach: "End Beach",
       distance_km: "Run Distance (km)",
       distance_on_foil: "On Foil (km)",
-      duration_sec: "Run Duration (sec)",
+      duration_sec: "Run Duration",
       duration_on_foil: "On Foil",
       max_speed_1k: "Fastest Pace over 1 km",
       foil: "Foil"
