@@ -45,6 +45,8 @@ runCsv.forEach(d => {
   d.longest_segment_start = new Date(d.longest_segment_start);
   d.longest_segment_end = new Date(d.longest_segment_end);
   d.foil = d.equip_2 || "unknown foil";
+  d.pct_dist_on_foil = d.distance_on_foil / (1000 * d.distance_km);
+  d.pct_time_on_foil = d.duration_on_foil / d.duration_sec;
   d.month = new Date(d3.utcFormat("%Y-%m-01")(d.ts));
   d.week = new Date(d.ts);
   d.week.setHours(0,0,0,0);
@@ -223,6 +225,43 @@ const outings = d3.rollups(runCsv,
                         ]
                         }))
   }</div>
+
+  <div class="card">${
+    resize((width) => Plot.plot({
+                        title: "Percentage of Distance on Foil",
+                        width, y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1]},
+                        marks: [
+                          Plot.linearRegressionY(runCsv, {x: "ts", y: "pct_dist_on_foil", stroke: "#606"}),
+                          Plot.dot(runCsv,
+                            {x: "ts", y: "pct_dist_on_foil", r: 5,
+                            fill: "start_beach",
+                            title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
+                                          d.end_beach, "on foil", (d.pct_dist_on_foil * 100).toFixed(0) + "%",
+                                          "on foil"
+                                         ].join(' '))
+                            }),
+                        ]
+                        }))
+  }</div>
+
+  <div class="card">${
+    resize((width) => Plot.plot({
+                        title: "Percentage of Time on Foil",
+                        width, y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1]},
+                        marks: [
+                          Plot.linearRegressionY(runCsv, {x: "ts", y: "pct_time_on_foil", stroke: "#606"}),
+                          Plot.dot(runCsv,
+                            {x: "ts", y: "pct_time_on_foil", r: 5,
+                            fill: "start_beach",
+                            title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
+                                          d.end_beach, "on foil", (d.pct_dist_on_foil * 100).toFixed(0) + "%",
+                                          "of the time foil"
+                                         ].join(' '))
+                            }),
+                        ]
+                        }))
+  }</div>
+
 
 </div>
 

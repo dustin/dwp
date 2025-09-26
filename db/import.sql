@@ -18,7 +18,7 @@ create temp table allthethings as
      0::double as avg_speed_1k,
      "Calories (SUM)" as calories
   from read_csv("/Users/dustin/Library/Mobile Documents/iCloud~TNT~Waterspeed/Documents/runs/*.csv")
-  where regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') not in (select distinct filename from dws);
+  where regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') not in (select filename from dwlist where id in (select distinct dwid from dws));
 
 CREATE or replace TEMP TABLE tmp_distance AS
 WITH points AS (
@@ -374,5 +374,35 @@ FROM (
     WHERE rn = 1
 ) fu
 WHERE dl.id = fu.dwid;
+
+-- Foil distances
+
+UPDATE dwlist AS dl
+SET
+    duration_on_foil = (
+        SELECT
+            SUM(duration_sec) FILTER (WHERE speed > 11)
+        FROM (
+            SELECT
+                tsi,
+                speed,
+                lead(tsi) OVER (PARTITION BY dwid ORDER BY tsi) - tsi AS duration_sec
+            FROM dws
+            WHERE dwid = dl.id
+        ) AS t
+        WHERE t.duration_sec IS NOT NULL
+    ),
+    distance_on_foil = (
+        SELECT
+            SUM(seg_distance) FILTER (WHERE speed > 11)
+        FROM (
+            SELECT
+                distance - LAG(distance) OVER (PARTITION BY dwid ORDER BY tsi) AS seg_distance,
+                speed
+            FROM dws
+            WHERE dwid = dl.id
+        ) AS d
+        WHERE d.seg_distance IS NOT NULL
+    );
 
 commit;

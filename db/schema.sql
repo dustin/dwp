@@ -56,10 +56,12 @@ CREATE TABLE dwlist(
   paddle_up_count int,
   distance_to_first_paddle_up double,
   distance_computed double, -- the distance from WS is unreliable
-  region text
+  region text,
+  distance_on_foil double,
+  duration_on_foil double
 );
 
-create view dwlist_resolved as
+create or replace view dwlist_resolved as
 select d.*, bs.name as start_beach, be.name as end_beach, bs.region as region
 from dwlist d
 join beaches bs on bs.id = start_pos
