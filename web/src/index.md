@@ -65,7 +65,7 @@ const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
 function beachColorNamed(name) {
   return d => beachColor(d[name]);
 }
-const beachLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.start_beach), range: beaches })});
+const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObservable10 })});
 const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })});
 ```
 
