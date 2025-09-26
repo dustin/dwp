@@ -388,7 +388,7 @@ const hrs = Array.from(
                     {x: "week", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
                      interval: d3.utcWeek, strokeWidth: 2,
                      opacity: 0.3, tip: true}),
-          regress("week", "min_hr", hrs);
+          regress("week", "min_hr", hrs)
         ]
       })
 ```
