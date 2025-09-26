@@ -1,16 +1,23 @@
 import * as Plot from "npm:@observablehq/plot";
 
-export function timeline(events, {width, height} = {}) {
-  return Plot.plot({
-    width,
-    height,
-    marginTop: 30,
-    x: {nice: true, label: null, tickFormat: ""},
-    y: {axis: null},
-    marks: [
-      Plot.ruleX(events, {x: "year", y: "y", markerEnd: "dot", strokeWidth: 2.5}),
-      Plot.ruleY([0]),
-      Plot.text(events, {x: "year", y: "y", text: "name", lineAnchor: "bottom", dy: -10, lineWidth: 10, fontSize: 12})
+function regress(src, x, y) {
+  return Plot.linearRegressionY(src, { x, y, stroke: "#808" })
+}
+
+function dots(src, obj) {
+  return Plot.dot(src, { r: 5, opacity: 0.2, ...obj });
+}
+
+function line(src, obj) {
+  return Plot.line(src, { opacity: 0.2, curve: "cardinal", ...obj });
+}
+
+export function tl(data, title, opts, xField, yField, lineOpts, dotOpts) {
+  return (width => Plot.plot({
+    title, width, ...opts, marks: [
+      regress(data, xField, yField),
+      line(data, { x: xField, y: yField, ...lineOpts }),
+      dots(data, { x: xField, y: yField, ...dotOpts }),
     ]
-  });
+  }));
 }
