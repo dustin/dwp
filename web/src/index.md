@@ -160,7 +160,7 @@ I tend to play around early on some of my Kihei runs and it looks like I paddle 
 Instead, I calculate a dry run by verifying that the longest segment is
 ${(dryLimit * 100).toFixed(1)}% of the total foiling distance.
 
-So the following runs are considered "dry":
+So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
 <div class="card">${
 Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
