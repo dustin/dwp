@@ -127,7 +127,9 @@ const outings = d3.rollups(runCsv,
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
                         marks: [
                           Plot.barY(outings,{x:"ts",y:"count", fill: "region",
-                                             title: d => `${d.region}\n${d.count} of ${d.total} runs`})
+                                             title: d => d.count == d.total
+                                             ? `${d.region}\n${d.count} runs`
+                                             : `${d.region}\n${d.count} of ${d.total} runs`})
                         ]
                       })
                       )
@@ -140,7 +142,9 @@ const outings = d3.rollups(runCsv,
                         y: { tickFormat: d => fmt.seconds(d).split(' ')[0] },
                         marks: [
                           Plot.barY(outings,{x:"ts",y:"duration", fill: "region",
-                                             title: d => `${d.region}\n${fmt.seconds(d.duration)} of ${fmt.seconds(d.totalDuration)}`})
+                                             title: d => d.duration == d.totalDuration
+                                             ? `${d.region}\n${fmt.seconds(d.duration)}`
+                                             : `${d.region}\n${fmt.seconds(d.duration)} of ${fmt.seconds(d.totalDuration)}`})
                         ]
                       })
                       )
