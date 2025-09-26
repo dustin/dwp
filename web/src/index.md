@@ -166,6 +166,7 @@ const outings = d3.rollups(runCsv,
                         width, y: { label: "km" },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_km", stroke: "#606"}),
+                          Plot.line(runCsv, {x: "ts", y: "distance_km", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),
                           Plot.dot(runCsv,
                             {x: "ts", y: "distance_km", fill: "start_beach", r: 5,
                             title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
@@ -181,6 +182,7 @@ const outings = d3.rollups(runCsv,
                         width, y: { label: "km", tickFormat: d => (d/1000).toFixed(0) },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "max_distance", stroke: "#606"}),
+                          Plot.line(runCsv, {x: "ts", y: "max_distance", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),
                           Plot.dot(runCsv,
                             {x: "ts", y: "max_distance", r: 5,
                             fill: "start_beach",
@@ -196,6 +198,7 @@ const outings = d3.rollups(runCsv,
                         width, y: { label: "km", tickFormat: d => (d/1000).toFixed(0) },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "longest_segment_start", y: "longest_segment_distance", stroke: "#606"}),
+                          Plot.line(runCsv, {x: "longest_segment_start", y: "longest_segment_distance", stroke: "start_beach", curve: "catmull-rom", opacity: 0.3 }, ),
                           Plot.dot(runCsv,
                             {x: "longest_segment_start", y: "longest_segment_distance", r: 5,
                             fill: "start_beach",
@@ -206,15 +209,15 @@ const outings = d3.rollups(runCsv,
                                          ].join(' '))
                             }),
                         ]
-                        }))
-  }</div>
+                        }))}
+    </div>
     <div class="card">${
     resize((width) => Plot.plot({
                         title: "Distance to First Paddle Up",
                         width, y: { label: "meters" },
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "distance_to_first_paddle_up", stroke: "#606"}),
-                          Plot.dot(runCsv,
+                          Plot.line(runCsv, {x: "ts", y: "distance_to_first_paddle_up", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),                          Plot.dot(runCsv,
                             {x: "ts", y: "distance_to_first_paddle_up", r: 5,
                             fill: "start_beach",
                             title: d => ([dateFmt(d.ts) + ":", "from", d.start_beach, "to",
@@ -232,6 +235,7 @@ const outings = d3.rollups(runCsv,
                         width, y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1]},
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "pct_dist_on_foil", stroke: "#606"}),
+                          Plot.line(runCsv, {x: "ts", y: "pct_dist_on_foil", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),
                           Plot.dot(runCsv,
                             {x: "ts", y: "pct_dist_on_foil", r: 5,
                             fill: "start_beach",
@@ -250,6 +254,7 @@ const outings = d3.rollups(runCsv,
                         width, y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1]},
                         marks: [
                           Plot.linearRegressionY(runCsv, {x: "ts", y: "pct_time_on_foil", stroke: "#606"}),
+                          Plot.line(runCsv, {x: "ts", y: "pct_time_on_foil", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),
                           Plot.dot(runCsv,
                             {x: "ts", y: "pct_time_on_foil", r: 5,
                             fill: "start_beach",
@@ -285,6 +290,7 @@ Plot.plot({
        width, color: { legend: true },
        marks: [
          Plot.linearRegressionY(runCsv, {x: "ts", y: "paddle_up_count", stroke: "#606"}),
+         Plot.line(runCsv, {x: "ts", y: "paddle_up_count", curve: "catmull-rom", stroke: "start_beach", opacity: 0.3 }, ),
          Plot.dot(runCsv,
            {x: "ts", y: "paddle_up_count", r: 5,
            fill: "foil",
