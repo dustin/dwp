@@ -14,7 +14,7 @@ export function timeDiff(start, end) {
   return `${minutes}m`;
 }
 
-export function formatSeconds(totalSeconds) {
+export function seconds(totalSeconds) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = (totalSeconds % 60).toFixed(0);

@@ -25,6 +25,12 @@ function toMonth(ts) {
   return month;
 }
 
+const dryLimit = 0.98;
+
+function isDry(d) {
+  return d.longest_segment_distance / d.distance_on_foil > dryLimit;
+}
+
 const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
   const ts = new Date(d.ts * 1000);
   return {
@@ -36,7 +42,8 @@ const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
     pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
     pct_time_on_foil: d.duration_on_foil / d.duration_sec,
     month: toMonth(ts),
-    week: toWeek(ts)
+    week: toWeek(ts),
+    dry: isDry(d)
   };
 });
 ```
@@ -61,7 +68,7 @@ const totals = {
   </div>
   <div class="card">
     <h2>Total Time</h2>
-    <span class="big">${fmt.formatSeconds(totals.time)}</span>
+    <span class="big">${fmt.seconds(totals.time)}</span>
   </div>
   <div class="card">
     <h2>Distance Traveled</h2>
@@ -130,29 +137,60 @@ const outings = d3.rollups(runCsv,
                         title: "Outings (Duration)",
                         color: { legend: true },
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
-                        y: { tickFormat: d => fmt.formatSeconds(d).split(' ')[0] },
+                        y: { tickFormat: d => fmt.seconds(d).split(' ')[0] },
                         marks: [
                           Plot.barY(outings,{x:"ts",y:"duration", fill: "region",
-                                             title: d => `${d.region}\n${fmt.formatSeconds(d.duration)} of ${fmt.formatSeconds(d.totalDuration)}`})
+                                             title: d => `${d.region}\n${fmt.seconds(d.duration)} of ${fmt.seconds(d.totalDuration)}`})
                         ]
                       })
                       )
   }</div>
 </div>
 
+## On Dry Runs
+
+The starred ★ runs below indicate that the distance was "dry."  This typically means I paddled up
+once and ran the whole thing without a mistake, but I calculate it a little differently because
+I tend to play around early on some of my Kihei runs and it looks like I paddle up more than once.
+
+Instead, I calculate a dry run by verifying that the longest segment is
+${(dryLimit * 100).toFixed(1)}% of the total foiling distance.
+
+So the following runs are considered "dry":
+
+<div class="card">${
+Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
+    columns: [
+      "date",
+      "time",
+      "start_beach",
+      "end_beach",
+      "distance_km",
+      "distance_on_foil",
+      "duration_on_foil",
+      "foil"
+    ],
+    header: {
+      date: "Date",
+      time: "Time",
+      start_beach: "Start Beach",
+      end_beach: "End Beach",
+      distance_km: "Distance (km)",
+      distance_on_foil: "On Foil (km)",
+      duration_on_foil: "Duration on Foil",
+      foil: "Foil"
+      },
+      format: {
+        distance_on_foil: d => (d / 1000).toFixed(2),
+        duration_on_foil: fmt.seconds
+      }})
+}</div>
+
 ## Distances
 
 ```js
 function regress(x, y, src) {
   return Plot.linearRegressionY(src || runCsv, {x, y, stroke: "#808"})
-}
-
-function dots(src, obj) {
-  return Plot.dot(src, { r: 5, opacity: 0.2, ...obj });
-}
-
-function line(src, obj) {
-  return Plot.line(src, { opacity: 0.2, curve: "cardinal", ...obj });
 }
 ```
 
