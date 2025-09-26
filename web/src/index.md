@@ -59,6 +59,14 @@ const totals = {
   longest_seg: d3.max(runCsv, d => d.longest_segment_distance),
   max_dist: d3.max(runCsv, d => d.max_distance)
 };
+
+const beaches = [...new Set(runCsv.map(d => d.start_beach))].sort();
+const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
+function beachColorNamed(name) {
+  return d => beachColor(d[name]);
+}
+const beachLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.start_beach), range: beaches })});
+const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })});
 ```
 
 <div class="grid grid-cols-4">
@@ -85,7 +93,7 @@ const totals = {
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${fmt.minutes(1 / (totals.max_speed_1k / 60))} min/km</span>
+    <span class="big">${fmt.pace(totals.max_speed_1k)} min/km</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
@@ -158,7 +166,8 @@ once and ran the whole thing without a mistake, but I calculate it a little diff
 I tend to play around early on some of my Kihei runs and it looks like I paddle up more than once.
 
 Instead, I calculate a dry run by verifying that the longest segment is
-${(dryLimit * 100).toFixed(1)}% of the total foiling distance.
+${(dryLimit * 100).toFixed(1)}% of the total foiling distance.  Basically, are the times
+where once I paddled up for real, I stayed up until I was done.
 
 So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
@@ -171,7 +180,9 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       "end_beach",
       "distance_km",
       "distance_on_foil",
+      "duration_sec",
       "duration_on_foil",
+      "max_speed_1k",
       "foil"
     ],
     header: {
@@ -179,14 +190,19 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       time: "Time",
       start_beach: "Start Beach",
       end_beach: "End Beach",
-      distance_km: "Distance (km)",
+      distance_km: "Run Distance (km)",
       distance_on_foil: "On Foil (km)",
-      duration_on_foil: "Duration on Foil",
+      duration_sec: "Run Duration (sec)",
+      duration_on_foil: "On Foil",
+      max_speed_1k: "Fastest Pace over 1 km",
       foil: "Foil"
       },
       format: {
         distance_on_foil: d => (d / 1000).toFixed(2),
-        duration_on_foil: fmt.seconds
+        duration_on_foil: fmt.seconds,
+        duration_sec: fmt.seconds,
+        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
+        max_speed_1k: fmt.pace
       }})
 }</div>
 
@@ -202,8 +218,8 @@ function regress(x, y, src) {
   <div class="card">${
     resize(tl.tl(runCsv, "Total Distance Traveled per Session", {y: {label: "km"}},
                  "ts", "distance_km" ,
-                 {stroke: "start_beach"},
-                 {fill: "start_beach",
+                 {stroke: beachColorNamed("start_beach")},
+                 {fill: beachColorNamed("start_beach"),
                   title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "went", d.distance_km.toFixed(2), "km"
                                 ].join(' '))})) }
@@ -211,8 +227,8 @@ function regress(x, y, src) {
   <div class="card">${
     resize(tl.tl(runCsv, "Maximum Distance from Land", {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
                  "ts", "max_distance",
-                 {stroke: "start_beach"},
-                 {fill: "start_beach",
+                 {stroke: beachColorNamed("start_beach")},
+                 {fill: beachColorNamed("start_beach"),
                   title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "hit", (d.max_distance / 1000).toFixed(2), "km"].join(' '))
                  })
@@ -221,8 +237,8 @@ function regress(x, y, src) {
   <div class="card">${
     resize(tl.tl(runCsv, "Longest Segment on Foil",
       {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
-      "longest_segment_start", "longest_segment_distance", {stroke: "start_beach"},
-      {fill: "start_beach",
+      "longest_segment_start", "longest_segment_distance", {stroke: beachColorNamed("start_beach")},
+      {fill: beachColorNamed("start_beach"),
        title: d => ([fmt.date(d.longest_segment_start) + ":", "from", d.start_beach, "to",
                      d.end_beach, "went", (d.longest_segment_distance / 1000).toFixed(2), "km in",
                      fmt.timeDiff(d.longest_segment_start, d.longest_segment_end)
@@ -233,8 +249,8 @@ function regress(x, y, src) {
     <div class="card">${
       resize(tl.tl(runCsv, "Distance to First Paddle Up", {y: { label: "meters" }},
         "ts", "distance_to_first_paddle_up",
-        {stroke: "start_beach"},
-        {fill: "start_beach",
+        {stroke: beachColorNamed("start_beach")},
+        {fill: beachColorNamed("start_beach"),
          title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                        d.end_beach, "paddled up within",
                        (d.distance_to_first_paddle_up || 0).toFixed(0), "meters", d.foil
@@ -260,8 +276,8 @@ function regress(x, y, src) {
     resize(tl.tl(runCsv, "Percentage of Time on Foil",
                  {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
                  "ts", "pct_time_on_foil",
-                 {stroke: "start_beach"},
-                 {fill: "start_beach",
+                 {stroke: beachColorNamed("start_beach")},
+                 {fill: beachColorNamed("start_beach"),
                   title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "on foil", (d.pct_time_on_foil * 100).toFixed(0) + "%",
                                 "of the time foil"
@@ -273,11 +289,7 @@ function regress(x, y, src) {
 
 </div>
 
-```js
-const colorLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.start_beach) })});
-```
-
-Broken down by start beach:  ${colorLegend}
+Broken down by start beach:  ${beachLegend}
 
 ## Paddling
 
@@ -290,7 +302,7 @@ something very different than it does now.
 ```js
 tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
       "ts", "paddle_up_count",
-      {stroke: "start_beach"},
+      {stroke: beachColorNamed("start_beach")},
       {fill: "foil",
         title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                       d.end_beach, "paddled up",
@@ -316,8 +328,7 @@ const weekSpeed = Array.from(
       max_speed: d3.max(g, d => d.max_speed_1k),
       run_count: g.length,
       start_beach: g[0].start_beach,
-      end_beach:   g[0].end_beach,
-      maxpace: 1 / (d3.max(g, d => d.max_speed_1k) / 60),
+      end_beach:   g[0].end_beach
     }),
     d => d.week
   ), ([w,o]) => ({week: w, ...o}));

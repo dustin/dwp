@@ -33,3 +33,7 @@ export function minutes(x) {
   const s = Math.floor(60 * (x - m));
   return m + ":" + (s < 10 ? "0" : "") + s;
 }
+
+export function pace(kph) {
+  return minutes(60 / kph);
+}
