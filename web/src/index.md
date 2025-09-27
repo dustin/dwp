@@ -8,6 +8,7 @@ toc: true
 
 ```js
 import {renderChord} from "./components/chord.js";
+import {renderCrashes} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 
@@ -46,6 +47,11 @@ const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
     dry: isDry(d)
   };
 });
+
+const crashes = (await FileAttachment("crashes.csv").csv({typed: true})).map(d => ({
+    ...d,
+    ts: new Date(d.ts * 1000),
+    }));
 ```
 
 ```js
@@ -387,6 +393,18 @@ const hrs = Array.from(
 ```
 
 </div>
+
+## Crash Density
+
+```js
+// Recent enough, I guess
+const recently = new Date(Date.now() - 80 * 24 * 60 * 60 * 1000);
+const someCrashes = crashes.filter(d => d.date > recently);
+```
+
+Below is a density map of recent crashes to identify hot spots.
+
+<div class="card">${resize(width => renderCrashes(width, someCrashes))}</div>
 
 ## Starts and Ends
 
