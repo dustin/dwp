@@ -1,8 +1,8 @@
 import * as d3 from "npm:d3";
 
-export function renderChord(beaches) {
+export function renderChord(widthIn, beaches) {
   const height = 800,
-    width = Math.max(height, 1000);
+    width = Math.min(widthIn, 1000);
 
   var svg = d3
     .create("svg")
@@ -10,14 +10,16 @@ export function renderChord(beaches) {
 
   const g = svg.append("g");
 
-  const innerR = 285;
-  const outerR = 300;
+  const maxRadius = Math.min(width, height) / 2 - 50;
+  const innerR = maxRadius * 0.85;
+  const outerR = maxRadius * 0.9;
 
   const popularity = d3.rollup(
     beaches,
-    (d) => d.length,
-    (d) => d.start_beach,
+    d => d.length,
+    d => d.start_beach,
   );
+
   const beachNames = Array.from(
     new Set(beaches.flatMap((d) => [d.start_beach, d.end_beach])),
   ).sort((a, b) => d3.descending(popularity[a], popularity[b]));

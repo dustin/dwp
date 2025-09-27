@@ -413,6 +413,4 @@ This shows where I start and end my runs.
 If you hover over a
 beach's arc, it'll highlight the places I've gone from that beach.
 
-```js
-renderChord(runCsv)
-```
+<div class="card">${resize(width => renderChord(width, runCsv))}</div>
