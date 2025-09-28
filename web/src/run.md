@@ -52,13 +52,17 @@ const calloutSpots = {
   maxDist: _.maxBy(runCsv, d => d.distance_to_land),
 };
 const callouts = [
-    { lat: calloutSpots.minHr.lat, lon: calloutSpots.minHr.lon, icon: "🫀",
-      text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm` },
     { lat: calloutSpots.maxSpeed.lat, lon: calloutSpots.maxSpeed.lon, icon: "🚀",
       text: `Top speed of ${calloutSpots.maxSpeed.speed.toFixed(2)} kph` },
     { lat: calloutSpots.maxDist.lat, lon: calloutSpots.maxDist.lon, icon: "🗺️",
       text: `Maximum distance from land of ${(calloutSpots.maxDist.distance_to_land/1000).toFixed(2)} km` },
 ];
+
+// Sometimes I didn't get on foil enough to have a min heart rate there.
+if (calloutSpots.minHr) {
+  callouts.push({ lat: calloutSpots.minHr.lat, lon: calloutSpots.minHr.lon, icon: "🫀",
+    text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm` });
+}
 ```
 
 <div class="card">${resize(width => renderRun(width, runCsv, callouts))}</div>
@@ -81,7 +85,7 @@ const callouts = [
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
-    <span class="big">${runMeta.paddle_up_count}</span>
+    <span class="big">${runMeta.paddle_up_count || 0}</span>
   </div>
 
   <div class="card">
