@@ -96,6 +96,7 @@ const callouts = [
         width, x: {tickFormat: d3.timeFormat("%H:%M")},
         marks: [
             Plot.areaY(runCsv, { x: "ts", y: "speed", fill: "#090", opacity: 0.2 }),
+            Plot.areaY(runCsv.map(d => ({...d, speed: d.speed < 11 ? d.speed : null})), { x: "ts", y: "speed", fill: "#500" }),
             Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#090" }),
             Plot.crosshair(runCsv, {x: "ts", y: "speed"})
         ]
