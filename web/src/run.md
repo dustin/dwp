@@ -27,8 +27,8 @@ const runMeta = (await FileAttachment("runs.csv").csv({typed: true})).filter(d =
 
 const calloutSpots = {
   minHr: runCsv.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
-  maxSpeed: runCsv[d3.maxIndex(runCsv,d => d.speed)],
-  maxDist: runCsv[d3.maxIndex(runCsv,d => d.distance_to_land)],
+  maxSpeed: _.maxBy(runCsv, d => d.speed),
+  maxDist: _.maxBy(runCsv, d => d.distance_to_land),
 };
 const callouts = [
     { lat: calloutSpots.minHr.lat, lon: calloutSpots.minHr.lon, icon: "🫀",
