@@ -11,7 +11,7 @@ import * as tl from "./components/timeline.js";
 
 const runCsv = (await FileAttachment("run.csv").csv({typed: true})).map(d => ({
 ...d,
-ts: new Date(d.ts),
+ts: new Date(d.tsi * 1000),
 }));
 
 const runMeta = (await FileAttachment("runs.csv").csv({typed: true})).filter(d => d.id === runCsv[0].dwid).map(d => ({
@@ -87,6 +87,20 @@ const callouts = [
     <span class="big">${(runMeta.max_distance / 1000).toFixed(2)} km</span>
   </div>
 </div>
+
+## Speed
+
+<div class="card">${
+    resize(width => Plot.plot({
+        title: "Speed",
+        width, x: {tickFormat: d3.timeFormat("%H:%M")},
+        marks: [
+            Plot.areaY(runCsv, { x: "ts", y: "speed", fill: "#090", opacity: 0.2 }),
+            Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#090" }),
+            Plot.crosshair(runCsv, {x: "ts", y: "speed"})
+        ]
+    }))
+}</div>
 
 ## Splits
 
