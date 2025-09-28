@@ -8,22 +8,32 @@ toc: true
 import {renderRun} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
+import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
+import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 
-const runCsv = (await FileAttachment("run.csv").csv({typed: true})).map(d => ({
-...d,
-ts: new Date(d.tsi * 1000),
-}));
+const allRuns = (await FileAttachment("runs.csv").csv({typed:true})).map(r => ({
+  ...r,
+  ts: new Date(r.ts * 1000),
+  longest_segment_start: new Date(r.longest_segment_start),
+  longest_segment_end:   new Date(r.longest_segment_end),
+  foil: r.equip_2 ?? "unknown foil",
+  pct_dist_on_foil: r.distance_on_foil / (1000 * r.distance_km),
+  pct_time_on_foil: r.duration_on_foil / r.duration_sec,
 
-const runMeta = (await FileAttachment("runs.csv").csv({typed: true})).filter(d => d.id === runCsv[0].dwid).map(d => ({
-  ...d,
-  ts: new Date(d.ts * 1000),
-  longest_segment_start: new Date(d.longest_segment_start),
-  longest_segment_end: new Date(d.longest_segment_end),
-  foil: d.equip_2 || "unknown foil",
-  pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
-  pct_time_on_foil: d.duration_on_foil / d.duration_sec,
-  ts: new Date(d.ts),
-}))[0];
+})
+);
+
+const runMetaMap = allRuns.reduce((m, r) => {
+  m[r.id] = r
+  return m;
+}, {});
+
+const runMeta = _.maxBy(allRuns, d => d.ts);
+
+const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data_0.csv`;
+
+const runCsv = await csv(runDataURL, autoType)
+                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)})));
 
 const calloutSpots = {
   minHr: runCsv.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
