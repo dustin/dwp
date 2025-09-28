@@ -28,12 +28,23 @@ const runMetaMap = allRuns.reduce((m, r) => {
   return m;
 }, {});
 
-const runMeta = _.maxBy(allRuns, d => d.ts);
+const urlParams = new URLSearchParams(window.location.search);
+
+const runMeta = runMetaMap[urlParams.get("id")] || _.maxBy(allRuns, d => d.ts);
 
 const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data_0.csv`;
+```
 
-const runCsv = await csv(runDataURL, autoType)
-                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)})));
+# From ${runMeta.start_beach} to ${runMeta.end_beach}
+
+<div>
+    ${fmt.date(runMeta.date)} at ${runMeta.time}
+    on the ${runMeta.foil}
+</div>
+
+```js
+const runCsv = _.sortBy(await csv(runDataURL, autoType)
+                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)}))), d => d.tsi);
 
 const calloutSpots = {
   minHr: runCsv.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
@@ -49,13 +60,6 @@ const callouts = [
       text: `Maximum distance from land of ${(calloutSpots.maxDist.distance_to_land/1000).toFixed(2)} km` },
 ];
 ```
-
-# From ${runMeta.start_beach} to ${runMeta.end_beach}
-
-<div>
-    ${fmt.date(runMeta.date)} at ${runMeta.time}
-    on the ${runMeta.foil}
-</div>
 
 <div class="card">${resize(width => renderRun(width, runCsv, callouts))}</div>
 
@@ -182,7 +186,7 @@ function pace(speed) {
   return (60/speed);
 }
 
-const splits = d3.groups(runCsv,
+const splits = _.orderBy(d3.groups(runCsv,
   d => (Math.floor(d.distance / 1000))).map(([s, d]) => {
     const speeds = d.map(d => d.speed);
     return {
@@ -198,7 +202,7 @@ const splits = d3.groups(runCsv,
     avg_hr: d3.mean(d.map(d => d.hr)),
     data: d,
     }
-  });
+  }), d => d.split);
 ```
 
 <div class="card">${

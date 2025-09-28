@@ -42,6 +42,7 @@ const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
     foil: d.equip_2 || "unknown foil",
     pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
     pct_time_on_foil: d.duration_on_foil / d.duration_sec,
+    linkedDate: {date: d.date, id: d.id},
     month: toMonth(ts),
     week: toWeek(ts),
     dry: isDry(d)
@@ -65,6 +66,11 @@ const totals = {
   longest_seg: d3.max(runCsv, d => d.longest_segment_distance),
   max_dist: d3.max(runCsv, d => d.max_distance)
 };
+
+totals.max_speed_id = runCsv.find(d => d.max_speed_kmh === totals.max_speed).id;
+totals.max_speed_1k_id = runCsv.find(d => d.max_speed_1k === totals.max_speed_1k).id;
+totals.longest_seg_id = runCsv.find(d => d.longest_segment_distance === totals.longest_seg).id;
+totals.max_dist_id = runCsv.find(d => d.max_distance === totals.max_dist).id;
 
 const beaches = [...new Set(runCsv.map(d => d.start_beach))].sort();
 const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
@@ -95,19 +101,23 @@ const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })
 
   <div class="card">
     <h2>Max Speed</h2>
-    <span class="big">${totals.max_speed.toFixed(2)} kph</span>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_id}">
+        ${totals.max_speed.toFixed(2)} kph</a>`}</span>
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${fmt.pace(totals.max_speed_1k)}</span>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_1k_id}">
+        ${fmt.pace(totals.max_speed_1k)}</a>`}</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
-    <span class="big">${(totals.longest_seg / 1000).toFixed(2)} km</span>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.longest_seg_id}">
+        ${(totals.longest_seg / 1000).toFixed(2)} km</a>`}</span>
   </div>
   <div class="card">
     <h2>Furthest From Land</h2>
-    <span class="big">${(totals.max_dist / 1000).toFixed(2)} km</span>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_dist_id}">
+        ${(totals.max_dist / 1000).toFixed(2)} km</a>`}</span>
   </div>
 </div>
 
@@ -180,7 +190,7 @@ So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 <div class="card">${
 Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
     columns: [
-      "date",
+      "linkedDate",
       "time",
       "start_beach",
       "end_beach",
@@ -192,7 +202,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       "foil"
     ],
     header: {
-      date: "Date",
+      linkedDate: "Date",
       time: "Time",
       start_beach: "Start Beach",
       end_beach: "End Beach",
@@ -204,6 +214,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       foil: "Foil"
       },
       format: {
+        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.date(d.date)}</a>`,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
@@ -414,3 +425,43 @@ If you hover over a
 beach's arc, it'll highlight the places I've gone from that beach.
 
 <div class="card">${resize(width => renderChord(width, runCsv))}</div>
+
+## All Runs
+
+Click through to view details.
+
+<div class="card">${
+Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
+    columns: [
+      "linkedDate",
+      "time",
+      "start_beach",
+      "end_beach",
+      "distance_km",
+      "distance_on_foil",
+      "duration_sec",
+      "duration_on_foil",
+      "max_speed_1k",
+      "foil"
+    ],
+    header: {
+      linkedDate: "Date",
+      time: "Time",
+      start_beach: "Start Beach",
+      end_beach: "End Beach",
+      distance_km: "Run Distance (km)",
+      distance_on_foil: "On Foil (km)",
+      duration_sec: "Run Duration",
+      duration_on_foil: "On Foil",
+      max_speed_1k: "Fastest km Pace",
+      foil: "Foil"
+      },
+      format: {
+        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.date(d.date)}</a>`,
+        distance_on_foil: d => (d / 1000).toFixed(2),
+        duration_on_foil: fmt.seconds,
+        duration_sec: fmt.seconds,
+        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
+        max_speed_1k: d => fmt.pace(d).split(' ')[0]
+      }})
+}</div>

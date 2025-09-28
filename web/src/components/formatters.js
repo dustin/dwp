@@ -45,6 +45,9 @@ export function speed(kph) {
 }
 
 export function hr(hr) {
+  if (!hr) {
+    return "unknown bpm";
+  }
   return (hr.toFixed(0) + " bpm");
 }
 
