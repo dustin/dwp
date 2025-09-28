@@ -98,7 +98,23 @@ const [onFoil, offFoil] = _.unzip(
     ]
   })
 );
+
+const segments = runCsv.reduce((segments, d, i) => {
+    const isOffFoil = d.speed == null ||d.speed < 11;
+    const prevIsOffFoil = i > 0 ? (runCsv[i-1].speed == null || runCsv[i-1].speed < 11) : false;
+
+    if (isOffFoil && !prevIsOffFoil) {
+        // Start new off-foil segment
+        segments.push({start: d.ts, end: d.ts});
+    } else if (isOffFoil && prevIsOffFoil) {
+        // Continue current off-foil segment
+        segments[segments.length - 1].end = d.ts;
+    }
+
+    return segments;
+}, []);
 ```
+
 
 <div class="card">${
     resize(width => Plot.plot({
@@ -111,7 +127,16 @@ const [onFoil, offFoil] = _.unzip(
             Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
             Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#808",
                                  opacity: 0.5, strokeWidth: 5 }),
-            Plot.crosshair(runCsv, {x: "ts", y: "speed"})
+            Plot.crosshair(runCsv, {x: "ts", y: "speed"}),
+            Plot.tip(offFoil, Plot.pointer({
+                x: "ts",
+                y: "speed",
+                title: d => {
+                    // Calculate how long this off-foil section is
+                    const segment = segments.find(s => d.ts >= s.start && d.ts <= s.end);
+                    return `Off foil: ${segment ? fmt.timeDiff(segment.start, segment.end) : '?'}`;
+                }
+            }))
         ]
     }))
 }</div>
