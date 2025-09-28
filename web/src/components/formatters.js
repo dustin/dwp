@@ -37,5 +37,18 @@ export function minutes(x) {
 }
 
 export function pace(kph) {
-  return minutes(60 / kph);
+  return (minutes(60 / kph) + " min/km");
+}
+
+export function speed(kph) {
+  return (kph.toFixed(2) + " kph");
+}
+
+export function hr(hr) {
+  return (hr.toFixed(0) + " bpm");
+}
+
+export function distanceM(m) {
+  if (m < 1000) return `${m.toFixed(0)} m`;
+  return `${(m / 1000).toFixed(2)} km`;
 }

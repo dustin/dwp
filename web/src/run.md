@@ -76,7 +76,7 @@ const callouts = [
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${fmt.pace(runMeta.max_speed_1k)} min/km</span>
+    <span class="big">${fmt.pace(runMeta.max_speed_1k)}</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
@@ -100,21 +100,30 @@ const [onFoil, offFoil] = _.unzip(
 );
 
 const segments = runCsv.reduce((segments, d, i) => {
-    const isOffFoil = d.speed == null ||d.speed < 11;
-    const prevIsOffFoil = i > 0 ? (runCsv[i-1].speed == null || runCsv[i-1].speed < 11) : false;
+    const isOffFoil = d.speed == null || d.speed < 11;
+    const prevIsOffFoil = i > 0 ? (runCsv[i-1].speed == null || runCsv[i-1].speed < 11) : null;
 
-    if (isOffFoil && !prevIsOffFoil) {
-        // Start new off-foil segment
-        segments.push({start: d.ts, end: d.ts});
-    } else if (isOffFoil && prevIsOffFoil) {
-        // Continue current off-foil segment
-        segments[segments.length - 1].end = d.ts;
+    // Check if we're starting a new segment (foil state changed or first reading)
+    const isNewSegment = i === 0 || isOffFoil !== prevIsOffFoil;
+
+    if (isNewSegment) {
+        // Start new segment
+        segments.push({
+            start: d.ts,
+            end: d.ts,
+            onFoil: !isOffFoil,
+            data: [d]
+        });
+    } else {
+        // Continue current segment
+        const currentSegment = segments[segments.length - 1];
+        currentSegment.end = d.ts;
+        currentSegment.data.push(d);
     }
 
     return segments;
 }, []);
 ```
-
 
 <div class="card">${
     resize(width => Plot.plot({
@@ -128,13 +137,28 @@ const segments = runCsv.reduce((segments, d, i) => {
             Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#808",
                                  opacity: 0.5, strokeWidth: 5 }),
             Plot.crosshair(runCsv, {x: "ts", y: "speed"}),
-            Plot.tip(offFoil, Plot.pointer({
+            Plot.tip(runCsv, Plot.pointer({
                 x: "ts",
                 y: "speed",
                 title: d => {
-                    // Calculate how long this off-foil section is
-                    const segment = segments.find(s => d.ts >= s.start && d.ts <= s.end);
-                    return `Off foil: ${segment ? fmt.timeDiff(segment.start, segment.end) : '?'}`;
+                    const seg = segments.find(s => d.ts >= s.start && d.ts <= s.end);
+                    if (!seg) return null;
+                    const speeds = seg.data.map(d => d.speed);
+                    const hrs = seg.data.map(d => d.hr).filter(h => h !== null);
+                    const [mindist, maxdist] = d3.extent(seg.data.map(d => d.distance));
+                    const dist = maxdist - mindist;
+                    const desc = [
+                        `${seg.onFoil ? 'On' : 'Off'} foil segment`,
+                        `Duration: ${fmt.timeDiff(seg.start, seg.end)}`,
+                        `Distance Traveled: ${fmt.distanceM(dist)}`,
+                        `Max speed: ${fmt.speed(d3.max(speeds))}`,
+                        `Average speed: ${fmt.speed(d3.mean(speeds))}`,
+                        `Pace: ${fmt.pace(d3.mean(speeds))}`,
+                        `Average HR: ${fmt.hr(d3.mean(hrs))}`,
+                        `Max HR: ${fmt.hr(d3.max(hrs))}`,
+                        `Min HR: ${fmt.hr(d3.min(hrs))}`
+                    ];
+                    return desc.join('\n');
                 }
             }))
         ]
@@ -174,7 +198,7 @@ const splits = d3.groups(runCsv,
       width, x: { interval: 1, label: "km" },
       marks: [
         Plot.rect(splits,{x:"split",y1:"min_speed",y2:"max_speed", fill: "green", opacity: 0.2,
-          title: d => `${d.min_speed.toFixed(2)} - ${d.max_speed.toFixed(2)} kph\n${fmt.pace(d.avg_speed.toFixed(2))} min/km\n${d.avg_speed.toFixed(2)} kph avg`
+          title: d => `${d.min_speed.toFixed(2)} - ${d.max_speed.toFixed(2)} kph\n${fmt.pace(d.avg_speed.toFixed(2))}\n${d.avg_speed.toFixed(2)} kph avg`
         }),
         Plot.line(splits, {x: "split", y: "avg_speed", stroke: "green", strokeWidth: 2})
       ]
@@ -189,7 +213,7 @@ const splits = d3.groups(runCsv,
       width, x: { interval: 1, label: "km" },
       marks: [
         Plot.barY(splits,{x:"split",y:"avg_pace", fill: "green", opacity: 0.2,
-          title: (d => `${fmt.pace(d.avg_speed.toFixed(2))} min/km\n${d.avg_speed.toFixed(2)} kph`) }),
+          title: (d => `${fmt.pace(d.avg_speed.toFixed(2))}\n${d.avg_speed.toFixed(2)} kph`) }),
         // Plot.line(splits, {x: "split", y: "max_pace", stroke: "green", strokeWidth: 2})
       ]
     })

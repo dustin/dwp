@@ -99,7 +99,7 @@ const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${fmt.pace(totals.max_speed_1k)} min/km</span>
+    <span class="big">${fmt.pace(totals.max_speed_1k)}</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
@@ -200,7 +200,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       distance_on_foil: "On Foil (km)",
       duration_sec: "Run Duration",
       duration_on_foil: "On Foil",
-      max_speed_1k: "Fastest Pace over 1 km",
+      max_speed_1k: "Fastest km Pace",
       foil: "Foil"
       },
       format: {
@@ -208,7 +208,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
         start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: fmt.pace
+        max_speed_1k: d => fmt.pace(d).split(' ')[0]
       }})
 }</div>
 
