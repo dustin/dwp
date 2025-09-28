@@ -260,7 +260,7 @@ export function renderRun(width, data, callouts = []) {
 
         // Format tooltip content
         const content = [
-          `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kts`,
+          `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
           `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
           `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
           `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
