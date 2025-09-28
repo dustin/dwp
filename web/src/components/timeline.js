@@ -18,6 +18,7 @@ export function tl(data, title, opts, xField, yField, lineOpts, dotOpts) {
         r: d => (d.dry ? 10 : 5),
         opacity: d => (d.dry ? 0.8 : 0.2),
         symbol: d => (d.dry ? "star" : "circle"),
+        href: d => `/run.html?id=${encodeURIComponent(d.id)}`,
         ...dotOpts
       }),
     ]
