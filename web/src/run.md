@@ -90,14 +90,27 @@ const callouts = [
 
 ## Speed
 
+```js
+const [onFoil, offFoil] = _.unzip(
+  _.map(runCsv, d => {
+    const on = d.speed > 11;
+    return [ { ...d, speed: on ? d.speed : null, }, { ...d, speed: on ? null : d.speed }
+    ]
+  })
+);
+```
+
 <div class="card">${
     resize(width => Plot.plot({
         title: "Speed",
         width, x: {tickFormat: d3.timeFormat("%H:%M")},
         marks: [
-            Plot.areaY(runCsv, { x: "ts", y: "speed", fill: "#090", opacity: 0.2 }),
-            Plot.areaY(runCsv.map(d => ({...d, speed: d.speed < 11 ? d.speed : null})), { x: "ts", y: "speed", fill: "#500" }),
-            Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#090" }),
+            Plot.areaY(onFoil, { x: "ts", y: "speed", fill: "#030" }),
+            Plot.lineY(onFoil, { x: "ts", y: "speed", stroke: "#050" }),
+            Plot.areaY(offFoil, { x: "ts", y: "speed", fill: "#500" }),
+            Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
+            Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#808",
+                                 opacity: 0.5, strokeWidth: 5 }),
             Plot.crosshair(runCsv, {x: "ts", y: "speed"})
         ]
     }))
