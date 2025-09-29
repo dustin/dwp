@@ -1,6 +1,7 @@
 import * as d3 from "npm:d3";
 import * as d3h from "npm:d3-hexbin";
 import * as d3t from "npm:d3-tile";
+import * as fmt from "./formatters.js";
 
 function tileURL(x, y, z) {
   const token = 'pk.eyJ1IjoiZGxzc3B5IiwiYSI6ImNtZzF2OG42cTBza3kybnB5YXd5OHY1ZWwifQ.EeGGfhgFW9amBAeiOEvbYw';
@@ -260,9 +261,10 @@ export function renderRun(width, data, callouts = []) {
 
         // Format tooltip content
         const content = [
+          `Time so far: ${fmt.timeDiff(data[0].ts, d.data.ts)}`,
+          `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
           `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
           `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
-          `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
           `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
         ];
 

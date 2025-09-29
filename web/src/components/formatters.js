@@ -1,4 +1,7 @@
 import * as d3 from "npm:d3";
+import * as luxon from "npm:luxon";
+
+export const relativeTime = d => luxon.DateTime.fromJSDate(new Date(d)).toRelative()
 
 export const date = d3.utcFormat("%Y-%m-%d");
 export const comma = d3.format(",");

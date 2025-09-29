@@ -4,7 +4,7 @@ title: downwind dashboard
 toc: true
 ---
 
-# Downwinding
+# Downwinding Summary
 
 ```js
 import {renderChord} from "./components/chord.js";
@@ -49,10 +49,7 @@ const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
   };
 });
 
-const crashes = (await FileAttachment("crashes.csv").csv({typed: true})).map(d => ({
-    ...d,
-    ts: new Date(d.ts * 1000),
-    }));
+const latestRun = runCsv[runCsv.findIndex(d => d.ts === d3.max(runCsv, d => d.ts))];
 ```
 
 ```js
@@ -120,6 +117,11 @@ const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })
         ${(totals.max_dist / 1000).toFixed(2)} km</a>`}</span>
   </div>
 </div>
+
+Check out the details of my ${htl.html`<a href="/run.html?id=${latestRun.id}">most recent run</a>`}
+from ${latestRun.start_beach} to ${latestRun.end_beach}
+from ${fmt.relativeTime(latestRun.date)} where I was
+on foil ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% of the way.
 
 ## Time on Water
 
@@ -408,6 +410,11 @@ const hrs = Array.from(
 ## Crash Density
 
 ```js
+const crashes = (await FileAttachment("crashes.csv").csv({typed: true})).map(d => ({
+    ...d,
+    ts: new Date(d.ts * 1000),
+    }));
+
 // Recent enough, I guess
 const recently = new Date(Date.now() - 80 * 24 * 60 * 60 * 1000);
 const someCrashes = crashes.filter(d => d.date > recently);
