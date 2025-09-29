@@ -117,30 +117,98 @@ const [onFoil, offFoil] = _.unzip(
   })
 );
 
-const segments = runCsv.reduce((segments, d, i) => {
-    const isOffFoil = d.speed == null || d.speed < 11;
-    const prevIsOffFoil = i > 0 ? (runCsv[i-1].speed == null || runCsv[i-1].speed < 11) : null;
+const SPEED_THRESHOLD = 11;
+const MIN_DURATION_MS = 5000;
 
-    // Check if we're starting a new segment (foil state changed or first reading)
-    const isNewSegment = i === 0 || isOffFoil !== prevIsOffFoil;
+const segments = runCsv.reduce((acc, d, i) => {
+    const { segments, pendingState } = acc;
 
-    if (isNewSegment) {
-        // Start new segment
+    const currentSpeed = d.speed;
+    const hasValidSpeed = currentSpeed != null;
+    const speedIndicatesOnFoil = hasValidSpeed && currentSpeed >= SPEED_THRESHOLD;
+
+    // Get current confirmed state
+    let confirmedOnFoil = null;
+    if (segments.length > 0) {
+        confirmedOnFoil = segments[segments.length - 1].onFoil;
+    }
+
+    // Handle first point
+    if (i === 0) {
         segments.push({
             start: d.ts,
             end: d.ts,
-            onFoil: !isOffFoil,
+            onFoil: speedIndicatesOnFoil,
             data: [d]
         });
-    } else {
-        // Continue current segment
+        return {
+            segments,
+            pendingState: speedIndicatesOnFoil !== null ? {
+                state: speedIndicatesOnFoil,
+                startTime: d.ts
+            } : null
+        };
+    }
+
+    // Check if speed indicates a different state than confirmed
+    const stateChangeIndicated = speedIndicatesOnFoil !== confirmedOnFoil;
+
+    if (!stateChangeIndicated) {
+        // Speed agrees with current state - clear any pending change
         const currentSegment = segments[segments.length - 1];
         currentSegment.end = d.ts;
         currentSegment.data.push(d);
+
+        return {
+            segments,
+            pendingState: null
+        };
     }
 
-    return segments;
-}, []);
+    // Speed indicates a state change
+    if (!pendingState || pendingState.state !== speedIndicatesOnFoil) {
+        // Start tracking this potential state change
+        const currentSegment = segments[segments.length - 1];
+        currentSegment.end = d.ts;
+        currentSegment.data.push(d);
+
+        return {
+            segments,
+            pendingState: {
+                state: speedIndicatesOnFoil,
+                startTime: d.ts
+            }
+        };
+    }
+
+    // We have a pending state change - check if it's been long enough
+    const durationMs = d.ts - pendingState.startTime;
+
+    if (durationMs >= MIN_DURATION_MS) {
+        // Confirmed state change - create new segment
+        segments.push({
+            start: d.ts,
+            end: d.ts,
+            onFoil: speedIndicatesOnFoil,
+            data: [d]
+        });
+
+        return {
+            segments,
+            pendingState: null
+        };
+    } else {
+        // Still pending - continue current segment
+        const currentSegment = segments[segments.length - 1];
+        currentSegment.end = d.ts;
+        currentSegment.data.push(d);
+
+        return {
+            segments,
+            pendingState
+        };
+    }
+}, { segments: [], pendingState: null }).segments;
 ```
 
 <div class="card">${
@@ -157,7 +225,7 @@ const segments = runCsv.reduce((segments, d, i) => {
             Plot.crosshair(runCsv, {x: "ts", y: "speed"}),
             Plot.tip(runCsv, Plot.pointer({
                 x: "ts",
-                y: "speed",
+                y: "speed", fontSize: 15,
                 title: d => {
                     const seg = segments.find(s => d.ts >= s.start && d.ts <= s.end);
                     if (!seg) return null;
