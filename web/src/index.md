@@ -32,7 +32,7 @@ function isDry(d) {
   return d.longest_segment_distance / d.distance_on_foil > dryLimit;
 }
 
-const runCsv = (await FileAttachment("runs.csv").csv({typed: true})).map(d => {
+const runCsv = (await FileAttachment("data/runs.csv").csv({typed: true})).map(d => {
   const ts = new Date(d.ts * 1000);
   return {
     ...d,
@@ -410,7 +410,7 @@ const hrs = Array.from(
 ## Crash Density
 
 ```js
-const crashes = (await FileAttachment("crashes.csv").csv({typed: true})).map(d => ({
+const crashes = (await FileAttachment("data/crashes.csv").csv({typed: true})).map(d => ({
     ...d,
     ts: new Date(d.ts * 1000),
     }));

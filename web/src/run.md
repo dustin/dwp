@@ -11,7 +11,7 @@ import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 
-const allRuns = (await FileAttachment("runs.csv").csv({typed:true})).map(r => ({
+const allRuns = (await FileAttachment("data/runs.csv").csv({typed:true})).map(r => ({
   ...r,
   ts: new Date(r.ts * 1000),
   longest_segment_start: new Date(r.longest_segment_start),
