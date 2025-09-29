@@ -32,7 +32,7 @@ const urlParams = new URLSearchParams(window.location.search);
 
 const runMeta = runMetaMap[urlParams.get("id")] || _.maxBy(allRuns, d => d.ts);
 
-const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data_0.csv`;
+const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data.csv`;
 ```
 
 # From ${runMeta.start_beach} to ${runMeta.end_beach}
