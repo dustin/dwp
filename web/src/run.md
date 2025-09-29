@@ -233,10 +233,12 @@ const segments = runCsv.reduce((acc, d, i) => {
                     const hrs = seg.data.map(d => d.hr).filter(h => h !== null);
                     const [mindist, maxdist] = d3.extent(seg.data.map(d => d.distance));
                     const dist = maxdist - mindist;
+                    const landdist = d3.mean(seg.data, d => d.distance_to_land);
                     const desc = [
                         `${seg.onFoil ? 'On' : 'Off'} foil segment`,
                         `Duration: ${fmt.timeDiff(seg.start, seg.end)}`,
                         `Distance Traveled: ${fmt.distanceM(dist)}`,
+                        `Nearest Land: ${fmt.distanceM(landdist)}`,
                         `Max speed: ${fmt.speed(d3.max(speeds))}`,
                         `Average speed: ${fmt.speed(d3.mean(speeds))}`,
                         `Pace: ${fmt.pace(d3.mean(speeds))}`,
