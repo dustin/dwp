@@ -42,7 +42,7 @@ const runCsv = (await FileAttachment("data/runs.csv").csv({typed: true})).map(d 
     foil: d.equip_2 || "unknown foil",
     pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
     pct_time_on_foil: d.duration_on_foil / d.duration_sec,
-    linkedDate: {date: d.date, id: d.id},
+    linkedDate: {date: ts, id: d.id},
     month: toMonth(ts),
     week: toWeek(ts),
     dry: isDry(d)
@@ -192,8 +192,8 @@ So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 <div class="card">${
 Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
     columns: [
+      "date",
       "linkedDate",
-      "time",
       "start_beach",
       "end_beach",
       "distance_km",
@@ -204,8 +204,8 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       "foil"
     ],
     header: {
-      linkedDate: "Date",
-      time: "Time",
+      date: "Date",
+      linkedDate: "Time",
       start_beach: "Start Beach",
       end_beach: "End Beach",
       distance_km: "Run Distance (km)",
@@ -216,7 +216,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       foil: "Foil"
       },
       format: {
-        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.date(d.date)}</a>`,
+        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
@@ -440,8 +440,8 @@ Click through to view details.
 <div class="card">${
 Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
     columns: [
+      "date",
       "linkedDate",
-      "time",
       "start_beach",
       "end_beach",
       "distance_km",
@@ -452,8 +452,8 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       "foil"
     ],
     header: {
-      linkedDate: "Date",
-      time: "Time",
+      date: "Date",
+      linkedDate: "Time",
       start_beach: "Start Beach",
       end_beach: "End Beach",
       distance_km: "Run Distance (km)",
@@ -464,7 +464,7 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       foil: "Foil"
       },
       format: {
-        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.date(d.date)}</a>`,
+        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,

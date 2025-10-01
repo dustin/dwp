@@ -1,9 +1,11 @@
 import * as d3 from "npm:d3";
 import * as luxon from "npm:luxon";
 
-export const relativeTime = d => luxon.DateTime.fromJSDate(new Date(d)).toRelative()
+export const relativeTime = (d) =>
+  luxon.DateTime.fromJSDate(new Date(d)).toRelative();
 
-export const date = d3.utcFormat("%Y-%m-%d");
+export const date = d3.timeFormat("%Y-%m-%d");
+export const time = d3.timeFormat("%H:%M:%S");
 export const comma = d3.format(",");
 
 export function timeDiff(start, end) {
@@ -40,18 +42,18 @@ export function minutes(x) {
 }
 
 export function pace(kph) {
-  return (minutes(60 / kph) + " min/km");
+  return minutes(60 / kph) + " min/km";
 }
 
 export function speed(kph) {
-  return (kph.toFixed(2) + " kph");
+  return kph.toFixed(2) + " kph";
 }
 
 export function hr(hr) {
   if (!hr) {
     return "unknown bpm";
   }
-  return (hr.toFixed(0) + " bpm");
+  return hr.toFixed(0) + " bpm";
 }
 
 export function distanceM(m) {
