@@ -38,7 +38,7 @@ const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid
 # From ${runMeta.start_beach} to ${runMeta.end_beach}
 
 <div>
-    ${fmt.date(runMeta.date)} at ${runMeta.time}
+    ${fmt.date(runMeta.ts)} at ${fmt.time(runMeta.ts)}
     on the ${runMeta.foil}
 </div>
 
