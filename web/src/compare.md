@@ -39,8 +39,7 @@ const runMeta2 = runMetaMap[urlParams.get("id2")] || _.maxBy(allRuns, d => d.ts)
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
 ```js
-const runCsv1 = await fetchRun(runMeta1.id);
-const runCsv2 = await fetchRun(runMeta2.id);
+const [runCsv1, runCsv2] = await Promise.all([runMeta1.id, runMeta2.id].map(fetchRun));
 
 function createColorizer(data, baseHue) {
   const speeds = data.map(d => d.speed).filter(s => s != null);
