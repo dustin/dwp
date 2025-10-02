@@ -4,6 +4,17 @@ title: compare downwind runs
 toc: true
 ---
 
+<style>
+  .run1 {
+    color: hsl(140, 80%, 45%);
+    font-weight: 600;
+  }
+  .run2 {
+    color: hsl(30, 85%, 55%);
+    font-weight: 600;
+  }
+</style>
+
 ```js
 import {renderRun, renderCmp} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
@@ -37,7 +48,7 @@ const runDataURL1 = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwi
 const runDataURL2 = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta2.id}/data.csv`;
 ```
 
-# Comparing a run on <span style="color: hsl(140, 80%, 45%); font-weight: 600;">${fmt.date(runMeta1.ts)}</span> to a run on <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${fmt.date(runMeta2.ts)}</span>
+# Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
 ```js
 const runCsv1 = _.sortBy(await csv(runDataURL1, autoType)
@@ -79,47 +90,79 @@ const calloutSpots = [];
 <div class="grid grid-cols-4">
   <div class="card">
     <h2>Total Time</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${fmt.seconds(runMeta1.duration_sec)}</span>
-        / <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${fmt.seconds(runMeta2.duration_sec)}</span></span>
+    <span class="big">
+      <span class="run1">${fmt.seconds(runMeta1.duration_sec)}</span>
+      /
+      <span class="run2">${fmt.seconds(runMeta2.duration_sec)}</span>
+    </span>
   </div>
+
   <div class="card">
     <h2>Distance Traveled</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${runMeta1.distance_km.toFixed(2)} km</span>
-        /<br/> <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${runMeta2.distance_km.toFixed(2)} km</span></span>
+    <span class="big">
+      <span class="run1">${runMeta1.distance_km.toFixed(2)} km</span>
+      /<br/>
+      <span class="run2">${runMeta2.distance_km.toFixed(2)} km</span>
+    </span>
   </div>
+
   <div class="card">
     <h2>Distance Traveled on Foil</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${(runMeta1.distance_on_foil / 1000).toFixed(2)} km
-        (${(runMeta1.pct_dist_on_foil * 100).toFixed(0)}%)</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${(runMeta2.distance_on_foil / 1000).toFixed(2)} km
-            (${(runMeta2.pct_dist_on_foil * 100).toFixed(0)}%)</span>
+    <span class="big">
+      <span class="run1">
+        ${(runMeta1.distance_on_foil / 1000).toFixed(2)} km
+        (${(runMeta1.pct_dist_on_foil * 100).toFixed(0)}%)
+      </span>
+      /<br/>
+      <span class="run2">
+        ${(runMeta2.distance_on_foil / 1000).toFixed(2)} km
+        (${(runMeta2.pct_dist_on_foil * 100).toFixed(0)}%)
+      </span>
     </span>
   </div>
+
   <div class="card">
     <h2>Paddle Ups</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${runMeta1.paddle_up_count || 0}</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${runMeta2.paddle_up_count || 0}</span></span>
-  </div>
-  <div class="card">
-    <h2>Max Speed</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${runMeta1.max_speed_kmh.toFixed(2)} kph</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${runMeta2.max_speed_kmh.toFixed(2)} kph</span></span>
-  </div>
-  <div class="card">
-    <h2>Best 1k Pace</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${fmt.pace(runMeta1.max_speed_1k)}</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${fmt.pace(runMeta2.max_speed_1k)}</span>
+    <span class="big">
+      <span class="run1">${runMeta1.paddle_up_count || 0}</span>
+      /<br/>
+      <span class="run2">${runMeta2.paddle_up_count || 0}</span>
     </span>
   </div>
+
+  <div class="card">
+    <h2>Max Speed</h2>
+    <span class="big">
+      <span class="run1">${runMeta1.max_speed_kmh.toFixed(2)} kph</span>
+      /<br/>
+      <span class="run2">${runMeta2.max_speed_kmh.toFixed(2)} kph</span>
+    </span>
+  </div>
+
+  <div class="card">
+    <h2>Best 1k Pace</h2>
+    <span class="big">
+      <span class="run1">${fmt.pace(runMeta1.max_speed_1k)}</span>
+      /<br/>
+      <span class="run2">${fmt.pace(runMeta2.max_speed_1k)}</span>
+    </span>
+  </div>
+
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${(runMeta1.longest_segment_distance / 1000).toFixed(2)} km</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${(runMeta2.longest_segment_distance / 1000).toFixed(2)} km</span></span>
+    <span class="big">
+      <span class="run1">${(runMeta1.longest_segment_distance / 1000).toFixed(2)} km</span>
+      /<br/>
+      <span class="run2">${(runMeta2.longest_segment_distance / 1000).toFixed(2)} km</span>
+    </span>
   </div>
+
   <div class="card">
     <h2>Furthest From Land</h2>
-    <span class="big"><span style="color: hsl(140, 80%, 45%); font-weight: 600;">${(runMeta1.max_distance / 1000).toFixed(2)} km</span> /<br/>
-        <span style="color: hsl(30, 85%, 55%); font-weight: 600;">${(runMeta2.max_distance / 1000).toFixed(2)} km</span>
+    <span class="big">
+      <span class="run1">${(runMeta1.max_distance / 1000).toFixed(2)} km</span>
+      /<br/>
+      <span class="run2">${(runMeta2.max_distance / 1000).toFixed(2)} km</span>
     </span>
   </div>
 </div>
