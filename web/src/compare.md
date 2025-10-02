@@ -23,23 +23,28 @@ import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 import {fetchMeta, fetchRun} from "./components/data.js";
 
-const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
-
-const runMetaMap = allRuns.reduce((m, r) => {
-  m[r.id] = r
-  return m;
-}, {});
 
 const urlParams = new URLSearchParams(window.location.search);
 
-const runMeta1 = runMetaMap[urlParams.get("id1")] || _.maxBy(allRuns, d => d.ts);
-const runMeta2 = runMetaMap[urlParams.get("id2")] || _.maxBy(allRuns, d => d.ts);
+const id1 = urlParams.get("id1");
+const id2 = urlParams.get("id2");
+
+const allRunsP = fetchMeta(() => FileAttachment('data/runs.csv')).then(data => data.reduce((m, r) => {
+  m[r.id] = r
+  return m;
+}, {}));
+const csvFetches = [id1, id2].map(fetchRun);
+
+const runMetaMap = await allRunsP;
+
+const runMeta1 = runMetaMap[id1];
+const runMeta2 = runMetaMap[id2];
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
 ```js
-const [runCsv1, runCsv2] = await Promise.all([runMeta1.id, runMeta2.id].map(fetchRun));
+const [runCsv1, runCsv2] = await Promise.all(csvFetches);
 
 function createColorizer(data, baseHue) {
   const speeds = data.map(d => d.speed).filter(s => s != null);
