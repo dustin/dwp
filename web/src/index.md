@@ -37,6 +37,8 @@ const runCsv = (await FileAttachment("data/runs.csv").csv({typed: true})).map(d 
   return {
     ...d,
     ts: ts,
+    date: ts,
+    time: ts,
     longest_segment_start: new Date(d.longest_segment_start),
     longest_segment_end: new Date(d.longest_segment_end),
     foil: d.equip_2 || "unknown foil",
