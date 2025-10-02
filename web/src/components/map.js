@@ -542,6 +542,7 @@ export function renderCmp(width, data1, data2 = []) {
 
     return (speed) => {
       if (speed == null) return `hsl(${baseHue}, 70%, 50%)`
+      if (speed < 11) return `hsl(${baseHue}, 40%, 30%)`
 
       // Normalize speed to 0-1 range
       const normalized = speeds.length > 1 ? (speed - minSpeed) / (maxSpeed - minSpeed) : 0.5
