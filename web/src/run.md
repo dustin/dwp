@@ -19,9 +19,12 @@ const allRuns = (await FileAttachment("data/runs.csv").csv({typed:true})).map(r 
   foil: r.equip_2 ?? "unknown foil",
   pct_dist_on_foil: r.distance_on_foil / (1000 * r.distance_km),
   pct_time_on_foil: r.duration_on_foil / r.duration_sec,
-
+  linkedDate: {date: r.ts, id: r.id},
 })
 );
+
+const beaches = [...new Set(allRuns.map(d => d.start_beach))].sort();
+const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
 
 const runMetaMap = allRuns.reduce((m, r) => {
   m[r.id] = r
@@ -29,8 +32,9 @@ const runMetaMap = allRuns.reduce((m, r) => {
 }, {});
 
 const urlParams = new URLSearchParams(window.location.search);
+const thisId = urlParams.get("id");
 
-const runMeta = runMetaMap[urlParams.get("id")] || _.maxBy(allRuns, d => d.ts);
+const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 
 const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data.csv`;
 ```
@@ -117,98 +121,7 @@ const [onFoil, offFoil] = _.unzip(
   })
 );
 
-const SPEED_THRESHOLD = 11;
-const MIN_DURATION_MS = 5000;
-
-const segments = runCsv.reduce((acc, d, i) => {
-    const { segments, pendingState } = acc;
-
-    const currentSpeed = d.speed;
-    const hasValidSpeed = currentSpeed != null;
-    const speedIndicatesOnFoil = hasValidSpeed && currentSpeed >= SPEED_THRESHOLD;
-
-    // Get current confirmed state
-    let confirmedOnFoil = null;
-    if (segments.length > 0) {
-        confirmedOnFoil = segments[segments.length - 1].onFoil;
-    }
-
-    // Handle first point
-    if (i === 0) {
-        segments.push({
-            start: d.ts,
-            end: d.ts,
-            onFoil: speedIndicatesOnFoil,
-            data: [d]
-        });
-        return {
-            segments,
-            pendingState: speedIndicatesOnFoil !== null ? {
-                state: speedIndicatesOnFoil,
-                startTime: d.ts
-            } : null
-        };
-    }
-
-    // Check if speed indicates a different state than confirmed
-    const stateChangeIndicated = speedIndicatesOnFoil !== confirmedOnFoil;
-
-    if (!stateChangeIndicated) {
-        // Speed agrees with current state - clear any pending change
-        const currentSegment = segments[segments.length - 1];
-        currentSegment.end = d.ts;
-        currentSegment.data.push(d);
-
-        return {
-            segments,
-            pendingState: null
-        };
-    }
-
-    // Speed indicates a state change
-    if (!pendingState || pendingState.state !== speedIndicatesOnFoil) {
-        // Start tracking this potential state change
-        const currentSegment = segments[segments.length - 1];
-        currentSegment.end = d.ts;
-        currentSegment.data.push(d);
-
-        return {
-            segments,
-            pendingState: {
-                state: speedIndicatesOnFoil,
-                startTime: d.ts
-            }
-        };
-    }
-
-    // We have a pending state change - check if it's been long enough
-    const durationMs = d.ts - pendingState.startTime;
-
-    if (durationMs >= MIN_DURATION_MS) {
-        // Confirmed state change - create new segment
-        segments.push({
-            start: d.ts,
-            end: d.ts,
-            onFoil: speedIndicatesOnFoil,
-            data: [d]
-        });
-
-        return {
-            segments,
-            pendingState: null
-        };
-    } else {
-        // Still pending - continue current segment
-        const currentSegment = segments[segments.length - 1];
-        currentSegment.end = d.ts;
-        currentSegment.data.push(d);
-
-        return {
-            segments,
-            pendingState
-        };
-    }
-}, { segments: [], pendingState: null }).segments;
+const segments = tl.computeSegments(runCsv);
 ```
 
 <div class="card">${
@@ -256,27 +169,7 @@ const segments = runCsv.reduce((acc, d, i) => {
 ## Splits
 
 ```js
-function pace(speed) {
-  return (60/speed);
-}
-
-const splits = _.orderBy(d3.groups(runCsv,
-  d => (Math.floor(d.distance / 1000))).map(([s, d]) => {
-    const speeds = d.map(d => d.speed);
-    return {
-    split: s + 1,
-    min_speed: d3.min(speeds),
-    avg_speed: d3.mean(speeds),
-    max_speed: d3.max(speeds),
-    min_pace: pace(d3.min(speeds)),
-    avg_pace: pace(d3.mean(speeds)),
-    max_pace: pace(d3.max(speeds)),
-    max_hr: d3.max(d.map(d => d.hr)),
-    min_hr: d3.min(d.map(d => d.hr)),
-    avg_hr: d3.mean(d.map(d => d.hr)),
-    data: d,
-    }
-  }), d => d.split);
+const splits = tl.computeSplits(runCsv);
 ```
 
 <div class="card">${
@@ -321,4 +214,46 @@ const splits = _.orderBy(d3.groups(runCsv,
       ]
     })
     )
+}</div>
+
+## Compare
+
+You can compare this run to a similar run by clicking on one of the timestamps below.
+
+<div class="card">${
+Inputs.table(allRuns.filter(d => d.id != thisId && (
+    d.start_beach == runMeta.start_beach || d.end_beach == runMeta.end_beach)).sort((a, b) => b.ts - a.ts), {
+    columns: [
+      "date",
+      "linkedDate",
+      "start_beach",
+      "end_beach",
+      "distance_km",
+      "distance_on_foil",
+      "duration_sec",
+      "duration_on_foil",
+      "max_speed_1k",
+      "foil"
+    ],
+    header: {
+      date: "Date",
+      linkedDate: "Time",
+      start_beach: "Start Beach",
+      end_beach: "End Beach",
+      distance_km: "Run Distance (km)",
+      distance_on_foil: "On Foil (km)",
+      duration_sec: "Run Duration",
+      duration_on_foil: "On Foil",
+      max_speed_1k: "Fastest km Pace",
+      foil: "Foil"
+      },
+      format: {
+        date: fmt.date,
+        linkedDate: d => htl.html`<a href="/compare.html?id1=${thisId}&id2=${d.id}">${fmt.time(d.date)}</a>`,
+        distance_on_foil: d => (d / 1000).toFixed(2),
+        duration_on_foil: fmt.seconds,
+        duration_sec: fmt.seconds,
+        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
+        max_speed_1k: d => fmt.pace(d).split(' ')[0]
+      }})
 }</div>
