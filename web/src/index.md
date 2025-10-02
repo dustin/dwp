@@ -218,6 +218,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       foil: "Foil"
       },
       format: {
+        date: fmt.date,
         linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
@@ -414,12 +415,12 @@ const hrs = Array.from(
 ```js
 const crashes = (await FileAttachment("data/crashes.csv").csv({typed: true})).map(d => ({
     ...d,
-    ts: new Date(d.ts * 1000),
+    ts: new Date(d.ts),
     }));
 
 // Recent enough, I guess
 const recently = new Date(Date.now() - 80 * 24 * 60 * 60 * 1000);
-const someCrashes = crashes.filter(d => d.date > recently);
+const someCrashes = crashes.filter(d => d.ts > recently);
 ```
 
 Below is a density map of recent crashes to identify hot spots.
@@ -466,6 +467,7 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       foil: "Foil"
       },
       format: {
+        date: fmt.date,
         linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
