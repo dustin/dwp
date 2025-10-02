@@ -45,10 +45,34 @@ const runCsv1 = _.sortBy(await csv(runDataURL1, autoType)
 const runCsv2 = _.sortBy(await csv(runDataURL2, autoType)
                      .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)}))), d => d.tsi);
 
+function createColorizer(data, baseHue) {
+  const speeds = data.map(d => d.speed).filter(s => s != null);
+  const minSpeed = Math.min(...speeds);
+  const maxSpeed = Math.max(...speeds);
+
+  return speed => {
+    if (speed == null) return `hsl(${baseHue}, 70%, 50%)`;
+    if (speed < 11) return `hsl(${baseHue}, 40%, 30%)`;
+
+    // Normalize speed to 0-1 range
+    const normalized = speeds.length > 1 ? (speed - minSpeed) / (maxSpeed - minSpeed) : 0.5;
+
+    const lightness = 30 + normalized * 40; // Range: 30% to 70%
+    const saturation = 70 + normalized * 20; // Range: 70% to 90%
+
+    return `hsl(${baseHue}, ${saturation}%, ${lightness}%)`;
+  };
+};
+
+const colorizers = [
+  createColorizer(runCsv1, 140), // Green hue
+  createColorizer(runCsv2, 30), // Orange hue
+];
+
 const calloutSpots = [];
 ```
 
-<div class="card">${resize(width => renderCmp(width, runCsv1, runCsv2))}</div>
+<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], calloutSpots, {colorizers: colorizers}))}</div>
 
 ## At a Glance
 
