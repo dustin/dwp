@@ -69,7 +69,7 @@ if (calloutSpots.minHr) {
 }
 ```
 
-<div class="card">${resize(width => renderRun(width, runCsv, callouts))}</div>
+<div class="card">${resize(width => renderRun(width, [runCsv], callouts))}</div>
 
 ## At a Glance
 
