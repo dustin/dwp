@@ -77,9 +77,18 @@ const calloutSpots = [];
     <h2>Total Time</h2>
     <span class="big">
       <span class="run1">${fmt.seconds(runMeta1.duration_sec)}</span>
-      /
+      /<br/>
       <span class="run2">${fmt.seconds(runMeta2.duration_sec)}</span>
     </span>
+  </div>
+
+  <div class="card">
+      <h2>Time on Foil</h2>
+      <span class="big">
+          <span class="run1">${fmt.seconds(runMeta1.duration_on_foil)} (${(runMeta1.pct_time_on_foil * 100).toFixed(0)}%)</span>
+          /<br/>
+          <span class="run2">${fmt.seconds(runMeta2.duration_on_foil)} (${(runMeta2.pct_time_on_foil * 100).toFixed(0)}%)</span>
+      </span>
   </div>
 
   <div class="card">
@@ -103,6 +112,33 @@ const calloutSpots = [];
         ${(runMeta2.distance_on_foil / 1000).toFixed(2)} km
         (${(runMeta2.pct_dist_on_foil * 100).toFixed(0)}%)
       </span>
+    </span>
+  </div>
+
+  <div class="card">
+    <h2>Longest Continuous Foiling Segment</h2>
+    <span class="big">
+      <span class="run1">${(runMeta1.longest_segment_distance / 1000).toFixed(2)} km</span>
+      /<br/>
+      <span class="run2">${(runMeta2.longest_segment_distance / 1000).toFixed(2)} km</span>
+    </span>
+  </div>
+
+  <div class="card">
+    <h2>Furthest From Land</h2>
+    <span class="big">
+      <span class="run1">${(runMeta1.max_distance / 1000).toFixed(2)} km</span>
+      /<br/>
+      <span class="run2">${(runMeta2.max_distance / 1000).toFixed(2)} km</span>
+    </span>
+  </div>
+
+  <div class="card">
+    <h2>Foil</h2>
+    <span class="big">
+      <span class="run1">${runMeta1.foil}</span>
+      /<br/>
+      <span class="run2">${runMeta2.foil}</span>
     </span>
   </div>
 
@@ -134,22 +170,23 @@ const calloutSpots = [];
   </div>
 
   <div class="card">
-    <h2>Longest Continuous Foiling Segment</h2>
+    <h2>Min Foiling Heart Rate</h2>
     <span class="big">
-      <span class="run1">${(runMeta1.longest_segment_distance / 1000).toFixed(2)} km</span>
+      <span class="run1">${fmt.hr(runMeta1.min_foiling_hr)}</span>
       /<br/>
-      <span class="run2">${(runMeta2.longest_segment_distance / 1000).toFixed(2)} km</span>
+      <span class="run2">${fmt.hr(runMeta2.min_foiling_hr)}</span>
     </span>
   </div>
 
   <div class="card">
-    <h2>Furthest From Land</h2>
+    <h2>Average Foiling Heart Rate</h2>
     <span class="big">
-      <span class="run1">${(runMeta1.max_distance / 1000).toFixed(2)} km</span>
+      <span class="run1">${fmt.hr(runMeta1.avg_foiling_hr)}</span>
       /<br/>
-      <span class="run2">${(runMeta2.max_distance / 1000).toFixed(2)} km</span>
+      <span class="run2">${fmt.hr(runMeta2.avg_foiling_hr)}</span>
     </span>
   </div>
+
 </div>
 
 ## Speed
