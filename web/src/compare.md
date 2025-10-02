@@ -21,18 +21,9 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
+import {fetchMeta, fetchRun} from "./components/data.js";
 
-const allRuns = (await FileAttachment("data/runs.csv").csv({typed:true})).map(r => ({
-  ...r,
-  ts: new Date(r.ts * 1000),
-  longest_segment_start: new Date(r.longest_segment_start),
-  longest_segment_end:   new Date(r.longest_segment_end),
-  foil: r.equip_2 ?? "unknown foil",
-  pct_dist_on_foil: r.distance_on_foil / (1000 * r.distance_km),
-  pct_time_on_foil: r.duration_on_foil / r.duration_sec,
-
-})
-);
+const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
 const runMetaMap = allRuns.reduce((m, r) => {
   m[r.id] = r
@@ -43,18 +34,13 @@ const urlParams = new URLSearchParams(window.location.search);
 
 const runMeta1 = runMetaMap[urlParams.get("id1")] || _.maxBy(allRuns, d => d.ts);
 const runMeta2 = runMetaMap[urlParams.get("id2")] || _.maxBy(allRuns, d => d.ts);
-
-const runDataURL1 = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta1.id}/data.csv`;
-const runDataURL2 = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta2.id}/data.csv`;
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
 ```js
-const runCsv1 = _.sortBy(await csv(runDataURL1, autoType)
-                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)}))), d => d.tsi);
-const runCsv2 = _.sortBy(await csv(runDataURL2, autoType)
-                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)}))), d => d.tsi);
+const runCsv1 = await fetchRun(runMeta1.id);
+const runCsv2 = await fetchRun(runMeta2.id);
 
 function createColorizer(data, baseHue) {
   const speeds = data.map(d => d.speed).filter(s => s != null);

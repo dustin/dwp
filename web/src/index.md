@@ -11,45 +11,9 @@ import {renderChord} from "./components/chord.js";
 import {renderCrashes} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
+import {fetchMeta, dryLimit} from "./components/data.js";
 
-function toWeek(ts) {
-  let week = new Date(ts);
-  week.setHours(0,0,0,0);
-  week.setDate(week.getDate() - week.getDay());
-  return week;
-}
-
-function toMonth(ts) {
-  let month = new Date(ts);
-  month.setHours(0,0,0,0);
-  month.setDate(1);
-  return month;
-}
-
-const dryLimit = 0.98;
-
-function isDry(d) {
-  return d.longest_segment_distance / d.distance_on_foil > dryLimit;
-}
-
-const runCsv = (await FileAttachment("data/runs.csv").csv({typed: true})).map(d => {
-  const ts = new Date(d.ts * 1000);
-  return {
-    ...d,
-    ts: ts,
-    date: ts,
-    time: ts,
-    longest_segment_start: new Date(d.longest_segment_start),
-    longest_segment_end: new Date(d.longest_segment_end),
-    foil: d.equip_2 || "unknown foil",
-    pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
-    pct_time_on_foil: d.duration_on_foil / d.duration_sec,
-    linkedDate: {date: ts, id: d.id},
-    month: toMonth(ts),
-    week: toWeek(ts),
-    dry: isDry(d)
-  };
-});
+const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
 const latestRun = runCsv[runCsv.findIndex(d => d.ts === d3.max(runCsv, d => d.ts))];
 ```

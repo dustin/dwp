@@ -10,18 +10,9 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
+import {fetchMeta, fetchRun} from "./components/data.js";
 
-const allRuns = (await FileAttachment("data/runs.csv").csv({typed:true})).map(r => ({
-  ...r,
-  ts: new Date(r.ts * 1000),
-  longest_segment_start: new Date(r.longest_segment_start),
-  longest_segment_end:   new Date(r.longest_segment_end),
-  foil: r.equip_2 ?? "unknown foil",
-  pct_dist_on_foil: r.distance_on_foil / (1000 * r.distance_km),
-  pct_time_on_foil: r.duration_on_foil / r.duration_sec,
-  linkedDate: {date: r.ts, id: r.id},
-})
-);
+const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
 const beaches = [...new Set(allRuns.map(d => d.start_beach))].sort();
 const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
@@ -35,8 +26,6 @@ const urlParams = new URLSearchParams(window.location.search);
 const thisId = urlParams.get("id");
 
 const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
-
-const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runMeta.id}/data.csv`;
 ```
 
 # From ${runMeta.start_beach} to ${runMeta.end_beach}
@@ -47,8 +36,7 @@ const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid
 </div>
 
 ```js
-const runCsv = _.sortBy(await csv(runDataURL, autoType)
-                     .then(data => data.map(d => ({...d, ts: new Date(d.tsi*1000)}))), d => d.tsi);
+const runCsv = await fetchRun(runMeta.id);
 
 const calloutSpots = {
   minHr: runCsv.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
