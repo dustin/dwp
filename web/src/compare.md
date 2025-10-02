@@ -108,10 +108,14 @@ resize(width => Plot.plot({
     width, x: {tickFormat: d3.timeFormat("%H:%M")},
     marks: [
         Plot.lineY(runCsv1, { x: "distance", y: "speed", stroke: "green",
-                             opacity: 0.5, strokeWidth: 2 }),
+                             opacity: 0.5, strokeWidth: 1 }),
+        Plot.lineY(runCsv1, { x: "distance", y: "avg_speed_1k", stroke: "green",
+                              opacity: 1, strokeWidth: 2 }),
         Plot.crosshair(runCsv1, {x: "distance", y: "speed"}),
         Plot.lineY(runCsv2, { x: "distance", y: "speed", stroke: "orange",
-                             opacity: 0.5, strokeWidth: 2 }),
+                             opacity: 0.5, strokeWidth: 1 }),
+        Plot.lineY(runCsv2, { x: "distance", y: "avg_speed_1k", stroke: "orange",
+                                                   opacity: 1, strokeWidth: 2 }),
         Plot.crosshair(runCsv2, {x: "distance", y: "speed"}),
         Plot.tip(runCsv1, Plot.pointer({
             x: "distance",
