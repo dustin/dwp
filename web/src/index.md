@@ -120,7 +120,7 @@ const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })
 
 Check out the details of my ${htl.html`<a href="/run.html?id=${latestRun.id}">most recent run</a>`}
 from ${latestRun.start_beach} to ${latestRun.end_beach}
-from ${fmt.relativeTime(latestRun.date)} where I was
+from ${fmt.relativeTime(latestRun.ts)} where I was
 on foil ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% of the way.
 
 ## Time on Water
