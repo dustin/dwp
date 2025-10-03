@@ -319,10 +319,10 @@ resize((width) => Plot.plot({
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxHRY] },
       marks: [
-        Plot.rect(splits1,{x:"split",y1:"min_hr",y2:"max_hr", fill: 'orange', opacity: 0.2,
+        Plot.rect(splits1,{x:"split",y1:"min_hr",y2:"max_hr", fill: 'green', opacity: 0.2,
           title: d => `${d.min_hr} - ${d.max_hr} bpm`
         }),
-        Plot.line(splits1, {x: "split", y: "avg_hr", stroke: "orange", strokeWidth: 2}),
+        Plot.line(splits1, {x: "split", y: "avg_hr", stroke: "green", strokeWidth: 2}),
         Plot.line(splits2, {x: "split", y: "avg_hr", stroke: "darkorange", strokeWidth: 2, strokeDasharray: "4,4"})
       ]
     })
@@ -338,7 +338,7 @@ resize((width) => Plot.plot({
           title: d => `${d.min_hr} - ${d.max_hr} bpm`
         }),
         Plot.line(splits2, {x: "split", y: "avg_hr", stroke: "darkorange", strokeWidth: 2}),
-        Plot.line(splits1, {x: "split", y: "avg_hr", stroke: "orange", strokeWidth: 2, strokeDasharray: "4,4"})
+        Plot.line(splits1, {x: "split", y: "avg_hr", stroke: "green", strokeWidth: 2, strokeDasharray: "4,4"})
       ]
     })
     )
