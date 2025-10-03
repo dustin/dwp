@@ -16,7 +16,7 @@ toc: true
 </style>
 
 ```js
-import {renderRun, renderCmp} from "./components/map.js";
+import {renderRun, findCallouts} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -70,10 +70,10 @@ const colorizers = [
   createColorizer(runCsv2, 30), // Orange hue
 ];
 
-const calloutSpots = [];
+const callouts = [[runMeta1, runCsv1], [runMeta2, runCsv2]].flatMap(([m,c]) => findCallouts(m, c));
 ```
 
-<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], calloutSpots, {colorizers: colorizers}))}</div>
+<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], callouts, {colorizers: colorizers}))}</div>
 
 ## At a Glance
 
