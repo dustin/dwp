@@ -2,6 +2,7 @@ import * as d3 from 'npm:d3';
 import * as d3h from 'npm:d3-hexbin';
 import * as d3t from 'npm:d3-tile';
 import * as fmt from './formatters.js';
+import _ from 'npm:lodash';
 
 function tileURL(x, y, z) {
   const token =
@@ -145,6 +146,39 @@ function speedColor(speeds) {
   return function (speed) {
     return speed > 11 ? colorScale(speed) : '#900';
   };
+}
+
+export function findCallouts(runMeta, data) {
+  const calloutSpots = {
+    minHr: data.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
+    maxSpeed: _.maxBy(data, d => d.speed),
+    maxDist: _.maxBy(data, d => d.distance_to_land),
+  };
+  const callouts = [
+    {
+      lat: calloutSpots.maxSpeed.lat,
+      lon: calloutSpots.maxSpeed.lon,
+      icon: '🚀',
+      text: `Top speed of ${calloutSpots.maxSpeed.speed.toFixed(2)} kph`,
+    },
+    {
+      lat: calloutSpots.maxDist.lat,
+      lon: calloutSpots.maxDist.lon,
+      icon: '🗺️',
+      text: `Maximum distance from land of ${(calloutSpots.maxDist.distance_to_land / 1000).toFixed(2)} km`,
+    },
+  ];
+
+  // Sometimes I didn't get on foil enough to have a min heart rate there.
+  if (calloutSpots.minHr) {
+    callouts.push({
+      lat: calloutSpots.minHr.lat,
+      lon: calloutSpots.minHr.lon,
+      icon: '🫀',
+      text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm`,
+    });
+  }
+  return callouts;
 }
 
 export function renderRun(width, datas, callouts = [], opts = {}) {

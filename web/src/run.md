@@ -5,7 +5,7 @@ toc: true
 ---
 
 ```js
-import {renderRun} from "./components/map.js";
+import {renderRun, findCallouts} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -38,23 +38,7 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 ```js
 const runCsv = await fetchRun(runMeta.id);
 
-const calloutSpots = {
-  minHr: runCsv.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
-  maxSpeed: _.maxBy(runCsv, d => d.speed),
-  maxDist: _.maxBy(runCsv, d => d.distance_to_land),
-};
-const callouts = [
-    { lat: calloutSpots.maxSpeed.lat, lon: calloutSpots.maxSpeed.lon, icon: "🚀",
-      text: `Top speed of ${calloutSpots.maxSpeed.speed.toFixed(2)} kph` },
-    { lat: calloutSpots.maxDist.lat, lon: calloutSpots.maxDist.lon, icon: "🗺️",
-      text: `Maximum distance from land of ${(calloutSpots.maxDist.distance_to_land/1000).toFixed(2)} km` },
-];
-
-// Sometimes I didn't get on foil enough to have a min heart rate there.
-if (calloutSpots.minHr) {
-  callouts.push({ lat: calloutSpots.minHr.lat, lon: calloutSpots.minHr.lon, icon: "🫀",
-    text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm` });
-}
+const callouts = findCallouts(runMeta, runCsv);
 ```
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts))}</div>
