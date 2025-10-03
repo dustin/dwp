@@ -47,7 +47,8 @@ export async function fetchMeta(f) {
 }
 
 export async function fetchRun(runId) {
-  const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runId}/data.csv`;
+  // const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runId}/data.csv`;
+  const runDataURL = `https://d2qwe1xndvncw9.cloudfront.net/runs/dwid%3D${runId}/data.csv`;
   return d3.csv(runDataURL, d3.autoType).then(data =>
     _.sortBy(
       data.map(d => ({ ...d, ts: new Date(d.tsi * 1000) })),
