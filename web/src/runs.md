@@ -36,7 +36,7 @@ Select runs to map.
 const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
-      "linkedDate",
+      "time",
       "region",
       "start_beach",
       "end_beach",
@@ -49,7 +49,7 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
     ],
     header: {
       date: "Date",
-      linkedDate: "Time",
+      time: "Time",
       region: "Region",
       start_beach: "Start Beach",
       end_beach: "End Beach",
@@ -62,7 +62,7 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
       },
       format: {
         date: fmt.date,
-        linkedDate: d => htl.html`<a href="/compare.html?id1=${thisId}&id2=${d.id}">${fmt.time(d.date)}</a>`,
+        time: fmt.time,
         distance_on_foil: d => (d / 1000).toFixed(2),
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,

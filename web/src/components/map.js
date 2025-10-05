@@ -323,6 +323,7 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
 
         // Format tooltip content
         const content = [
+          `Date: ${fmt.date(d.data.ts)}`,
           `Time: ${fmt.time(d.data.ts)}`,
           `Time so far: ${fmt.timeDiff(datas[d.dataset][0].ts, d.data.ts)}`,
           `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
