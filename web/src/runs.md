@@ -37,6 +37,7 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
+      "region",
       "start_beach",
       "end_beach",
       "distance_km",
@@ -49,6 +50,7 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
     header: {
       date: "Date",
       linkedDate: "Time",
+      region: "Region",
       start_beach: "Start Beach",
       end_beach: "End Beach",
       distance_km: "Run Distance (km)",
