@@ -65,7 +65,7 @@ export async function fetchWind(meta) {
   if (meta.region == 'Kihei') {
     site = 'kihei';
   } else if (meta.region == 'Maui North Shore') {
-    site = 'kanaha';
+    site = 'hookipa';
   } else {
     return [];
   }
