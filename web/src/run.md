@@ -192,9 +192,18 @@ const splits = tl.computeSplits(runCsv);
 
 You can compare this run to a similar run by clicking on one of the timestamps below.
 
+```js
+const compares = view(Inputs.radio(["All", "Similar"],
+                      {label: "Run Selection", value: 'Similar'}));
+
+const compareFuns = {
+    All: d => true,
+    Similar: d => d.start_beach == runMeta.start_beach || d.end_beach == runMeta.end_beach,
+};
+```
+
 <div class="card">${
-Inputs.table(allRuns.filter(d => d.id != thisId && (
-    d.start_beach == runMeta.start_beach || d.end_beach == runMeta.end_beach)).sort((a, b) => b.ts - a.ts), {
+Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
