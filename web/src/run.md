@@ -10,7 +10,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
-import {fetchMeta, fetchRun} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -36,7 +36,7 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const runCsv = await fetchRun(runMeta.id);
+const [runCsv, wind] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta)]);
 
 const callouts = findCallouts(runMeta, runCsv);
 ```
@@ -136,6 +136,41 @@ const segments = tl.computeSegments(runCsv);
             }))
         ]
     }))
+}</div>
+
+## Wind
+
+<div class="card">${
+wind && wind.length > 0
+  ? resize((width) => Plot.plot({
+      title: "Wind",
+      color: { legend: true },
+      width,
+      y: { domain: [0, d3.max(wind, d => Math.max(d.wavg, d.wgust)) * 1.1] },
+      marks: [
+        Plot.areaY(wind, { x: "ts", y: "wgust", fill: "#dbeafe", fillOpacity: 0.3 }),
+        Plot.areaY(wind, { x: "ts", y: "wavg", fill: "#93c5fd", fillOpacity: 0.4 }),
+        Plot.areaY(wind, { x: "ts", y: "wlull", fill: "#3b82f6", fillOpacity: 0.5 }),
+        //
+        Plot.lineY(wind, { x: "ts", y: "wlull", stroke: "#2563eb", strokeWidth: 2 }),
+        Plot.lineY(wind, { x: "ts", y: "wavg", stroke: "#1e40af",  strokeWidth: 2.5 }),
+        Plot.lineY(wind, { x: "ts", y: "wgust", stroke: "#1e3a8a", strokeWidth: 2 }),
+        Plot.vector(wind, { x: "ts", y: "wavg",
+          length: 30,
+          rotate: d => d.wdir + 180,
+          anchor: "middle",
+          stroke: "#dc2626",
+          strokeWidth: 4
+        }),
+        Plot.tip(wind, Plot.pointer({
+          x: "ts",
+          y: "wavg",
+          fontSize: 15,
+          title: d => `${fmt.time(d.ts)}: ${d.wavg.toFixed(1)} knots @ ${Math.round(d.wdir)}°`
+        }))
+      ]
+    }))
+  : html`<p>No wind data found for this run.</p>`
 }</div>
 
 ## Splits

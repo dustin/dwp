@@ -1,5 +1,6 @@
 import _ from 'npm:lodash';
 import * as d3 from 'npm:d3';
+import * as fmt from './formatters.js';
 
 function toWeek(ts) {
   let week = new Date(ts);
@@ -46,13 +47,58 @@ export async function fetchMeta(f) {
     );
 }
 
+// s3.us-east-1.amazonaws.com/db.downwind.pro
+const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
+
 export async function fetchRun(runId) {
-  // const runDataURL = `https://s3.us-east-1.amazonaws.com/db.downwind.pro/runs/dwid%3D${runId}/data.csv`;
-  const runDataURL = `https://d2qwe1xndvncw9.cloudfront.net/runs/dwid%3D${runId}/data.csv`;
+  const runDataURL = `https://${DATAHOST}/runs/dwid%3D${runId}/data.csv`;
   return d3.csv(runDataURL, d3.autoType).then(data =>
     _.sortBy(
       data.map(d => ({ ...d, ts: new Date(d.tsi * 1000) })),
       d => d.tsi
     )
   );
+}
+
+export async function fetchWind(meta) {
+  let site = undefined;
+  if (meta.region == 'Kihei') {
+    site = 'kihei';
+  } else if (meta.region == 'Maui North Shore') {
+    site = 'kanaha';
+  } else {
+    return [];
+  }
+  const day = fmt.date(meta.ts);
+
+  const runDataURL = `https://${DATAHOST}/wind/site%3D${site}/day%3D${day}/data.csv`;
+  return d3
+    .csv(runDataURL, row => ({
+      ...row,
+      ts: new Date(row.ts),
+      wavg: +row.wavg,
+      wdir: +row.wdir,
+      wgust: +row.wgust,
+      wlull: +row.wlull,
+    }))
+    .then(allRows => {
+      const start = meta.ts;
+      const end = new Date(start.getTime() + meta.duration_sec * 1000);
+
+      let lastBefore = null;
+      const inRange = [];
+
+      for (let i = 0; i < allRows.length; i++) {
+        const row = allRows[i];
+        if (row.ts < start) {
+          lastBefore = row;
+        } else if (row.ts <= end) {
+          inRange.push(row);
+        } else {
+          break;
+        }
+      }
+
+      return lastBefore ? [lastBefore, ...inRange] : inRange;
+    });
 }
