@@ -5,7 +5,7 @@ toc: true
 ---
 
 ```js
-import {renderRun, findCallouts} from "./components/map.js";
+import {renderRun, findCallouts, createWindRoseInset} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -41,7 +41,31 @@ const [runCsv, wind] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMet
 const callouts = findCallouts(runMeta, runCsv);
 ```
 
-<div class="card">${resize(width => renderRun(width, [runCsv], callouts))}</div>
+<div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
+  additionalMarks: ({ d3, svg, width, height }) => {
+    const size = 150;
+    const margin = 16;
+    const centerX = margin + size;
+    const centerY = margin + size;
+    const inset = createWindRoseInset(d3, svg, wind, {
+      x: centerX,
+      y: centerY,
+      radius: size,
+      innerHole: 40,
+      nDirections: 36,
+      speedBreaks: [0,5,10,15,20,25,30],
+      normalize: false,
+      title: "Wind (avg)",
+      colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
+    });
+    return {
+      updateOnZoom: null,
+      update: () => {
+        inset.update({ x: centerX, y: centerY });
+      }
+    };
+  }
+}))}</div>
 
 ## At a Glance
 

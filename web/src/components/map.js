@@ -228,6 +228,11 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
   const calloutsG = svg.append('g').attr('class', 'callouts');
   let calloutGroups = calloutsG.selectAll('.callout-group');
 
+  let additional;
+  if (typeof opts.additionalMarks === 'function') {
+    additional = opts.additionalMarks({ d3, svg, width, height });
+  }
+
   svg.call(zoom).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2).scale(-1));
   const fc = {
     type: 'FeatureCollection',
@@ -550,7 +555,336 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
         // Reset highlight
         d3.select(this).select('.callout-icon-bg').attr('fill', 'white');
       });
+
+    if (additional?.updateOnZoom) additional.updateOnZoom({ transform, width, height });
   }
 
   return svg.node();
+}
+
+// Wind rosefrom my wind data.
+export function createWindRoseInset(
+  d3,
+  svg,
+  readings,
+  {
+    x = 80,
+    y = 80,
+    radius = 70,
+    innerHole = 20,
+    nDirections = 16,
+    speedBreaks = [0, 5, 10, 15, 20, 25, 30],
+    speedAccessor = d => d.wavg ?? d.wgust,
+    calmThreshold = 0.5,
+    normalize = true,
+    ringTicks = null, // e.g. [0.25, 0.5, 0.75, 1]
+    colors = { type: 'ordinal', scheme: d3.schemeTableau10 },
+    title = 'Wind rose',
+  } = {}
+) {
+  if (!readings || readings.length < 1) {
+    return [];
+  }
+  const wrap360 = deg => ((deg % 360) + 360) % 360;
+  const sectorSize = 360 / nDirections;
+  const speedLabels = [];
+  const binCenters = new Map(); // label -> numeric center for sequential coloring
+  for (let i = 0; i < speedBreaks.length - 1; i++) {
+    const lo = speedBreaks[i],
+      hi = speedBreaks[i + 1];
+    const lab = `${lo}–${hi}`;
+    speedLabels.push(lab);
+    binCenters.set(lab, (lo + hi) / 2);
+  }
+  const last = speedBreaks.at(-1);
+  speedLabels.push(`${last}+`);
+  binCenters.set(`${last}+`, last); // use lower edge as center for open-ended bin
+
+  // Speed → bin label
+  const binSpeed = v => {
+    if (v == null || Number.isNaN(v)) return null;
+    for (let i = 0; i < speedBreaks.length - 1; i++) {
+      if (v >= speedBreaks[i] && v < speedBreaks[i + 1])
+        return `${speedBreaks[i]}–${speedBreaks[i + 1]}`;
+    }
+    return `${speedBreaks.at(-1)}+`;
+  };
+
+  // Tally sector/bin counts
+  const key = (sector, label) => `${sector}|${label}`;
+  const counts = new Map();
+  const sectorTotals = new Array(nDirections).fill(0);
+  let calm = 0;
+
+  for (const r of readings ?? []) {
+    const wdir = r?.wdir;
+    if (wdir == null || Number.isNaN(wdir)) continue;
+    const s = speedAccessor(r);
+    if (s != null && s < calmThreshold) {
+      calm++;
+      continue;
+    }
+    const sector = Math.floor(wrap360(wdir) / sectorSize);
+    const lbl = binSpeed(s);
+    if (!lbl) continue;
+    counts.set(key(sector, lbl), (counts.get(key(sector, lbl)) ?? 0) + 1);
+    sectorTotals[sector]++;
+  }
+
+  const total = sectorTotals.reduce((a, b) => a + b, 0) + calm;
+  const rMaxRose = normalize ? 1 : Math.max(...sectorTotals, calm, 1);
+  const ticks =
+    ringTicks ??
+    (normalize
+      ? [0.25, 0.5, 0.75, 1.0]
+      : Array.from(
+          new Set([rMaxRose / 4, rMaxRose / 2, (3 * rMaxRose) / 4, rMaxRose].map(v => Math.ceil(v)))
+        ).filter(Boolean));
+
+  // Build stacked rows
+  const rows = [];
+  for (let s = 0; s < nDirections; s++) {
+    const toRad = deg => (deg * Math.PI) / 180;
+    const half = sectorSize / 2;
+    const t0 = toRad(s * sectorSize - half);
+    const t1 = toRad((s + 1) * sectorSize - half);
+    let acc = 0;
+    for (const lbl of speedLabels) {
+      const c = counts.get(key(s, lbl)) ?? 0;
+      const yv = normalize ? c / (total || 1) : c;
+      if (yv <= 0) continue;
+      rows.push({ theta0: t0, theta1: t1, r0: acc, r1: acc + yv, label: lbl });
+      acc += yv;
+    }
+  }
+
+  const calmRow =
+    calm > 0
+      ? {
+          theta0: 0,
+          theta1: 2 * Math.PI,
+          r0: 0,
+          r1: normalize ? calm / (total || 1) : calm,
+          label: 'Calm',
+        }
+      : null;
+
+  const rPx = d3
+    .scaleLinear()
+    .domain([0, rMaxRose])
+    .range([0, Math.max(0, radius - innerHole)]);
+
+  const g = svg
+    .append('g')
+    .attr('class', 'wind-rose-inset')
+    .attr('role', 'group')
+    .attr('aria-label', title)
+    .attr('transform', `translate(${x},${y})`);
+
+  g.append('g')
+    .attr('class', 'rings')
+    .selectAll('circle')
+    .data(ticks)
+    .join('circle')
+    .attr('cx', 0)
+    .attr('cy', 0)
+    .attr('r', d => innerHole + rPx(d)) // offset
+    .attr('fill', 'none')
+    .attr('stroke', '#ccc')
+    .attr('stroke-opacity', 0.15)
+    .attr('stroke-width', 1);
+
+  // Cardinal labels
+  const outerR = innerHole + rPx(rMaxRose);
+  const diagR = (outerR * 0.3) / Math.SQRT2; // shorter diagonals
+  g.append('g')
+    .attr('class', 'cardinal-cross')
+    .selectAll('line')
+    .data([
+      { x1: -outerR, y1: 0, x2: outerR, y2: 0 }, // East–West
+      { x1: 0, y1: -outerR, x2: 0, y2: outerR }, // North–South
+      // Diagonals (NE–SW, NW–SE)
+      { x1: -diagR, y1: -diagR, x2: diagR, y2: diagR },
+      { x1: -diagR, y1: diagR, x2: diagR, y2: -diagR },
+    ])
+    .join('line')
+    .attr('x1', d => d.x1)
+    .attr('y1', d => d.y1)
+    .attr('x2', d => d.x2)
+    .attr('y2', d => d.y2)
+    .attr('stroke', '#ccc')
+    .attr('stroke-opacity', 0.2)
+    .attr('stroke-width', 1)
+    .attr('pointer-events', 'none');
+
+  // Color scale for bins
+  let color;
+  let legendKind = 'ordinal';
+
+  if (colors?.type === 'sequential') {
+    legendKind = 'sequential';
+    const dmin = colors.domain?.[0] ?? speedBreaks[0];
+    const dmax = colors.domain?.[1] ?? last;
+    const interp = colors.interpolator ?? d3.interpolateTurbo; // default to Turbo
+    const scale = d3.scaleSequential(interp).domain([dmin, dmax]);
+    color = label => {
+      if (label === 'Calm') return '#ddd';
+      const v = binCenters.get(label);
+      return scale(v ?? dmin);
+    };
+  } else {
+    // ordinal (default)
+    const palette =
+      colors?.scheme && Array.isArray(colors.scheme) ? colors.scheme : d3.schemeTableau10;
+    const domain = [...speedLabels, 'Calm'];
+    const scale = d3.scaleOrdinal(
+      domain,
+      palette.length >= domain.length ? palette : d3.schemeTableau10
+    );
+    color = label => (label === 'Calm' ? '#ddd' : scale(label));
+  }
+
+  const arc = d3
+    .arc()
+    .innerRadius(d => innerHole + rPx(d.r0)) // offset
+    .outerRadius(d => innerHole + rPx(d.r1)) // offset
+    .startAngle(d => d.theta0)
+    .endAngle(d => d.theta1);
+
+  g.append('g')
+    .attr('class', 'sectors')
+    .selectAll('path')
+    .data(rows)
+    .join('path')
+    .attr('d', arc)
+    .attr('fill', d => color(d.label))
+    .attr('stroke', 'white')
+    .attr('stroke-width', 0.5);
+
+  if (calmRow) {
+    g.append('path')
+      .datum(calmRow)
+      .attr('class', 'calm')
+      .attr('d', arc)
+      .attr('fill', '#ddd')
+      .attr('stroke', 'white')
+      .attr('stroke-width', 0.5);
+  }
+
+  function makeLegend(
+    selection,
+    labels,
+    { position = 'right', padFromRose = 14, maxWidth = 140, fontSize = 10 } = {}
+  ) {
+    selection.select('.legend').remove();
+
+    const outerR = innerHole + rPx(rMaxRose);
+    let lx = outerR + padFromRose,
+      ly = -outerR;
+
+    const legend = selection
+      .append('g')
+      .attr('class', 'legend')
+      .attr('transform', `translate(${lx},${ly})`);
+
+    if (legendKind === 'sequential') {
+      const width = 140,
+        height = 10;
+      const id = `legend-gradient-${Math.random().toString(36).slice(2)}`;
+
+      const gradient = legend
+        .append('defs')
+        .append('linearGradient')
+        .attr('id', id)
+        .attr('x1', '0%')
+        .attr('x2', '100%')
+        .attr('y1', '0%')
+        .attr('y2', '0%');
+      const stops = d3.range(0, 1.0001, 1 / 11);
+      stops.forEach(t => {
+        gradient
+          .append('stop')
+          .attr('offset', `${t * 100}%`)
+          .attr('stop-color', (colors.interpolator ?? d3.interpolateTurbo)(t));
+      });
+
+      legend
+        .append('rect')
+        .attr('width', width)
+        .attr('height', height)
+        .attr('fill', `url(#${id})`)
+        .attr('stroke', '#999');
+
+      // Axis with min/max tick labels
+      const dmin = colors.domain?.[0] ?? speedBreaks[0];
+      const dmax = colors.domain?.[1] ?? last;
+      const scale = d3.scaleLinear().domain([dmin, dmax]).range([0, width]);
+      const axis = d3.axisBottom(scale).ticks(4).tickSize(3);
+
+      legend
+        .append('g')
+        .attr('transform', `translate(0,${height})`)
+        .call(axis)
+        .selectAll('text')
+        .attr('font-size', fontSize);
+
+      legend
+        .append('text')
+        .attr('x', 0)
+        .attr('y', -4)
+        .attr('font-size', fontSize)
+        .attr('stroke', '#ccc')
+        .attr('fill', 'white')
+        .text('Wind Speed (knots)');
+    } else {
+      const sw = 10,
+        sh = 10,
+        gap = 4,
+        rowGap = 4;
+      const items = [...labels, 'Calm'];
+      items.forEach((lab, i) => {
+        const g = legend
+          .append('g')
+          .attr('transform', `translate(0, ${i * (Math.max(sh, fontSize) + rowGap)})`);
+        g.append('rect')
+          .attr('width', sw)
+          .attr('height', sh)
+          .attr('fill', color(lab))
+          .attr('stroke', '#999');
+        g.append('text')
+          .attr('x', sw + gap)
+          .attr('y', sh - 1)
+          .attr('font-size', fontSize)
+          .text(lab);
+      });
+    }
+
+    return { node: legend.node() };
+  }
+
+  const labelsForLegend = speedLabels;
+  makeLegend(g, labelsForLegend, { position: 'right', padFromRose: 14 });
+
+  function update({ x: nx = x, y: ny = y, radius: nr = radius } = {}) {
+    if (nr !== radius) {
+      radius = nr;
+      rPx.range([0, radius]);
+      g.selectAll('.rings circle').attr('r', d => rPx(d));
+      const outerR = innerHole + rPx(rMaxRose);
+      const labelDist = outerR * 1.08;
+
+      g.selectAll('.cardinals text')
+        .attr('x', d => labelDist * Math.cos(d.a))
+        .attr('y', d => labelDist * Math.sin(d.a));
+      g.selectAll('.sectors path, path.calm').attr('d', arc);
+      legend.attr('transform', `translate(${rPx(rMaxRose) + 14},${-radius})`);
+    }
+    if (nx !== x || ny !== y) {
+      x = nx;
+      y = ny;
+      g.attr('transform', `translate(${x},${y})`);
+    }
+  }
+
+  return { node: g.node(), update, colorScale: color };
 }
