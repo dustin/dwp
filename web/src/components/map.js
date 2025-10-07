@@ -840,8 +840,7 @@ export function createWindRoseInset(
         sh = 10,
         gap = 4,
         rowGap = 4;
-      const items = [...labels, 'Calm'];
-      items.forEach((lab, i) => {
+      labels.forEach((lab, i) => {
         const g = legend
           .append('g')
           .attr('transform', `translate(0, ${i * (Math.max(sh, fontSize) + rowGap)})`);

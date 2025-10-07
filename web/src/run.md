@@ -53,10 +53,20 @@ const callouts = findCallouts(runMeta, runCsv);
       radius: size,
       innerHole: 40,
       nDirections: 36,
-      speedBreaks: [0,5,10,15,20,],
+      speedBreaks: [0, 15, 20, 25, 30],
+      colors: {
+        type: 'ordinal',
+        scheme: [
+          '#ef4444', // red - 0-15
+          '#f97316', // orange - 15-20
+          '#eab308', // yellow - 20-25
+          '#22c55e', // green - 25-30
+          '#3b82f6'  // blue - 30+
+        ]
+      },
       normalize: false,
       title: "Wind (avg)",
-      colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
+      // colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
     });
     return {
       updateOnZoom: null,
