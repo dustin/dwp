@@ -575,9 +575,7 @@ export function createWindRoseInset(
     nDirections = 16,
     speedBreaks = [0, 5, 10, 15, 20, 25, 30],
     speedAccessor = d => d.wavg ?? d.wgust,
-    calmThreshold = 0.5,
     normalize = true,
-    ringTicks = null, // e.g. [0.25, 0.5, 0.75, 1]
     colors = { type: 'ordinal', scheme: d3.schemeTableau10 },
     title = 'Wind rose',
   } = {}
@@ -588,7 +586,7 @@ export function createWindRoseInset(
   const wrap360 = deg => ((deg % 360) + 360) % 360;
   const sectorSize = 360 / nDirections;
   const speedLabels = [];
-  const binCenters = new Map(); // label -> numeric center for sequential coloring
+  const binCenters = new Map();
   for (let i = 0; i < speedBreaks.length - 1; i++) {
     const lo = speedBreaks[i],
       hi = speedBreaks[i + 1];
@@ -598,9 +596,8 @@ export function createWindRoseInset(
   }
   const last = speedBreaks.at(-1);
   speedLabels.push(`${last}+`);
-  binCenters.set(`${last}+`, last); // use lower edge as center for open-ended bin
+  binCenters.set(`${last}+`, last);
 
-  // Speed → bin label
   const binSpeed = v => {
     if (v == null || Number.isNaN(v)) return null;
     for (let i = 0; i < speedBreaks.length - 1; i++) {
@@ -614,16 +611,11 @@ export function createWindRoseInset(
   const key = (sector, label) => `${sector}|${label}`;
   const counts = new Map();
   const sectorTotals = new Array(nDirections).fill(0);
-  let calm = 0;
 
   for (const r of readings ?? []) {
     const wdir = r?.wdir;
     if (wdir == null || Number.isNaN(wdir)) continue;
     const s = speedAccessor(r);
-    if (s != null && s < calmThreshold) {
-      calm++;
-      continue;
-    }
     const sector = Math.floor(wrap360(wdir) / sectorSize);
     const lbl = binSpeed(s);
     if (!lbl) continue;
@@ -631,15 +623,13 @@ export function createWindRoseInset(
     sectorTotals[sector]++;
   }
 
-  const total = sectorTotals.reduce((a, b) => a + b, 0) + calm;
-  const rMaxRose = normalize ? 1 : Math.max(...sectorTotals, calm, 1);
-  const ticks =
-    ringTicks ??
-    (normalize
-      ? [0.25, 0.5, 0.75, 1.0]
-      : Array.from(
-          new Set([rMaxRose / 4, rMaxRose / 2, (3 * rMaxRose) / 4, rMaxRose].map(v => Math.ceil(v)))
-        ).filter(Boolean));
+  const total = sectorTotals.reduce((a, b) => a + b, 0);
+  const rMaxRose = normalize ? 1 : Math.max(...sectorTotals, 1);
+  const ticks = normalize
+    ? [0.25, 0.5, 0.75, 1.0]
+    : Array.from(
+        new Set([rMaxRose / 4, rMaxRose / 2, (3 * rMaxRose) / 4, rMaxRose].map(v => Math.ceil(v)))
+      ).filter(Boolean);
 
   // Build stacked rows
   const rows = [];
@@ -653,21 +643,10 @@ export function createWindRoseInset(
       const c = counts.get(key(s, lbl)) ?? 0;
       const yv = normalize ? c / (total || 1) : c;
       if (yv <= 0) continue;
-      rows.push({ theta0: t0, theta1: t1, r0: acc, r1: acc + yv, label: lbl });
+      rows.push({ theta0: t0, theta1: t1, r0: acc, r1: acc + yv, label: lbl, sector: s });
       acc += yv;
     }
   }
-
-  const calmRow =
-    calm > 0
-      ? {
-          theta0: 0,
-          theta1: 2 * Math.PI,
-          r0: 0,
-          r1: normalize ? calm / (total || 1) : calm,
-          label: 'Calm',
-        }
-      : null;
 
   const rPx = d3
     .scaleLinear()
@@ -725,10 +704,9 @@ export function createWindRoseInset(
     legendKind = 'sequential';
     const dmin = colors.domain?.[0] ?? speedBreaks[0];
     const dmax = colors.domain?.[1] ?? last;
-    const interp = colors.interpolator ?? d3.interpolateTurbo; // default to Turbo
+    const interp = colors.interpolator ?? d3.interpolateTurbo;
     const scale = d3.scaleSequential(interp).domain([dmin, dmax]);
     color = label => {
-      if (label === 'Calm') return '#ddd';
       const v = binCenters.get(label);
       return scale(v ?? dmin);
     };
@@ -736,18 +714,18 @@ export function createWindRoseInset(
     // ordinal (default)
     const palette =
       colors?.scheme && Array.isArray(colors.scheme) ? colors.scheme : d3.schemeTableau10;
-    const domain = [...speedLabels, 'Calm'];
+    const domain = speedLabels;
     const scale = d3.scaleOrdinal(
       domain,
       palette.length >= domain.length ? palette : d3.schemeTableau10
     );
-    color = label => (label === 'Calm' ? '#ddd' : scale(label));
+    color = scale;
   }
 
   const arc = d3
     .arc()
-    .innerRadius(d => innerHole + rPx(d.r0)) // offset
-    .outerRadius(d => innerHole + rPx(d.r1)) // offset
+    .innerRadius(d => innerHole + rPx(d.r0))
+    .outerRadius(d => innerHole + rPx(d.r1))
     .startAngle(d => d.theta0)
     .endAngle(d => d.theta1);
 
@@ -761,14 +739,35 @@ export function createWindRoseInset(
     .attr('stroke', 'white')
     .attr('stroke-width', 0.5);
 
-  if (calmRow) {
-    g.append('path')
-      .datum(calmRow)
-      .attr('class', 'calm')
-      .attr('d', arc)
-      .attr('fill', '#ddd')
-      .attr('stroke', 'white')
-      .attr('stroke-width', 0.5);
+  const toDeg = rad => (rad * 180) / Math.PI;
+  const normDeg = d => ((d % 360) + 360) % 360;
+
+  // 16-wind compass by default; pass nDirections to match your rose
+  function compassLabel(deg, n = 16) {
+    const names16 = [
+      'N',
+      'NNE',
+      'NE',
+      'ENE',
+      'E',
+      'ESE',
+      'SE',
+      'SSE',
+      'S',
+      'SSW',
+      'SW',
+      'WSW',
+      'W',
+      'WNW',
+      'NW',
+      'NNW',
+    ];
+    const names8 = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+    const names4 = ['N', 'E', 'S', 'W'];
+    const table = n === 16 ? names16 : n === 8 ? names8 : names4;
+    const step = 360 / table.length;
+    const idx = Math.round(normDeg(deg) / step) % table.length;
+    return table[idx];
   }
 
   function makeLegend(
@@ -862,22 +861,85 @@ export function createWindRoseInset(
     return { node: legend.node() };
   }
 
+  g.style('pointer-events', 'all'); // allow events
+  g.raise(); // put the inset above tiles/other layers
+
   const labelsForLegend = speedLabels;
   makeLegend(g, labelsForLegend, { position: 'right', padFromRose: 14 });
+  // --- draw sectors once and keep a handle to the PATHS ---
+  const arcSel = g
+    .append('g')
+    .attr('class', 'sectors')
+    .selectAll('path')
+    .data(rows)
+    .join('path')
+    .attr('d', arc)
+    .attr('fill', d => color(d.label))
+    .attr('stroke', 'white')
+    .attr('stroke-width', 0.5)
+    .style('pointer-events', 'visiblePainted');
 
+  // --- one tooltip div for the page ---
+  const tooltip = d3
+    .select('body')
+    .append('div')
+    .attr('class', 'windrose-tooltip')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,0.85)')
+    .style('color', '#fff')
+    .style('padding', '4px 8px')
+    .style('border-radius', '4px')
+    .style('font-size', '11px')
+    .style('pointer-events', 'none')
+    .style('opacity', 0)
+    .style('z-index', 1000);
+
+  const totalShare = d3.sum(rows, r => r.r1 - r.r0) || 1;
+
+  arcSel
+    .on('pointerenter', function (event, d) {
+      const share = ((d.r1 - d.r0) / totalShare) * 100;
+
+      // Mid-direction of this sector; d3.arc uses 0 rad = North, clockwise
+      const midDeg = normDeg(toDeg((d.theta0 + d.theta1) / 2));
+      const dirTxt = compassLabel(midDeg, nDirections);
+
+      tooltip
+        .style('opacity', 1)
+        .html(
+          `<b>${d.label}</b><br>` +
+            `${share.toFixed(1)}% of total<br>` +
+            `Direction: ${dirTxt} (${midDeg.toFixed(0)}°)`
+        );
+
+      d3.select(this).attr('stroke', '#000').attr('stroke-width', 1.5);
+    })
+    .on('pointermove', function (event) {
+      tooltip.style('left', event.pageX + 10 + 'px').style('top', event.pageY - 18 + 'px');
+    })
+    .on('pointerleave', function () {
+      tooltip.style('opacity', 0);
+      d3.select(this).attr('stroke', 'white').attr('stroke-width', 0.5);
+    });
   function update({ x: nx = x, y: ny = y, radius: nr = radius } = {}) {
+    let resized = false;
     if (nr !== radius) {
       radius = nr;
-      rPx.range([0, radius]);
-      g.selectAll('.rings circle').attr('r', d => rPx(d));
+      rPx.range([0, Math.max(0, radius - innerHole)]);
+      resized = true;
+    }
+    if (resized) {
+      g.selectAll('.rings circle').attr('r', d => innerHole + rPx(d));
       const outerR = innerHole + rPx(rMaxRose);
-      const labelDist = outerR * 1.08;
-
-      g.selectAll('.cardinals text')
-        .attr('x', d => labelDist * Math.cos(d.a))
-        .attr('y', d => labelDist * Math.sin(d.a));
-      g.selectAll('.sectors path, path.calm').attr('d', arc);
-      legend.attr('transform', `translate(${rPx(rMaxRose) + 14},${-radius})`);
+      g.select('.cardinal-cross')
+        .selectAll('line') // if you compute from outerR
+        .attr('x1', d => /* recompute if needed */ d.x1)
+        .attr('y1', d => /* ... */ d.y1)
+        .attr('x2', d => /* ... */ d.x2)
+        .attr('y2', d => /* ... */ d.y2);
+      arcSel.attr('d', arc); // <-- just recompute path geometry
+      g.select('.legend')?.remove();
+      makeLegend(g, speedLabels, { position: 'right', padFromRose: 14 });
     }
     if (nx !== x || ny !== y) {
       x = nx;

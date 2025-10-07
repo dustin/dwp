@@ -53,7 +53,7 @@ const callouts = findCallouts(runMeta, runCsv);
       radius: size,
       innerHole: 40,
       nDirections: 36,
-      speedBreaks: [0,5,10,15,20,25,30],
+      speedBreaks: [0,5,10,15,20,],
       normalize: false,
       title: "Wind (avg)",
       colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
