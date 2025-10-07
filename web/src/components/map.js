@@ -786,6 +786,15 @@ export function createWindRoseInset(
       .attr('class', 'legend')
       .attr('transform', `translate(${lx},${ly})`);
 
+    legend
+      .append('text')
+      .attr('x', 0)
+      .attr('y', 2)
+      .attr('font-size', fontSize)
+      .attr('font-weight', 'bold')
+      .attr('fill', 'currentColor')
+      .text('Wind Speed (knots)');
+
     if (legendKind === 'sequential') {
       const width = 140,
         height = 10;
@@ -843,7 +852,7 @@ export function createWindRoseInset(
       labels.forEach((lab, i) => {
         const g = legend
           .append('g')
-          .attr('transform', `translate(0, ${i * (Math.max(sh, fontSize) + rowGap)})`);
+          .attr('transform', `translate(0, ${16 + i * (Math.max(sh, fontSize) + rowGap)})`);
         g.append('rect')
           .attr('width', sw)
           .attr('height', sh)
@@ -865,9 +874,8 @@ export function createWindRoseInset(
   g.style('pointer-events', 'all'); // allow events
   g.raise(); // put the inset above tiles/other layers
 
-  const labelsForLegend = speedLabels;
+  const labelsForLegend = speedLabels.filter(lab => rows.some(r => r.label === lab));
   makeLegend(g, labelsForLegend, { position: 'right', padFromRose: 14 });
-  // --- draw sectors once and keep a handle to the PATHS ---
   const arcSel = g
     .append('g')
     .attr('class', 'sectors')
@@ -880,7 +888,6 @@ export function createWindRoseInset(
     .attr('stroke-width', 0.5)
     .style('pointer-events', 'visiblePainted');
 
-  // --- one tooltip div for the page ---
   const tooltip = d3
     .select('body')
     .append('div')
@@ -901,7 +908,6 @@ export function createWindRoseInset(
     .on('pointerenter', function (event, d) {
       const share = ((d.r1 - d.r0) / totalShare) * 100;
 
-      // Mid-direction of this sector; d3.arc uses 0 rad = North, clockwise
       const midDeg = normDeg(toDeg((d.theta0 + d.theta1) / 2));
       const dirTxt = compassLabel(midDeg, nDirections);
 
