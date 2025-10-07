@@ -1,10 +1,14 @@
 -- Runs
 
+-- Runs
+
 copy (select
-        *, ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon)) distance_to_land
-      from dws
+        d.*, ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon)) distance_to_land
+      from dws d
+      join dwlist l on d.dwid = l.id
+      where to_timestamp(l.ts) > current_timestamp - interval '14 days'
       )
-      to '/Users/dustin/stuff/dwruns' (partition_by dwid, OVERWRITE_OR_IGNORE true);
+      to '/Users/dustin/stuff/dwruns' (partition_by dwid, OVERWRITE_OR_IGNORE true, PER_THREAD_OUTPUT false);
 
 -- Crash export
 
@@ -53,3 +57,8 @@ ORDER BY
 -- The List
 
 copy (from dwlist_resolved) to '/Users/dustin/prog/downwind.pro/web/src/data/runs.csv';
+
+-- Wind
+
+copy (select * from wind where day > current_timestamp - interval '14 days')
+      to '/Users/dustin/stuff/wind' (partition_by (site, day), OVERWRITE_OR_IGNORE true, PER_THREAD_OUTPUT false);
