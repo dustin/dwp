@@ -43,7 +43,7 @@ const callouts = findCallouts(runMeta, runCsv);
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
   additionalMarks: ({ d3, svg, width, height }) => {
-    const size = 150;
+    const size = 130;
     const margin = 16;
     const centerX = margin + size;
     const centerY = margin + size;

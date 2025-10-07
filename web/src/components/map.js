@@ -773,7 +773,7 @@ export function createWindRoseInset(
   function makeLegend(
     selection,
     labels,
-    { position = 'right', padFromRose = 14, maxWidth = 140, fontSize = 10 } = {}
+    { position = 'right', padFromRose = 14, maxWidth = 140, fontSize = 18 } = {}
   ) {
     selection.select('.legend').remove();
 
@@ -852,6 +852,8 @@ export function createWindRoseInset(
         g.append('text')
           .attr('x', sw + gap)
           .attr('y', sh - 1)
+          .attr('stroke', '#ccc')
+          .attr('fill', 'white')
           .attr('font-size', fontSize)
           .text(lab);
       });
