@@ -16,13 +16,12 @@ toc: true
 </style>
 
 ```js
-import {renderRun, findCallouts} from "./components/map.js";
+import {renderRun, findCallouts, createWindRoseInset} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
-import {fetchMeta, fetchRun} from "./components/data.js";
-
+import {fetchMeta, fetchRun, fetchWind, toRelative} from "./components/data.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 
@@ -39,6 +38,8 @@ const runMetaMap = await allRunsP;
 
 const runMeta1 = runMetaMap[id1];
 const runMeta2 = runMetaMap[id2];
+
+const windFetches = [id1, id2].map(i => fetchWind(runMetaMap[i]).then(toRelative));
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
@@ -71,9 +72,43 @@ const colorizers = [
 ];
 
 const callouts = [[runMeta1, runCsv1], [runMeta2, runCsv2]].flatMap(([m,c]) => findCallouts(m, c));
+const [wind1, wind2] = await windFetches;
+
+function aRose(d3, svg, width, height, wind, idx, colors, off) {
+  const size = 130;
+  const margin = 16;
+  const centerX = margin + size;
+  const centerY = margin + size + off;
+  const inset = createWindRoseInset(d3, svg, wind, {
+    x: centerX,
+    y: centerY,
+    radius: size,
+    innerHole: 40,
+    nDirections: 36,
+    speedBreaks: [0, 15, 20, 25, 30],
+    colors: {
+      type: 'ordinal',
+      scheme: [0, 15, 20, 25, 30].map(colors)
+    },
+    normalize: false,
+    title: "Wind Speed " + idx + " (knots)",
+  });
+  return {
+    updateOnZoom: null,
+    update: () => {
+      inset.update({ x: centerX, y: centerY });
+    }
+  };
+}
 ```
 
-<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], callouts, {colorizers: colorizers}))}</div>
+<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], callouts, {
+  colorizers: colorizers,
+  additionalMarks: ({ d3, svg, width, height }) => {
+    aRose(d3, svg, width, height, wind1, 1, colorizers[0], 0);
+    aRose(d3, svg, width, height, wind2, 2, colorizers[1], 300)
+  }
+}))}</div>
 
 ## At a Glance
 
@@ -217,6 +252,55 @@ resize(width => Plot.plot({
         }))
     ]
 }))
+}</div>
+
+## Wind
+
+<div class="card">${
+  wind1 && wind2 && wind1.length > 0 && wind2.length > 0
+    ? resize((width) => {
+        const ymax = Math.max(
+          d3.max(wind1, d => Math.max(d.wavg, d.wgust)),
+          d3.max(wind2, d => Math.max(d.wavg, d.wgust))
+        ) * 1.1;
+        const makeWindMarks = (wind, idx, label) => {
+          const base = colorizers[idx](d3.mean(wind)); // 0 ~ green, 1 ~ orange
+          return [
+            Plot.lineY(wind, { x: "t", y: "wgust", curve: "basis", stroke: base, strokeWidth: 1.5, opacity: 0.3 }),
+            Plot.lineY(wind, { x: "t", y: "wlull", curve: "basis", stroke: base, strokeWidth: 1.5, opacity: 0.3 }),
+            Plot.lineY(wind, { x: "t", y: "wavg", curve: "basis", stroke: base, strokeWidth: 2.5 }),
+            Plot.vector(wind, {
+              x: "t",
+              y: "wavg",
+              length: 30,
+              rotate: d => d.wdir + 180,
+              anchor: "middle",
+              stroke: base,
+              strokeWidth: 2,
+              opacity: 0.9
+            }),
+            // tooltip
+            Plot.tip(wind, Plot.pointer({
+              x: "t",
+              y: "wavg",
+              fontSize: 14,
+              title: d => `${label} • ${fmt.time(d.ts)}\n${d.wavg.toFixed(1)} kn (avg), ${d.wgust.toFixed(1)} kn (gust) @ ${Math.round(d.wdir)}°`
+            }))
+          ];
+        };
+        return Plot.plot({
+          title: "Wind",
+          width,
+          color: { legend: false },
+          y: { domain: [0, ymax], label: "knots" },
+          x: { tickFormat: d => fmt.seconds(d / 1000) },
+          marks: [
+            ...makeWindMarks(wind1, 0, "wind1"),
+            ...makeWindMarks(wind2, 1, "wind2"),
+          ]
+        });
+      })
+    : html`<p>No wind data found for this run.</p>`
 }</div>
 
 ## Splits

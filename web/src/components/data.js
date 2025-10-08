@@ -103,3 +103,10 @@ export async function fetchWind(meta) {
       return lastBefore ? [lastBefore, ...inRange] : inRange;
     });
 }
+
+export function toRelative(series, tsKey = 'ts', outKey = 't') {
+  if (!Array.isArray(series) || series.length === 0) return [];
+  const toScalar = v => (v instanceof Date ? v.getTime() : +v);
+  const t0 = toScalar(series[0][tsKey]);
+  return series.map(d => ({ ...d, [outKey]: toScalar(d[tsKey]) - t0 }));
+}

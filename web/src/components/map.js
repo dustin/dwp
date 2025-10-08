@@ -577,7 +577,7 @@ export function createWindRoseInset(
     speedAccessor = d => d.wavg ?? d.wgust,
     normalize = true,
     colors = { type: 'ordinal', scheme: d3.schemeTableau10 },
-    title = 'Wind rose',
+    title = 'Wind Speed (knots)',
   } = {}
 ) {
   if (!readings || readings.length < 1) {
@@ -793,7 +793,7 @@ export function createWindRoseInset(
       .attr('font-size', fontSize)
       .attr('font-weight', 'bold')
       .attr('fill', 'currentColor')
-      .text('Wind Speed (knots)');
+      .text(title);
 
     if (legendKind === 'sequential') {
       const width = 140,
