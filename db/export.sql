@@ -56,7 +56,34 @@ ORDER BY
 
 -- The List
 
-copy (from dwlist_resolved) to '/Users/dustin/prog/downwind.pro/web/src/data/runs.csv';
+COPY (
+  SELECT
+    dr.*,
+    wind_stats.avg_wavg,
+    wind_stats.max_wavg,
+    wind_stats.avg_wgust,
+    wind_stats.max_wgust
+  FROM dwlist_resolved dr
+  LEFT JOIN (
+    SELECT
+      dr2.id AS dwlist_id,
+      AVG(w.wavg) AS avg_wavg,
+      MAX(w.wavg) AS max_wavg,
+      AVG(w.wgust) AS avg_wgust,
+      MAX(w.wgust) AS max_wgust
+    FROM dwlist_resolved dr2
+    LEFT JOIN wind w ON (
+      w.site = CASE
+        WHEN dr2.region = 'Kihei' THEN 'kihei'
+        WHEN dr2.region = 'Maui North Shore' THEN 'hookipa'
+      END
+      AND w.ts >= to_timestamp(dr2.ts - 30 * 60)
+      AND w.ts <= to_timestamp(dr2.ts + dr2.duration_sec)
+    )
+    WHERE dr2.region IN ('Kihei', 'Maui North Shore')
+    GROUP BY dr2.id
+  ) AS wind_stats ON dr.id = wind_stats.dwlist_id
+) TO '/Users/dustin/prog/downwind.pro/web/src/data/runs.csv'
 
 -- Wind
 
