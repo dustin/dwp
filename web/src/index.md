@@ -416,6 +416,7 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       "duration_sec",
       "duration_on_foil",
       "max_speed_1k",
+      "wind_data",
       "foil"
     ],
     header: {
@@ -428,6 +429,7 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       duration_sec: "Run Duration",
       duration_on_foil: "On Foil",
       max_speed_1k: "Fastest km Pace",
+      wind_data: "Wind (kts)",
       foil: "Foil"
       },
       format: {
@@ -437,6 +439,7 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
         start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0]
+        max_speed_1k: d => fmt.pace(d).split(' ')[0],
+        wind_data: d => `${fmt.nullPoint0(d.avg_avg)}g${fmt.nullPoint0(d.gust_max)}`
       }})
 }</div>

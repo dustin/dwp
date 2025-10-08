@@ -42,6 +42,12 @@ export async function fetchMeta(f) {
           month: toMonth(ts),
           week: toWeek(ts),
           dry: isDry(d),
+          wind_data: {
+            avg_avg: d.avg_wavg,
+            avg_max: d.max_wavg,
+            gust_avg: d.avg_wgust,
+            gust_max: d.max_wgust,
+          },
         };
       })
     );
