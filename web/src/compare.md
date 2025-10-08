@@ -234,7 +234,7 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
 <div class="card">${
 resize(width => Plot.plot({
     title: "Speed",
-    width, x: {tickFormat: d3.timeFormat("%H:%M")},
+    width, x: {tickFormat: fmt.distanceM},
     marks: [
         Plot.lineY(runCsv1, { x: "distance", y: "speed", stroke: "green",
                              opacity: 0.5, strokeWidth: 1 }),
