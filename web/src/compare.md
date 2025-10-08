@@ -256,52 +256,47 @@ resize(width => Plot.plot({
 
 ## Wind
 
+```js
+const windymax = Math.max(
+  d3.max(wind1, d => Math.max(d.wavg, d.wgust)),
+  d3.max(wind2, d => Math.max(d.wavg, d.wgust))
+) * 1.1;
+```
+
+<div class="grid grid-cols-2">
+
 <div class="card">${
   wind1 && wind2 && wind1.length > 0 && wind2.length > 0
     ? resize((width) => {
-        const ymax = Math.max(
-          d3.max(wind1, d => Math.max(d.wavg, d.wgust)),
-          d3.max(wind2, d => Math.max(d.wavg, d.wgust))
-        ) * 1.1;
-        const makeWindMarks = (wind, idx, label) => {
-          const base = colorizers[idx](d3.mean(wind)); // 0 ~ green, 1 ~ orange
-          return [
-            Plot.lineY(wind, { x: "t", y: "wgust", curve: "basis", stroke: base, strokeWidth: 1.5, opacity: 0.3 }),
-            Plot.lineY(wind, { x: "t", y: "wlull", curve: "basis", stroke: base, strokeWidth: 1.5, opacity: 0.3 }),
-            Plot.lineY(wind, { x: "t", y: "wavg", curve: "basis", stroke: base, strokeWidth: 2.5 }),
-            Plot.vector(wind, {
-              x: "t",
-              y: "wavg",
-              length: 30,
-              rotate: d => d.wdir + 180,
-              anchor: "middle",
-              stroke: base,
-              strokeWidth: 2,
-              opacity: 0.9
-            }),
-            // tooltip
-            Plot.tip(wind, Plot.pointer({
-              x: "t",
-              y: "wavg",
-              fontSize: 14,
-              title: d => `${label} • ${fmt.time(d.ts)}\n${d.wavg.toFixed(1)} kn (avg), ${d.wgust.toFixed(1)} kn (gust) @ ${Math.round(d.wdir)}°`
-            }))
-          ];
-        };
         return Plot.plot({
-          title: "Wind",
+          title: `Wind Speed (${fmt.timestamp(runMeta1.ts)})`,
           width,
           color: { legend: false },
-          y: { domain: [0, ymax], label: "knots" },
+          y: { domain: [0, windymax], label: "knots" },
           x: { tickFormat: d => fmt.seconds(d / 1000) },
-          marks: [
-            ...makeWindMarks(wind1, 0, "wind1"),
-            ...makeWindMarks(wind2, 1, "wind2"),
-          ]
+          marks: tl.makeWindMarks(wind1, wind2, 0, "wind1", colorizers),
         });
       })
     : html`<p>No wind data found for this run.</p>`
 }</div>
+
+<div class="card">${
+  wind1 && wind2 && wind1.length > 0 && wind2.length > 0
+    ? resize((width) => {
+        return Plot.plot({
+          title: `Wind Speed (${fmt.timestamp(runMeta2.ts)})`,
+          width,
+          color: { legend: false },
+          y: { domain: [0, windymax], label: "knots" },
+          x: { tickFormat: d => fmt.seconds(d / 1000) },
+          marks: tl.makeWindMarks(wind2, wind1, 1, "wind2", colorizers),
+        });
+      })
+    : html`<p>No wind data found for this run.</p>`
+}</div>
+
+
+</div>
 
 ## Splits
 
