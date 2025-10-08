@@ -166,6 +166,8 @@ export function makeWindMarks(wind, wind2, idx, label, colors) {
   const color = colors[idx](d3.mean(wind));
   const altColor = colors[idx == 0 ? 1 : 0](d3.mean(wind2));
   return [
+    Plot.areaY(wind, { x: 't', y: 'wgust', curve: 'basis', fill: color, fillOpacity: 0.1 }),
+    Plot.areaY(wind, { x: 't', y: 'wlull', curve: 'basis', fill: color, fillOpacity: 0.1 }),
     Plot.lineY(wind, {
       x: 't',
       y: 'wgust',
