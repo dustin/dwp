@@ -1,6 +1,6 @@
 -- Runs
 
--- Runs
+use lake;
 
 copy (select
         d.*, ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon)) distance_to_land
@@ -52,7 +52,7 @@ WHERE
     AND ts > (min_ts + INTERVAL '5' MINUTE)
     AND ts < (max_ts - INTERVAL '5' MINUTE)
 ORDER BY
-    ts) to '/Users/dustin/prog/downwind.pro/web/src/data/crashes.csv'
+    ts) to '/Users/dustin/prog/downwind.pro/web/src/data/crashes.csv';
 
 -- The List
 
@@ -83,7 +83,7 @@ COPY (
     WHERE dr2.region IN ('Kihei', 'Maui North Shore')
     GROUP BY dr2.id
   ) AS wind_stats ON dr.id = wind_stats.dwlist_id
-) TO '/Users/dustin/prog/downwind.pro/web/src/data/runs.csv'
+) TO '/Users/dustin/prog/downwind.pro/web/src/data/runs.csv';
 
 -- Wind
 
