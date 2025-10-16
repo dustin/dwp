@@ -106,7 +106,9 @@ export async function fetchWind(meta) {
         }
       }
 
-      return lastBefore ? [lastBefore, ...inRange] : inRange;
+      const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
+      rv[0].ts = meta.ts;
+      return rv;
     });
 }
 
