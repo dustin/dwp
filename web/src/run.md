@@ -85,6 +85,13 @@ const callouts = findCallouts(runMeta, runCsv);
     <span class="big">${fmt.seconds(runMeta.duration_sec)}</span>
   </div>
   <div class="card">
+    <h2>Foiling Time</h2>
+    <span class="big">
+        ${fmt.seconds(runMeta.duration_on_foil)}
+        (${(runMeta.pct_time_on_foil * 100).toFixed(0)}%)
+    </span>
+  </div>
+  <div class="card">
     <h2>Distance Traveled</h2>
     <span class="big">${runMeta.distance_km.toFixed(2)} km</span>
   </div>
@@ -92,6 +99,10 @@ const callouts = findCallouts(runMeta, runCsv);
     <h2>Distance Traveled on Foil</h2>
     <span class="big">${(runMeta.distance_on_foil / 1000).toFixed(2)} km
         (${(runMeta.pct_dist_on_foil * 100).toFixed(0)}%)</span>
+  </div>
+  <div class="card">
+    <h2>First Paddle Up</h2>
+    <span class="big">${(runMeta.distance_to_first_paddle_up).toFixed(0)} meters</span>
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
@@ -108,11 +119,24 @@ const callouts = findCallouts(runMeta, runCsv);
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
-    <span class="big">${(runMeta.longest_segment_distance / 1000).toFixed(2)} km</span>
+    <span class="big">
+        ${(runMeta.longest_segment_distance / 1000).toFixed(2)} km
+        / ${fmt.timeDiff(runMeta.longest_segment_start, runMeta.longest_segment_end)}
+    </span>
   </div>
   <div class="card">
     <h2>Furthest From Land</h2>
     <span class="big">${(runMeta.max_distance / 1000).toFixed(2)} km</span>
+  </div>
+  <div class="card">
+    <h2>Foiling Heart Rate</h2>
+    <span class="big">${fmt.hr(runMeta.avg_foiling_hr || 0)} (min: ${fmt.hr(runMeta.min_foiling_hr || 0)})</span>
+  </div>
+  <div class="card">
+      <h2>Conditions</h2>
+      <span class="big">
+          ${fmt.wind(runMeta.avg_wavg, runMeta.avg_wgust)} knots
+      </span>
   </div>
 </div>
 
@@ -171,6 +195,25 @@ const segments = tl.computeSegments(runCsv);
         ]
     }))
 }</div>
+
+<div class="grid grid-cols-4">
+    <div class="card">
+      <h2>Average Speed</h2>
+      <span class="big">${fmt.speed(runMeta.avg_speed_kmh)}</span>
+    </div>
+    <div class="card">
+      <h2>Average Foiling Speed</h2>
+      <span class="big">${fmt.speed(d3.mean(runCsv.map(d => d.speed).filter(d => d > 11)))}</span>
+    </div>
+    <div class="card">
+      <h2>Max Speed</h2>
+      <span class="big">${fmt.speed(runMeta.max_speed_kmh)}</span>
+    </div>
+    <div class="card">
+      <h2>Best 1k Pace</h2>
+      <span class="big">${fmt.pace(runMeta.max_speed_1k)}</span>
+    </div>
+</div>
 
 ## Wind
 
@@ -256,6 +299,25 @@ const splits = tl.computeSplits(runCsv);
     })
     )
 }</div>
+
+<div class="grid grid-cols-4">
+    <div class="card">
+      <h2>Min Foiling Heart Rate</h2>
+      <span class="big">${fmt.hr(runMeta.min_foiling_hr || 0)}</span>
+    </div>
+    <div class="card">
+      <h2>Average Foiling Heart Rate</h2>
+      <span class="big">${fmt.hr(runMeta.avg_foiling_hr || 0)}</span>
+    </div>
+    <div class="card">
+      <h2>Overall Average Heart Rate</h2>
+      <span class="big">${fmt.hr(d3.mean(runCsv.map(d => d.hr)))}</span>
+    </div>
+    <div class="card">
+      <h2>Max Heart Rate</h2>
+      <span class="big">${fmt.hr(d3.max(runCsv.map(d => d.hr)))}</span>
+    </div>
+</div>
 
 ## Compare
 

@@ -64,3 +64,10 @@ export function distanceM(m) {
 export function nullPoint0(x) {
   return x ? x.toFixed(0) : '?';
 }
+
+export function wind(a, g) {
+  if (!a || !g) {
+    return 'unknown';
+  }
+  return a.toFixed(0) + 'g' + g.toFixed(0);
+}
