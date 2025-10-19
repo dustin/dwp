@@ -6,6 +6,7 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,6 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Cache node modules
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -24,16 +26,50 @@ jobs:
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
 
+      # Cache dependencies
+      - name: Cache node modules
+        uses: actions/cache@v3
+        id: npm-cache
+        with:
+          path: ./web/node_modules
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      # Cache build output
+      - name: Cache build output
+        uses: actions/cache@v3
+        id: build-cache
+        with:
+          path: ./web/dist
+          key: build-${{ runner.os }}-${{ hashFiles('web/src/**/*', 'web/public/**/*') }}
+
+      # Cache Playwright binaries
+      - name: Cache Playwright
+        uses: actions/cache@v3
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+
+      # Install dependencies if cache miss
       - name: Install dependencies
+        if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # Build site if cache miss
       - name: Build site
+        if: steps.build-cache.outputs.cache-hit != 'true'
         run: npm run build
 
+      # Install Playwright if cache miss
       - name: Install Playwright
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: |
           npm install playwright
           npx playwright install chromium --with-deps
+
+      # Always install Playwright CLI (lightweight)
+      - name: Install Playwright CLI
+        run: npm install playwright
 
       - name: Start server in background
         run: |
