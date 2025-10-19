@@ -89,6 +89,9 @@ export async function fetchWind(meta) {
     }))
     .catch(err => [])
     .then(allRows => {
+      if (allRows.length == 0) {
+        return [];
+      }
       const start = meta.ts;
       const end = new Date(start.getTime() + meta.duration_sec * 1000);
 
