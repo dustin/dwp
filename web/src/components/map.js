@@ -43,6 +43,8 @@ export function renderCrashes(width, data) {
 
   let hexagons = crashG.selectAll('.hexagon');
 
+  svg.call(zoom).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
+
   const fc = {
     type: 'FeatureCollection',
     features: data.map(d => ({
@@ -230,6 +232,8 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
   if (typeof opts.additionalMarks === 'function') {
     additional = opts.additionalMarks({ d3, svg, width, height });
   }
+
+  svg.call(zoom).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
 
   const fc = {
     type: 'FeatureCollection',
