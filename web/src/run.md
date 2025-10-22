@@ -102,7 +102,7 @@ const callouts = findCallouts(runMeta, runCsv);
   </div>
   <div class="card">
     <h2>First Paddle Up</h2>
-    <span class="big">${(runMeta.distance_to_first_paddle_up).toFixed(0)} meters</span>
+    <span class="big">${runMeta.distance_to_first_paddle_up ? (runMeta.distance_to_first_paddle_up).toFixed(0) + " meters" : "LOL"}</span>
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
