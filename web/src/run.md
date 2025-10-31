@@ -223,6 +223,7 @@ wind && wind.length > 0
       title: "Wind",
       color: { legend: true },
       width,
+      x: {tickFormat: d3.timeFormat("%H:%M")},
       y: { domain: [0, d3.max(wind, d => Math.max(d.wavg, d.wgust)) * 1.1] },
       marks: [
         Plot.areaY(wind, { x: "ts", y: "wgust", curve: 'basis', fill: "#dbeafe", fillOpacity: 0.3 }),
