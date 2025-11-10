@@ -1,11 +1,12 @@
-{ pkgs ? import <nixpkgs> { } }:
+{ pkgs ? import <nixpkgs> { }
+, pkgs-unstable ? pkgs
+}:
 with pkgs;
 mkShell {
   buildInputs = [
-    duckdb
+    pkgs-unstable.duckdb
     rclone
   ];
-
   shellHook = ''
     export PATH="$PWD/node_modules/.bin/:$PATH"
   '';
