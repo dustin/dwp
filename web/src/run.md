@@ -346,6 +346,8 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
       "duration_sec",
       "duration_on_foil",
       "max_speed_1k",
+      "wind_data",
+      "paddle_up_count",
       "foil"
     ],
     header: {
@@ -358,6 +360,8 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
       duration_sec: "Run Duration",
       duration_on_foil: "On Foil",
       max_speed_1k: "Fastest km Pace",
+      "wind_data": "Wind (kts)",
+      "paddle_up_count": "Paddle Ups",
       foil: "Foil"
       },
       format: {
@@ -367,6 +371,7 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
         start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0]
+        max_speed_1k: d => fmt.pace(d).split(' ')[0],
+        wind_data: d => `${fmt.wind(d.avg_avg, d.gust_max, d.avg_dir)}`
       }})
 }</div>
