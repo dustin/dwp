@@ -47,6 +47,7 @@ export async function fetchMeta(f) {
             avg_max: d.max_wavg,
             gust_avg: d.avg_wgust,
             gust_max: d.max_wgust,
+            avg_dir: d.avg_wdir,
           },
         };
       })
