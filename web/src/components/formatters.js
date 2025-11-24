@@ -65,9 +65,9 @@ export function nullPoint0(x) {
   return x ? x.toFixed(0) : '?';
 }
 
-export function wind(a, g) {
+export function wind(a, g, d) {
   if (!a || !g) {
     return 'unknown';
   }
-  return a.toFixed(0) + 'g' + g.toFixed(0);
+  return a.toFixed(0) + 'g' + g.toFixed(0) + ' knots' + (d ? ' @' + d + '°' : '');
 }

@@ -135,7 +135,7 @@ const callouts = findCallouts(runMeta, runCsv);
   <div class="card">
       <h2>Conditions</h2>
       <span class="big">
-          ${fmt.wind(runMeta.avg_wavg, runMeta.avg_wgust)} knots
+          ${fmt.wind(runMeta.avg_wavg, runMeta.avg_wgust, runMeta.avg_wdir)}
       </span>
   </div>
 </div>

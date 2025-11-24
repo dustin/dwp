@@ -442,6 +442,6 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
         duration_sec: fmt.seconds,
         start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
         max_speed_1k: d => fmt.pace(d).split(' ')[0],
-        wind_data: d => `${fmt.nullPoint0(d.avg_avg)}g${fmt.nullPoint0(d.gust_max)}@${d.avg_dir || '?'}`
+        wind_data: d => `${fmt.wind(d.avg_avg, d.gust_max, d.avg_dir)}`
       }})
 }</div>
