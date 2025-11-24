@@ -62,7 +62,8 @@ COPY (
     wind_stats.avg_wavg,
     wind_stats.max_wavg,
     wind_stats.avg_wgust,
-    wind_stats.max_wgust
+    wind_stats.max_wgust,
+    wind_stats.avg_wdir
   FROM dwlist_resolved dr
   LEFT JOIN (
     SELECT
@@ -70,7 +71,18 @@ COPY (
       AVG(w.wavg) AS avg_wavg,
       MAX(w.wavg) AS max_wavg,
       AVG(w.wgust) AS avg_wgust,
-      MAX(w.wgust) AS max_wgust
+      MAX(w.wgust) AS max_wgust,
+      -- Circular mean for wind direction
+      CASE
+      WHEN AVG(sin(radians(w.wdir))) = 0 AND AVG(cos(radians(w.wdir))) = 0 THEN NULL
+      ELSE MOD(
+          CAST(degrees(atan2(
+          AVG(sin(radians(w.wdir))),
+          AVG(cos(radians(w.wdir)))
+          )) + 360 AS INTEGER),
+          360
+      )
+      END AS avg_wdir
     FROM dwlist_resolved dr2
     LEFT JOIN wind w ON (
       w.site = CASE
