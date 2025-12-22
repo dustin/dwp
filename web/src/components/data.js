@@ -16,7 +16,7 @@ function toMonth(ts) {
   return month;
 }
 
-export const dryLimit = 0.98;
+export const dryLimit = 0.97;
 
 function isDry(d) {
   return d.longest_segment_distance / d.distance_on_foil > dryLimit;
