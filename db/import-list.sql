@@ -1,5 +1,9 @@
 -- Update the list from a Waterspeed export
 
+begin;
+
+call lake.set_commit_message('dustin', 'dw list merging');
+
 merge into dwlist as l
   using (
     select
@@ -25,4 +29,6 @@ merge into dwlist as l
   ) VALUES ( uuidv7(), ups.filename, 'Downwind', ups.ts, ups.date, ups.time,
       ups.max_speed_kmh, ups.avg_speed_kmh, ups.duration_sec, ups.distance_km,
       ups.feeling, ups.equip_1, ups.equip_2, ups.equip_3
-  )
+  );
+
+  commit;

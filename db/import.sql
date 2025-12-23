@@ -2,6 +2,8 @@
 
 begin;
 
+call lake.set_commit_message('dustin', 'import DW runs');
+
 create temp table allthethings as
   select
     regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') AS filename,
