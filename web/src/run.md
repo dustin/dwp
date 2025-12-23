@@ -276,6 +276,8 @@ const splits = tl.computeSplits(runCsv);
   resize((width) => Plot.plot({
       title: "Pace",
       color: { legend: true },
+      clip: true,
+      y: { domain: [1, Math.min(5, Math.max(...splits.map(d => d.avg_pace)))]},
       width, x: { interval: 1, label: "km" },
       marks: [
         Plot.barY(splits,{x:"split",y:"avg_pace", fill: "green", opacity: 0.2,

@@ -313,10 +313,10 @@ const maxSplitY = Math.max(
   ...splits2.map(d => d.max_speed)
 );
 
-const maxPaceY = Math.max(
+const maxPaceY = Math.min(5, Math.max(
   ...splits1.map(d => d.avg_pace),
   ...splits2.map(d => d.avg_pace)
-);
+));
 
 const maxHRY = Math.max(
   ...splits1.map(d => d.max_hr),
@@ -363,7 +363,8 @@ resize((width) => Plot.plot({
 resize((width) => Plot.plot({
       title: `Pace (${fmt.timestamp(runMeta1.ts)})`,
       color: { legend: true },
-      width, x: { interval: 1, label: "km" }, y: { domain: [0, maxPaceY] },
+      clip: true,
+      width, x: { interval: 1, label: "km" }, y: { domain: [1, maxPaceY] },
       marks: [
       Plot.line(splits1, {x: "split", y: "avg_pace", stroke: "green", strokeWidth: 2}),
       Plot.line(splits2, {x: "split", y: "avg_pace", stroke: "orange", strokeWidth: 2, strokeDasharray: "4,4"}),
@@ -377,7 +378,8 @@ resize((width) => Plot.plot({
   resize((width) => Plot.plot({
       title: `Pace (${fmt.timestamp(runMeta2.ts)})`,
       color: { legend: true },
-      width, x: { interval: 1, label: "km" }, y: { domain: [0, maxPaceY] },
+      clip: true,
+      width, x: { interval: 1, label: "km" }, y: { domain: [1, maxPaceY] },
       marks: [
         Plot.barY(splits2,{x:"split",y:"avg_pace", fill: "orange", opacity: 0.2,
           title: (d => `${fmt.pace(d.avg_speed.toFixed(2))}\n${d.avg_speed.toFixed(2)} kph`) }),
