@@ -23,6 +23,9 @@ function isDry(d) {
 }
 
 export async function fetchMeta(f) {
+  var normalizeFoil = function (fn) {
+    return fn.replace(/\s+\d+\.\d+ cm2/, '');
+  };
   return f()
     .csv({ typed: true })
     .then(data =>
@@ -35,7 +38,7 @@ export async function fetchMeta(f) {
           time: ts,
           longest_segment_start: new Date(d.longest_segment_start),
           longest_segment_end: new Date(d.longest_segment_end),
-          foil: d.equip_2 || 'unknown foil',
+          foil: normalizeFoil(d.equip_2 || 'unknown foil'),
           pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
           pct_time_on_foil: d.duration_on_foil / d.duration_sec,
           linkedDate: { date: ts, id: d.id },
