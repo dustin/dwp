@@ -125,3 +125,50 @@ export function toRelative(series, tsKey = 'ts', outKey = 't') {
   const t0 = toScalar(series[0][tsKey]);
   return series.map(d => ({ ...d, [outKey]: toScalar(d[tsKey]) - t0 }));
 }
+
+export async function fetchSwell(meta) {
+  let site = undefined;
+  if (meta.region == 'Maui North Shore') {
+    site = 'pauwela';
+  } else {
+    return [];
+  }
+  const day = fmt.date(meta.ts);
+
+  const runDataURL = `https://${DATAHOST}/swell/site%3D${site}/day%3D${day}/data.csv`;
+  return d3
+    .csv(runDataURL, row => ({
+      ...row,
+      ts: new Date(row.ts),
+      wave_height: +row.wave_height * 3.2808399, // meters -> feet
+      wave_period: +row.wave_period,
+      wave_direction: +row.wave_direction,
+      water_temp: +row.water_temp,
+    }))
+    .catch(err => [])
+    .then(allRows => {
+      if (allRows.length == 0) {
+        return [];
+      }
+      const start = meta.ts;
+      const end = new Date(start.getTime() + meta.duration_sec * 1000);
+
+      let lastBefore = null;
+      const inRange = [];
+
+      for (let i = 0; i < allRows.length; i++) {
+        const row = allRows[i];
+        if (row.ts < start) {
+          lastBefore = row;
+        } else if (row.ts <= end) {
+          inRange.push(row);
+        } else {
+          break;
+        }
+      }
+
+      const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
+      rv[0].ts = meta.ts;
+      return rv;
+    });
+}

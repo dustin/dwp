@@ -10,7 +10,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
-import {fetchMeta, fetchRun, fetchWind} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -36,7 +36,7 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const [runCsv, wind] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta)]);
+const [runCsv, wind, swell] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta), fetchSwell(runMeta)]);
 
 const callouts = findCallouts(runMeta, runCsv);
 ```
@@ -215,7 +215,7 @@ const segments = tl.computeSegments(runCsv);
     </div>
 </div>
 
-## Wind
+## Conditions
 
 <div class="card">${
 wind && wind.length > 0
@@ -249,6 +249,35 @@ wind && wind.length > 0
       ]
     }))
   : html`<p>No wind data found for this run.</p>`
+}</div>
+
+<div class="card">${
+swell && swell.length > 0
+  ? resize((width) => Plot.plot({
+      title: "Swell",
+      color: { legend: true },
+      width,
+      x: {tickFormat: d3.timeFormat("%H:%M")},
+      y: { domain: [0, d3.max(swell, d => d.wave_height * 1.1)] },
+      marks: [
+        Plot.areaY(swell, { x: "ts", y: "wave_height", curve: 'basis', fill: "#3b82f6", fillOpacity: 0.5 }),
+        Plot.lineY(swell, { x: "ts", y: "wave_height", curve: 'basis', stroke: "#2563eb", strokeWidth: 2 }),
+        Plot.vector(swell, { x: "ts", y: "wave_height",
+          length: 30,
+          rotate: d => d.wave_direction + 180,
+          anchor: "middle",
+          stroke: "#dc2626",
+          strokeWidth: 4
+        }),
+        Plot.tip(swell, Plot.pointer({
+          x: "ts",
+          y: "wave_height",
+          fontSize: 15,
+          title: d => `${fmt.time(d.ts)}: ${d.wave_height.toFixed(1)} feet @ ${d.wave_period.toFixed(0)} secs - ${Math.round(d.wave_direction)}°`
+        }))
+      ]
+    }))
+  : html`<p>No swell data found for this run.</p>`
 }</div>
 
 ## Splits

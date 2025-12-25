@@ -217,3 +217,56 @@ export function makeWindMarks(wind, wind2, idx, label, colors) {
     ),
   ];
 }
+
+export function makeSwellMarks(swell, swell2, idx, label, colors) {
+  const color = colors[idx](d3.mean(swell));
+  const altColor = colors[idx == 0 ? 1 : 0](d3.mean(swell2));
+  return [
+    Plot.areaY(swell, { x: 't', y: 'wave_height', curve: 'basis', fill: color, fillOpacity: 0.1 }),
+    Plot.lineY(swell, {
+      x: 't',
+      y: 'wave_height',
+      curve: 'basis',
+      stroke: color,
+      strokeWidth: 1.5,
+      opacity: 0.3,
+    }),
+    Plot.lineY(swell, {
+      x: 't',
+      y: 'wave_height',
+      curve: 'basis',
+      stroke: color,
+      strokeWidth: 2.5,
+    }),
+    Plot.lineY(swell2, {
+      x: 't',
+      y: 'wave_height',
+      curve: 'basis',
+      stroke: altColor,
+      strokeWidth: 2.5,
+      strokeDasharray: '4,4',
+      opacity: 0.4,
+    }),
+    Plot.vector(swell, {
+      x: 't',
+      y: 'wave_height',
+      length: 30,
+      rotate: d => d.wave_direction + 180,
+      anchor: 'middle',
+      stroke: color,
+      strokeWidth: 2,
+      opacity: 0.9,
+    }),
+    // tooltip
+    Plot.tip(
+      swell,
+      Plot.pointer({
+        x: 't',
+        y: 'wave_height',
+        fontSize: 14,
+        title: d =>
+          `${label} • ${fmt.time(d.ts)}\n${d.wave_height.toFixed(1)} feet @ ${d.wave_period} secs - ${Math.round(d.wave_direction)}°`,
+      })
+    ),
+  ];
+}

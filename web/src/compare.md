@@ -21,7 +21,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
-import {fetchMeta, fetchRun, fetchWind, toRelative} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 
@@ -40,6 +40,7 @@ const runMeta1 = runMetaMap[id1];
 const runMeta2 = runMetaMap[id2];
 
 const windFetches = [id1, id2].map(i => fetchWind(runMetaMap[i]).then(toRelative));
+const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(toRelative));
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
@@ -73,6 +74,7 @@ const colorizers = [
 
 const callouts = [[runMeta1, runCsv1], [runMeta2, runCsv2]].flatMap(([m,c]) => findCallouts(m, c));
 const [wind1, wind2] = await windFetches;
+const [swell1, swell2] = await swellFetches;
 
 function aRose(d3, svg, width, height, wind, idx, colors, off) {
   const size = 130;
@@ -254,12 +256,17 @@ resize(width => Plot.plot({
 }))
 }</div>
 
-## Wind
+## Conditions
 
 ```js
 const windymax = Math.max(
   d3.max(wind1, d => Math.max(d.wavg, d.wgust)),
   d3.max(wind2, d => Math.max(d.wavg, d.wgust))
+) * 1.1;
+
+const swellymax = Math.max(
+  d3.max(swell1, d => d.wave_height),
+  d3.max(swell2, d => d.wave_height)
 ) * 1.1;
 ```
 
@@ -295,6 +302,39 @@ const windymax = Math.max(
     : html`<p>No wind data found for this run.</p>`
 }</div>
 
+</div>
+
+<div class="grid grid-cols-2">
+
+<div class="card">${
+  swell1 && swell2 && swell1.length > 0 && swell2.length > 0
+    ? resize((width) => {
+        return Plot.plot({
+          title: `Swell Height (${fmt.timestamp(runMeta1.ts)})`,
+          width,
+          color: { legend: false },
+          y: { domain: [0, swellymax], label: "feet" },
+          x: { tickFormat: d => fmt.seconds(d / 1000) },
+          marks: tl.makeSwellMarks(swell1, swell2, 0, "swell1", colorizers),
+        });
+      })
+    : html`<p>No swell data found for this run.</p>`
+}</div>
+
+<div class="card">${
+  swell1 && swell2 && swell1.length > 0 && swell2.length > 0
+    ? resize((width) => {
+        return Plot.plot({
+          title: `Swell Height (${fmt.timestamp(runMeta2.ts)})`,
+          width,
+          color: { legend: false },
+          y: { domain: [0, swellymax], label: "feet" },
+          x: { tickFormat: d => fmt.seconds(d / 1000) },
+          marks: tl.makeSwellMarks(swell2, swell1, 1, "swell2", colorizers),
+        });
+      })
+    : html`<p>No swell data found for this run.</p>`
+}</div>
 
 </div>
 
