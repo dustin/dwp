@@ -28,7 +28,7 @@ jobs:
 
       # Cache dependencies
       - name: Cache node modules
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         id: npm-cache
         with:
           path: ./web/node_modules
@@ -36,7 +36,7 @@ jobs:
 
       # Cache build output
       - name: Cache build output
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         id: build-cache
         with:
           path: ./web/dist
@@ -44,7 +44,7 @@ jobs:
 
       # Cache Playwright binaries
       - name: Cache Playwright
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
