@@ -6,11 +6,9 @@ fn printHeader(w: *std.io.Writer) !void {
     try w.print("ts,wave_height,wave_period,wave_direction,water_temp\n", .{});
 }
 
-fn rowsToCsv(zone: zeit.TimeZone, w: *std.io.Writer, rows: *std.ArrayList(importers.Row)) !void {
+fn rowsToCsv(w: *std.io.Writer, rows: *std.ArrayList(importers.Row)) !void {
     for (rows.items) |r| {
-        const tl = r.timestamp.in(&zone);
-        const dt = tl.time();
-        try dt.strftime(w, "%Y-%m-%d %H:%M:%S,");
+        try r.timestamp.time().strftime(w, "%Y-%m-%d %H:%M:%S,");
         try w.print("{},{},{},{}\n", .{ r.waveHeight.val, r.wavePeriod.val, r.waveDirection.val, r.waterTemp.val });
     }
 }
@@ -24,11 +22,6 @@ pub fn main() !void {
 
     var args = std.process.argsAlloc(allocator) catch return;
     defer std.process.argsFree(allocator, args);
-
-    var env = try std.process.getEnvMap(allocator);
-    defer env.deinit();
-    const local = try zeit.local(allocator, &env);
-    defer local.deinit();
 
     var writer_buf: [128]u8 = undefined;
     var stdout = std.fs.File.stdout().writer(&writer_buf);
@@ -44,7 +37,7 @@ pub fn main() !void {
         var reader_buf: [128]u8 = undefined;
         var stdin = std.fs.File.stdin().reader(&reader_buf);
         try importers.parse_buoy(allocator, &stdin.interface, &rows);
-        try rowsToCsv(local, w, &rows);
+        try rowsToCsv(w, &rows);
     }
 
     // Otherwise process all the args for multiple files
@@ -55,6 +48,6 @@ pub fn main() !void {
             allocator.destroy(rows);
         }
 
-        try rowsToCsv(local, w, rows);
+        try rowsToCsv(w, rows);
     }
 }

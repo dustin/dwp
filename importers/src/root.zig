@@ -75,7 +75,7 @@ fn mk_timestamp(alloc: std.mem.Allocator, fl: std.StringHashMap(u8), row: []cons
     const HH = row[fl.get("hh").?];
     const MM = row[fl.get("mm").?];
 
-    const iso = try std.fmt.allocPrint(alloc, "{s}-{s}-{s}T{s}:{s}:00-10:00", .{ yy, mm, dd, HH, MM });
+    const iso = try std.fmt.allocPrint(alloc, "{s}-{s}-{s}T{s}:{s}:00Z", .{ yy, mm, dd, HH, MM });
     defer alloc.free(iso);
 
     return try zeit.instant(.{ .source = .{ .iso8601 = iso } });
