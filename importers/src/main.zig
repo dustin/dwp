@@ -8,7 +8,7 @@ fn printHeader(w: *std.io.Writer) !void {
 
 fn rowsToCsv(w: *std.io.Writer, rows: *std.ArrayList(importers.Row)) !void {
     for (rows.items) |r| {
-        try r.timestamp.time().strftime(w, "%Y-%m-%d %H:%M:%S,");
+        try r.timestamp.time().strftime(w, "%Y-%m-%d %H:%M:%SZ,");
         try w.print("{},{},{},{}\n", .{ r.waveHeight.val, r.wavePeriod.val, r.waveDirection.val, r.waterTemp.val });
     }
 }
