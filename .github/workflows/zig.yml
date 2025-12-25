@@ -26,8 +26,6 @@ jobs:
             build_flags: '-Dtarget=x86_64-linux'
           - os: macos-latest
             build_flags: ''
-          - os: windows-latest
-            build_flags: ''
           - os: ubuntu-24.04-arm
             build_flags: '-Dtarget=aarch64-linux'
 
@@ -37,7 +35,6 @@ jobs:
         with:
           timezoneLinux: 'Pacific/Honolulu'
           timezoneMacos: 'Pacific/Honolulu'
-          timezoneWindows: 'Hawaiian Standard Time'
 
       - name: Check out repository
         uses: actions/checkout@v6
