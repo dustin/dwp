@@ -70,6 +70,32 @@ export async function fetchRun(runId) {
   );
 }
 
+function inRange(meta, allRows) {
+  if (allRows.length == 0) {
+    return [];
+  }
+  const start = meta.ts;
+  const end = new Date(start.getTime() + meta.duration_sec * 1000);
+
+  let lastBefore = null;
+  const inRange = [];
+
+  for (let i = 0; i < allRows.length; i++) {
+    const row = allRows[i];
+    if (row.ts < start) {
+      lastBefore = row;
+    } else if (row.ts <= end) {
+      inRange.push(row);
+    } else {
+      break;
+    }
+  }
+
+  const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
+  rv[0].ts = meta.ts;
+  return rv;
+}
+
 export async function fetchWind(meta) {
   let site = undefined;
   if (meta.region == 'Kihei') {
@@ -92,31 +118,7 @@ export async function fetchWind(meta) {
       wlull: +row.wlull,
     }))
     .catch(err => [])
-    .then(allRows => {
-      if (allRows.length == 0) {
-        return [];
-      }
-      const start = meta.ts;
-      const end = new Date(start.getTime() + meta.duration_sec * 1000);
-
-      let lastBefore = null;
-      const inRange = [];
-
-      for (let i = 0; i < allRows.length; i++) {
-        const row = allRows[i];
-        if (row.ts < start) {
-          lastBefore = row;
-        } else if (row.ts <= end) {
-          inRange.push(row);
-        } else {
-          break;
-        }
-      }
-
-      const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
-      rv[0].ts = meta.ts;
-      return rv;
-    });
+    .then(allRows => inRange(meta, allRows));
 }
 
 export function toRelative(series, tsKey = 'ts', outKey = 't') {
@@ -146,29 +148,5 @@ export async function fetchSwell(meta) {
       water_temp: +row.water_temp,
     }))
     .catch(err => [])
-    .then(allRows => {
-      if (allRows.length == 0) {
-        return [];
-      }
-      const start = meta.ts;
-      const end = new Date(start.getTime() + meta.duration_sec * 1000);
-
-      let lastBefore = null;
-      const inRange = [];
-
-      for (let i = 0; i < allRows.length; i++) {
-        const row = allRows[i];
-        if (row.ts < start) {
-          lastBefore = row;
-        } else if (row.ts <= end) {
-          inRange.push(row);
-        } else {
-          break;
-        }
-      }
-
-      const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
-      rv[0].ts = meta.ts;
-      return rv;
-    });
+    .then(allRows => inRange(meta, allRows));
 }
