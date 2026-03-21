@@ -28,7 +28,8 @@ find "$dwruns" -type f -name 'data_0.csv' -print0 |
 
 rclone sync $dwruns s3:db.downwind.pro/runs/  --progress \
     --header-upload "Content-Encoding: gzip" \
-    --header-upload "Content-Type: text/csv; charset=utf-8"
+    --header-upload "Content-Type: text/csv; charset=utf-8" \
+    --max-age 14d
 
 find "$wind" -type f -name 'data_0.csv' -print0 |
     while IFS= read -r -d '' file; do
@@ -37,7 +38,8 @@ find "$wind" -type f -name 'data_0.csv' -print0 |
 
 rclone sync $wind s3:db.downwind.pro/wind/  --progress \
     --header-upload "Content-Encoding: gzip" \
-    --header-upload "Content-Type: text/csv; charset=utf-8"
+    --header-upload "Content-Type: text/csv; charset=utf-8" \
+    --max-age 14d
 
 find "$swell" -type f -name 'data_0.csv' -print0 |
     while IFS= read -r -d '' file; do
@@ -46,4 +48,5 @@ find "$swell" -type f -name 'data_0.csv' -print0 |
 
 rclone sync $swell s3:db.downwind.pro/swell/  --progress \
     --header-upload "Content-Encoding: gzip" \
-    --header-upload "Content-Type: text/csv; charset=utf-8"
+    --header-upload "Content-Type: text/csv; charset=utf-8" \
+    --max-age 14d
