@@ -332,6 +332,47 @@ const splits = tl.computeSplits(runCsv);
     )
 }</div>
 
+<div class="card">${
+resize((width) => {
+  const maxSpeed = d3.max([...onFoil, ...offFoil], d => d.speed);
+  const maxHr = d3.max(runCsv, d => d.hr);
+  const y2 = d3.scaleLinear([0, maxHr], [0, maxSpeed]);
+  return Plot.plot({
+    title: "Heart Rate vs. Speed",
+    color: { legend: true },
+    width,
+    x: {tickFormat: d3.timeFormat("%H:%M"), interval: 1},
+    y: { label: "Speed (knots)" },
+    marks: [
+      Plot.areaY(onFoil,  { x: "ts", y: "speed", fill: "#030" }),
+      Plot.lineY(onFoil,  { x: "ts", y: "speed", stroke: "#050" }),
+      Plot.areaY(offFoil, { x: "ts", y: "speed", fill: "#500" }),
+      Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
+      Plot.axisY({ anchor: "left", label: "Speed (kph)" }),
+      Plot.axisY(y2.ticks(), {
+        anchor: "right",
+        label: "Heart Rate (bpm)",
+        y: y2,
+        tickFormat: y2.tickFormat(),
+        // color: "red"
+      }),
+      Plot.line(runCsv, Plot.mapY((D) => D.map(y2), {
+        x: "ts",
+        y: d => d.hr,
+        stroke: "red",
+        strokeWidth: 2
+      })),
+      Plot.tip(runCsv, Plot.pointer({
+        x: "ts",
+        y: d => y2(d.hr),
+        fontSize: 15,
+        title: d => `${fmt.time(d.ts)}\n${fmt.hr(d.hr)}\n${fmt.speed(d.speed)}`
+      }))
+    ]
+  });
+})
+}</div>
+
 <div class="grid grid-cols-4">
     <div class="card">
       <h2>Min Foiling Heart Rate</h2>
