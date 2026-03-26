@@ -41,6 +41,11 @@ export function minutes(x) {
   return m + ':' + (s < 10 ? '0' : '') + s;
 }
 
+export function mmYYYY(ts) {
+  const d = new Date(ts);
+  return d.toLocaleString('default', { month: 'short', year: 'numeric' });
+}
+
 export function pace(kph) {
   return minutes(60 / kph) + ' min/km';
 }
