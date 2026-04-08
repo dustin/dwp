@@ -55,7 +55,7 @@ jobs:
         run: zig build test --summary all
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: import-${{ runner.os }}-${{ matrix.zig_version }}-${{ runner.arch }}
           path: |
