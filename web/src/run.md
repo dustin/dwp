@@ -159,9 +159,13 @@ const segments = tl.computeSegments(runCsv);
         title: "Speed",
         width, x: {tickFormat: d3.timeFormat("%H:%M")},
         marks: [
-            Plot.areaY(onFoil, { x: "ts", y: "speed", fill: "#030" }),
+            Plot.areaY(runCsv, {
+              x: "ts",
+              y: "speed",
+              fill: d => d.speed > 11 ? "#030" : "#500",
+              stroke: "none"
+            }),
             Plot.lineY(onFoil, { x: "ts", y: "speed", stroke: "#050" }),
-            Plot.areaY(offFoil, { x: "ts", y: "speed", fill: "#500" }),
             Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
             Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#808",
                                  opacity: 0.5, strokeWidth: 5 }),
@@ -344,11 +348,15 @@ resize((width) => {
     x: {tickFormat: d3.timeFormat("%H:%M"), interval: 1},
     y: { label: "Speed (knots)" },
     marks: [
-      Plot.areaY(onFoil,  { x: "ts", y: "speed", fill: "#030" }),
-      Plot.lineY(onFoil,  { x: "ts", y: "speed", stroke: "#050" }),
-      Plot.areaY(offFoil, { x: "ts", y: "speed", fill: "#500" }),
-      Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
-      Plot.axisY({ anchor: "left", label: "Speed (kph)" }),
+    Plot.areaY(runCsv, {
+      x: "ts",
+      y: "speed",
+      fill: d => d.speed > 11 ? "#030" : "#500",
+      stroke: "none"
+    }),
+    Plot.lineY(onFoil,  { x: "ts", y: "speed", stroke: "#050" }),
+    Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
+    Plot.axisY({ anchor: "left", label: "Speed (kph)" }),
       Plot.axisY(y2.ticks(), {
         anchor: "right",
         label: "Heart Rate (bpm)",
