@@ -230,7 +230,7 @@ function regress(x, y, src) {
     ))
     }</div>
     <div class="card">${
-      resize(tl.tl(runCsv, "Distance to First Paddle Up", {y: { label: "meters" }},
+      resize(tl.tl(runCsv, "Distance to First Paddle Up", {y: { label: "meters" , domain: [0, 2000] }, clip: true },
         "ts", "distance_to_first_paddle_up",
         {stroke: beachColorNamed("start_beach")},
         {fill: beachColorNamed("start_beach"),
