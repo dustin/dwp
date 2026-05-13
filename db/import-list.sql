@@ -1,5 +1,7 @@
 -- Update the list from a Waterspeed export
 
+use lake;
+
 begin;
 
 call lake.set_commit_message('dustin', 'dw list merging');

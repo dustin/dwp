@@ -1,5 +1,7 @@
 -- Import all the things v3
 
+use lake;
+
 begin;
 
 call lake.set_commit_message('dustin', 'import DW runs');
