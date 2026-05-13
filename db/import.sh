@@ -4,8 +4,9 @@
 lake=$HOME/stuff/duck
 srcdir='/Users/dustin/Library/Mobile Documents/iCloud~TNT~Waterspeed/Documents/runs'
 
-# mv "$srcdir/"Waterspeed-List* $HOME/Downloads/list.csv
+mv "$srcdir/"Waterspeed-List* $HOME/Downloads/list.csv
 
+h=`pwd`
 importlist=`pwd`/import-list.sql
 import=`pwd`/import.sql
 cd $lake
@@ -14,4 +15,5 @@ duckdb --init init.sql < $importlist
 echo "Individual import"
 duckdb --init init.sql < $import
 
-cd /Users/dustin/prog/downwind.pro/db
+cd "$h"
+./export.sh
