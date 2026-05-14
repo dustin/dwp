@@ -1,5 +1,3 @@
--- Import all the things v3
-
 use lake;
 
 begin;
@@ -93,30 +91,48 @@ SET
       AND d2.distance BETWEEN tgt.distance - 1000 AND tgt.distance
   );
 
-merge into dwlist as l
-  using (
-    select filename, min(tsi) as ts, min(date) as date, min(time) as time,
-    max(speed) as max_speed_kmh, avg(speed) as avg_speed_kmh,
-    max(tsi) - min(tsi) as duration_sec, (max(distance) / 1000) as distance_km
-    from allthethings
-    group by filename
+-- Match incoming runs to existing dwlist entries by timestamp proximity
+CREATE TEMP TABLE run_matches AS
+SELECT a.filename, l.id AS dwid
+FROM (
+    SELECT filename, min(tsi) AS first_tsi
+    FROM allthethings
+    GROUP BY filename
+) a
+JOIN dwlist l
+  ON abs(l.ts - a.first_tsi) < 300
+ AND l.sport = 'Downwind';
+
+-- Fail if any incoming run has no match
+SELECT
+    CASE WHEN count(*) > 0
+    THEN error('Unmatched runs (no dwlist entry within threshold): ' || string_agg(filename, ', '))
+    END
+FROM (
+    SELECT DISTINCT filename FROM allthethings
+    EXCEPT
+    SELECT filename FROM run_matches
+);
+
+update dwlist as l
+  set ts = ups.ts,
+      date = ups.date, time = ups.time,
+      max_speed_kmh = ups.max_speed_kmh, avg_speed_kmh = ups.avg_speed_kmh,
+      duration_sec = ups.duration_sec, distance_km = ups.distance_km
+  from (
+    select m.dwid,
+      min(tsi) as ts, min(date) as date, min(time) as time,
+      max(speed) as max_speed_kmh, avg(speed) as avg_speed_kmh,
+      max(tsi) - min(tsi) as duration_sec, (max(distance) / 1000) as distance_km
+    from allthethings a
+    join run_matches m using (filename)
+    group by m.dwid
   ) as ups
-  on (l.filename = ups.filename)
-  when matched then update
-    set ts = ups.ts,
-        date = ups.date, time = ups.time,
-        max_speed_kmh = ups.max_speed_kmh, avg_speed_kmh = ups.avg_speed_kmh,
-        duration_sec = ups.duration_sec, distance_km = ups.distance_km
-  when not matched then insert (
-    id, filename, sport, ts, date, time,
-      max_speed_kmh, avg_speed_kmh, duration_sec, distance_km
-  ) VALUES ( uuidv7(), ups.filename, 'Downwind', ups.ts, ups.date, ups.time,
-      ups.max_speed_kmh, ups.avg_speed_kmh, ups.duration_sec, ups.distance_km
-    );
+  where l.id = ups.dwid;
 
 insert into dws (dwid, tsi, ts, date, time, lat, lon, speed, heading, hr, distance, calories, nearest_land_lat, nearest_land_lon, avg_speed_15s, avg_speed_1k)
   select
-     l.id,
+     m.dwid,
      tsi,
      make_timestamp((tsi * 1000000)::BIGINT) as ts,
      c.date, c.time,
@@ -130,7 +146,7 @@ insert into dws (dwid, tsi, ts, date, time, lat, lon, speed, heading, hr, distan
      nearest_lat, nearest_lon,
      avg_speed_15s, avg_speed_1k
   from allthethings as c
-  join dwlist l on (c.filename = l.filename)
+  join run_matches m using (filename)
   left join lateral (
     select ST_X(ST_PointN(ST_ShortestLine(ST_Point(c.lat, c.lon), pp.geom), 2)) as nearest_lat,
            ST_Y(ST_PointN(ST_ShortestLine(ST_Point(c.lat, c.lon), pp.geom), 2)) as nearest_lon
@@ -142,6 +158,7 @@ insert into dws (dwid, tsi, ts, date, time, lat, lon, speed, heading, hr, distan
       ) as nn on true;
 
 drop table allthethings;
+drop table run_matches;
 
 -- Name the start and end beaches
 
@@ -191,7 +208,7 @@ FROM   (select dwid, min(HR) as min_hr, avg(HR) as avg_hr
           group by dwid
         ) x
   where l.id = x.dwid
-    and (min_foiling_hr is null or min_foiling_hr is null);
+    and (min_foiling_hr is null or avg_foiling_hr is null);
 
 -- update max distance
 
@@ -372,7 +389,7 @@ FROM (
                    start_dist,
                    duration_sec
             FROM fast_islands
-            WHERE duration_sec >= 60          -- “more than a minute”
+            WHERE duration_sec >= 60          -- "more than a minute"
         ) islands
     ) numbered
     WHERE rn = 1

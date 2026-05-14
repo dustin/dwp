@@ -16,4 +16,4 @@ echo "Individual import"
 duckdb --init init.sql < $import
 
 cd "$h"
-./export.sh
+./upload.sh
