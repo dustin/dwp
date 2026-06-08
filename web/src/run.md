@@ -301,9 +301,9 @@ Inputs.table(splits, {
   header: {
     split: "Split",
     avg_pace: "Avg Pace",
-    min_speed: "Min Pace",
-    avg_speed: "Avg Pace",
-    max_speed: "Max Pace",
+    min_speed: "Min Speed",
+    avg_speed: "Avg Speed",
+    max_speed: "Max Speed",
     max_hr: "Max HR",
     min_hr: "Min HR",
     avg_hr: "Avg HR"
@@ -311,9 +311,9 @@ Inputs.table(splits, {
   format: {
     split: d => `${d} km`,
     avg_pace: fmt.minutes,
-    min_speed: fmt.paceNoUnit,
-    avg_speed: fmt.paceNoUnit,
-    max_speed: fmt.paceNoUnit,
+    min_speed: fmt.speed,
+    avg_speed: fmt.speed,
+    max_speed: fmt.speed,
     max_hr: fmt.hr,
     min_hr: fmt.hr,
     avg_hr: fmt.hr
