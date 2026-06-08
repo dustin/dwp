@@ -183,64 +183,44 @@ export function findCallouts(runMeta, data) {
 
 // Find the fastest 1000m segment in the data
 export function findFastest1kSegment(data) {
-  if (!data || (Array.isArray(data) && data.length === 0)) return null;
-
-  // Get all readings with their dataset index
-  const allReadings = [];
-  const datasets = Array.isArray(data) ? data : [data];
-
-  for (let di = 0; di < datasets.length; di++) {
-    const dataset = datasets[di];
-    if (!dataset || dataset.length === 0) continue;
-
-    for (let i = 0; i < dataset.length; i++) {
-      allReadings.push({
-        datasetIndex: di,
-        indexInDataset: i,
-        data: dataset[i],
-      });
-    }
-  }
-
-  if (allReadings.length < 2) return null;
+  if (data.length < 2) return null;
 
   let bestSegment = null;
   let bestDuration = Infinity;
 
   // For each reading, find the segment that covers approximately 1000m
-  for (let i = 0; i < allReadings.length; i++) {
-    const startReading = allReadings[i];
+  for (let i = 0; i < data.length; i++) {
+    const startReading = data[i];
     let cumulativeDistance = 0;
 
     // Get starting distance if available
     let startDistance = 0;
-    if (startReading.data.distance !== undefined) {
-      startDistance = startReading.data.distance;
+    if (startReading.distance !== undefined) {
+      startDistance = startReading.distance;
     }
 
     // Look forward to find the 1000m segment
-    for (let j = i + 1; j < allReadings.length; j++) {
-      const currentReading = allReadings[j];
+    for (let j = i + 1; j < data.length; j++) {
+      const currentReading = data[j];
 
-      cumulativeDistance = currentReading.data.distance - startDistance;
+      cumulativeDistance = currentReading.distance - startDistance;
 
       // Check if we've reached approximately 1000m
       if (cumulativeDistance >= 1000) {
-        const duration = currentReading.data.tsi - startReading.data.tsi;
+        const duration = currentReading.tsi - startReading.tsi;
 
         // If this is faster than our current best, update
         if (duration < bestDuration) {
           bestDuration = duration;
           bestSegment = {
-            dataset: startReading.datasetIndex,
-            start: startReading.indexInDataset,
-            end: currentReading.indexInDataset,
+            start: i,
+            end: j,
             duration: duration,
             distance: cumulativeDistance,
-            startTime: startReading.data.ts,
-            endTime: currentReading.data.ts,
-            startReading: startReading.data,
-            endReading: currentReading.data,
+            startTime: startReading.ts,
+            endTime: currentReading.ts,
+            startReading: startReading,
+            endReading: currentReading,
           };
         }
 
@@ -258,17 +238,7 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
   const height = width * 0.5;
   const svg = d3.create('svg').attr('viewBox', [0, 0, width, height]);
 
-  // Find the fastest 1000m segment and mark which data points are in it
-  const fastestSegment = findFastest1kSegment(datas);
-
-  // Create a set of {dataset, index} pairs that are in the fastest segment
-  const fastSegmentPoints = new Set();
-  if (fastestSegment) {
-    const datasetIndex = fastestSegment.dataset;
-    for (let i = fastestSegment.start; i <= fastestSegment.end; i++) {
-      fastSegmentPoints.add(`${datasetIndex},${i}`);
-    }
-  }
+  const fastestSegments = datas.map(findFastest1kSegment);
 
   // Add defs for arrowhead marker
   const defs = svg.append('defs');
@@ -382,21 +352,9 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
             .append('circle')
             .attr('class', 'run-dot')
             .attr('fill', d => {
-              // Check if this point is part of the fastest segment using our fastSegmentPoints Set
-              const key = `${d.dataset},${d.indexInDataset}`;
-
-              if (fastestSegment && fastSegmentPoints.has(key)) {
-                return '#ff00ff'; // Highlight color for fastest segment
-              }
               return colorizers[d.dataset](d.data.speed);
             })
             .attr('stroke', d => {
-              // Check if this point is part of the fastest segment using our fastSegmentPoints Set
-              const key = `${d.dataset},${d.indexInDataset}`;
-
-              if (fastestSegment && fastSegmentPoints.has(key)) {
-                return '#ff00ff'; // Highlight color for fastest segment
-              }
               return colorizers[d.dataset](d.data.speed);
             })
             .attr('stroke-width', 0)
@@ -409,8 +367,9 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
       .attr('cy', d => d.y)
       .attr('r', dotRadius);
 
-    // Add line for fastest 1000m segment if found
-    if (fastestSegment) {
+    // Add lines for fastest 1000m segment if found
+    for (let i = 0; i < fastestSegments.length; i++) {
+      const fastestSegment = fastestSegments[i];
       const startProjected = projection([
         +fastestSegment.startReading.lon,
         +fastestSegment.startReading.lat,
@@ -432,10 +391,6 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
         endProjected[1] >= -100 &&
         endProjected[1] <= height + 100
       ) {
-        // Remove any existing segment line
-        runG.selectAll('.fastest-segment-line').remove();
-
-        // Add new segment line
         runG
           .append('line')
           .attr('class', 'fastest-segment-line')
@@ -560,7 +515,8 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
     const allCallouts = [...callouts];
 
     // Add callouts for the fastest 1000m segment if found
-    if (fastestSegment) {
+    for (let i = 0; i < fastestSegments.length; i++) {
+      const fastestSegment = fastestSegments[i];
       allCallouts.push({
         lat: fastestSegment.startReading.lat,
         lon: fastestSegment.startReading.lon,
