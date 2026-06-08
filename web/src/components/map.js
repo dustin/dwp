@@ -222,20 +222,7 @@ export function findFastest1kSegment(data) {
     for (let j = i + 1; j < allReadings.length; j++) {
       const currentReading = allReadings[j];
 
-      // Calculate cumulative distance from start using provided distance field
-      let currentDistance = currentReading.data.distance;
-      if (currentDistance !== undefined) {
-        cumulativeDistance = currentDistance - startDistance;
-      } else {
-        // Fallback to calculate distance using lat/lon
-        const dist = calculateDistance(
-          allReadings[j - 1].data.lat,
-          allReadings[j - 1].data.lon,
-          currentReading.data.lat,
-          currentReading.data.lon
-        );
-        cumulativeDistance += dist;
-      }
+      cumulativeDistance = currentReading.data.distance - startDistance;
 
       // Check if we've reached approximately 1000m
       if (cumulativeDistance >= 1000) {
@@ -264,22 +251,6 @@ export function findFastest1kSegment(data) {
   }
 
   return bestSegment;
-}
-
-// Calculate distance between two lat/lon points in meters using Haversine formula
-function calculateDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = (lat1 * Math.PI) / 180;
-  const φ2 = (lat2 * Math.PI) / 180;
-  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
-  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-  return R * c;
 }
 
 export function renderRun(width, datas, callouts = [], opts = {}) {
