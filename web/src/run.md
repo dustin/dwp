@@ -286,6 +286,40 @@ swell && swell.length > 0
 const splits = tl.computeSplits(runCsv);
 ```
 
+```js
+Inputs.table(splits, {
+  columns: [
+    "split",
+    "avg_pace",
+    "min_speed",
+    "avg_speed",
+    "max_speed",
+    "max_hr",
+    "min_hr",
+    "avg_hr"
+  ],
+  header: {
+    split: "Split",
+    avg_pace: "Avg Pace",
+    min_speed: "Min Pace",
+    avg_speed: "Avg Pace",
+    max_speed: "Max Pace",
+    max_hr: "Max HR",
+    min_hr: "Min HR",
+    avg_hr: "Avg HR"
+  },
+  format: {
+    split: d => `${d} km`,
+    avg_pace: fmt.minutes,
+    min_speed: fmt.paceNoUnit,
+    avg_speed: fmt.paceNoUnit,
+    max_speed: fmt.paceNoUnit,
+    max_hr: fmt.hr,
+    min_hr: fmt.hr,
+    avg_hr: fmt.hr
+  }})
+```
+
 <div class="card">${
   resize((width) => Plot.plot({
       title: "Speed",
@@ -391,40 +425,6 @@ resize((width) => {
       <span class="big">${fmt.hr(d3.max(runCsv.map(d => d.hr)))}</span>
     </div>
 </div>
-
-```js
-Inputs.table(splits, {
-  columns: [
-    "split",
-    "avg_pace",
-    "min_speed",
-    "avg_speed",
-    "max_speed",
-    "max_hr",
-    "min_hr",
-    "avg_hr"
-  ],
-  header: {
-    split: "Split",
-    avg_pace: "Avg Pace",
-    min_speed: "Min Pace",
-    avg_speed: "Avg Pace",
-    max_speed: "Max Pace",
-    max_hr: "Max HR",
-    min_hr: "Min HR",
-    avg_hr: "Avg HR"
-  },
-  format: {
-    split: d => `${d} km`,
-    avg_pace: fmt.minutes,
-    min_speed: fmt.paceNoUnit,
-    avg_speed: fmt.paceNoUnit,
-    max_speed: fmt.paceNoUnit,
-    max_hr: fmt.hr,
-    min_hr: fmt.hr,
-    avg_hr: fmt.hr
-  }})
-```
 
 ## Compare
 
