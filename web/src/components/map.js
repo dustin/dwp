@@ -181,10 +181,123 @@ export function findCallouts(runMeta, data) {
   return callouts;
 }
 
+// Find the fastest 1000m segment in the data
+export function findFastest1kSegment(data) {
+  if (!data || (Array.isArray(data) && data.length === 0)) return null;
+
+  // Get all readings with their dataset index
+  const allReadings = [];
+  const datasets = Array.isArray(data) ? data : [data];
+
+  for (let di = 0; di < datasets.length; di++) {
+    const dataset = datasets[di];
+    if (!dataset || dataset.length === 0) continue;
+
+    for (let i = 0; i < dataset.length; i++) {
+      allReadings.push({
+        datasetIndex: di,
+        indexInDataset: i,
+        data: dataset[i],
+      });
+    }
+  }
+
+  if (allReadings.length < 2) return null;
+
+  let bestSegment = null;
+  let bestDuration = Infinity;
+
+  // For each reading, find the segment that covers approximately 1000m
+  for (let i = 0; i < allReadings.length; i++) {
+    const startReading = allReadings[i];
+    let cumulativeDistance = 0;
+
+    // Get starting distance if available
+    let startDistance = 0;
+    if (startReading.data.distance !== undefined) {
+      startDistance = startReading.data.distance;
+    }
+
+    // Look forward to find the 1000m segment
+    for (let j = i + 1; j < allReadings.length; j++) {
+      const currentReading = allReadings[j];
+
+      // Calculate cumulative distance from start using provided distance field
+      let currentDistance = currentReading.data.distance;
+      if (currentDistance !== undefined) {
+        cumulativeDistance = currentDistance - startDistance;
+      } else {
+        // Fallback to calculate distance using lat/lon
+        const dist = calculateDistance(
+          allReadings[j - 1].data.lat,
+          allReadings[j - 1].data.lon,
+          currentReading.data.lat,
+          currentReading.data.lon
+        );
+        cumulativeDistance += dist;
+      }
+
+      // Check if we've reached approximately 1000m
+      if (cumulativeDistance >= 1000) {
+        const duration = currentReading.data.tsi - startReading.data.tsi;
+
+        // If this is faster than our current best, update
+        if (duration < bestDuration) {
+          bestDuration = duration;
+          bestSegment = {
+            dataset: startReading.datasetIndex,
+            start: startReading.indexInDataset,
+            end: currentReading.indexInDataset,
+            duration: duration,
+            distance: cumulativeDistance,
+            startTime: startReading.data.ts,
+            endTime: currentReading.data.ts,
+            startReading: startReading.data,
+            endReading: currentReading.data,
+          };
+        }
+
+        // Break inner loop as we've found our segment for this start point
+        break;
+      }
+    }
+  }
+
+  return bestSegment;
+}
+
+// Calculate distance between two lat/lon points in meters using Haversine formula
+function calculateDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (lat1 * Math.PI) / 180;
+  const φ2 = (lat2 * Math.PI) / 180;
+  const Δφ = ((lat2 - lat1) * Math.PI) / 180;
+  const Δλ = ((lon2 - lon1) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c;
+}
+
 export function renderRun(width, datas, callouts = [], opts = {}) {
   const colorizers = opts.colorizers || datas.map(data => speedColor(data.map(d => d.speed)));
   const height = width * 0.5;
   const svg = d3.create('svg').attr('viewBox', [0, 0, width, height]);
+
+  // Find the fastest 1000m segment and mark which data points are in it
+  const fastestSegment = findFastest1kSegment(datas);
+
+  // Create a set of {dataset, index} pairs that are in the fastest segment
+  const fastSegmentPoints = new Set();
+  if (fastestSegment) {
+    const datasetIndex = fastestSegment.dataset;
+    for (let i = fastestSegment.start; i <= fastestSegment.end; i++) {
+      fastSegmentPoints.add(`${datasetIndex},${i}`);
+    }
+  }
 
   // Add defs for arrowhead marker
   const defs = svg.append('defs');
@@ -277,13 +390,13 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
     const zoomLevel = Math.log2(transform.k);
     const dotRadius = Math.max(2, 4 * Math.pow(0.9, zoomLevel - 12));
 
-    // Project data points
+    // Project data points with original index info
     const projectedData = datas
       .flatMap((data, i) =>
-        data.map(d => {
+        data.map((d, idx) => {
           const p = projection([+d.lon, +d.lat]);
           return p && p[0] >= -50 && p[0] <= width + 50 && p[1] >= -50 && p[1] <= height + 50
-            ? { x: p[0], y: p[1], data: d, dataset: i }
+            ? { x: p[0], y: p[1], data: d, dataset: i, indexInDataset: idx }
             : null;
         })
       )
@@ -297,8 +410,24 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
           enter
             .append('circle')
             .attr('class', 'run-dot')
-            .attr('fill', d => colorizers[d.dataset](d.data.speed))
-            .attr('stroke', d => colorizers[d.dataset](d.data.speed))
+            .attr('fill', d => {
+              // Check if this point is part of the fastest segment using our fastSegmentPoints Set
+              const key = `${d.dataset},${d.indexInDataset}`;
+
+              if (fastestSegment && fastSegmentPoints.has(key)) {
+                return '#ff00ff'; // Highlight color for fastest segment
+              }
+              return colorizers[d.dataset](d.data.speed);
+            })
+            .attr('stroke', d => {
+              // Check if this point is part of the fastest segment using our fastSegmentPoints Set
+              const key = `${d.dataset},${d.indexInDataset}`;
+
+              if (fastestSegment && fastSegmentPoints.has(key)) {
+                return '#ff00ff'; // Highlight color for fastest segment
+              }
+              return colorizers[d.dataset](d.data.speed);
+            })
             .attr('stroke-width', 0)
             .attr('opacity', 0.9)
             .style('cursor', 'pointer'),
@@ -308,6 +437,48 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
       .attr('cx', d => d.x)
       .attr('cy', d => d.y)
       .attr('r', dotRadius);
+
+    // Add line for fastest 1000m segment if found
+    if (fastestSegment) {
+      const startProjected = projection([
+        +fastestSegment.startReading.lon,
+        +fastestSegment.startReading.lat,
+      ]);
+      const endProjected = projection([
+        +fastestSegment.endReading.lon,
+        +fastestSegment.endReading.lat,
+      ]);
+
+      if (
+        startProjected &&
+        endProjected &&
+        startProjected[0] >= -100 &&
+        startProjected[0] <= width + 100 &&
+        startProjected[1] >= -100 &&
+        startProjected[1] <= height + 100 &&
+        endProjected[0] >= -100 &&
+        endProjected[0] <= width + 100 &&
+        endProjected[1] >= -100 &&
+        endProjected[1] <= height + 100
+      ) {
+        // Remove any existing segment line
+        runG.selectAll('.fastest-segment-line').remove();
+
+        // Add new segment line
+        runG
+          .append('line')
+          .attr('class', 'fastest-segment-line')
+          .attr('x1', startProjected[0])
+          .attr('y1', startProjected[1])
+          .attr('x2', endProjected[0])
+          .attr('y2', endProjected[1])
+          .attr('stroke', '#ff00ff')
+          .attr('stroke-width', 3)
+          .attr('stroke-dasharray', '5,5')
+          .attr('opacity', 0.8)
+          .style('pointer-events', 'none');
+      }
+    }
 
     // Add hover behavior to data points
     dots
@@ -415,7 +586,26 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
       });
 
     // Project and render callouts
-    const projectedCallouts = callouts
+    const allCallouts = [...callouts];
+
+    // Add callouts for the fastest 1000m segment if found
+    if (fastestSegment) {
+      allCallouts.push({
+        lat: fastestSegment.startReading.lat,
+        lon: fastestSegment.startReading.lon,
+        icon: '🏁',
+        text: `Start of fastest 1km segment (${fmt.time(fastestSegment.startTime)})`,
+      });
+
+      allCallouts.push({
+        lat: fastestSegment.endReading.lat,
+        lon: fastestSegment.endReading.lon,
+        icon: '⏱️',
+        text: `End of fastest 1km segment (${fmt.time(fastestSegment.endTime)})`,
+      });
+    }
+
+    const projectedCallouts = allCallouts
       .map(callout => {
         const p = projection([+callout.lon, +callout.lat]);
         if (!p || p[0] < -100 || p[0] > width + 100 || p[1] < -100 || p[1] > height + 100) {
