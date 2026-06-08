@@ -46,8 +46,12 @@ export function mmYYYY(ts) {
   return d.toLocaleString('default', { month: 'short', year: 'numeric' });
 }
 
+export function paceNoUnit(kph) {
+  return minutes(60 / kph);
+}
+
 export function pace(kph) {
-  return minutes(60 / kph) + ' min/km';
+  return paceNoUnit(kph) + ' min/km';
 }
 
 export function speed(kph) {

@@ -392,6 +392,40 @@ resize((width) => {
     </div>
 </div>
 
+```js
+Inputs.table(splits, {
+  columns: [
+    "split",
+    "avg_pace",
+    "min_speed",
+    "avg_speed",
+    "max_speed",
+    "max_hr",
+    "min_hr",
+    "avg_hr"
+  ],
+  header: {
+    split: "Split",
+    avg_pace: "Avg Pace",
+    min_speed: "Min Pace",
+    avg_speed: "Avg Pace",
+    max_speed: "Max Pace",
+    max_hr: "Max HR",
+    min_hr: "Min HR",
+    avg_hr: "Avg HR"
+  },
+  format: {
+    split: d => `${d} km`,
+    avg_pace: fmt.minutes,
+    min_speed: fmt.paceNoUnit,
+    avg_speed: fmt.paceNoUnit,
+    max_speed: fmt.paceNoUnit,
+    max_hr: fmt.hr,
+    min_hr: fmt.hr,
+    avg_hr: fmt.hr
+  }})
+```
+
 ## Compare
 
 You can compare this run to a similar run by clicking on one of the timestamps below.
@@ -443,7 +477,7 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
         duration_on_foil: fmt.seconds,
         duration_sec: fmt.seconds,
         start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0],
+        max_speed_1k: fmt.paceNoUnit,
         wind_data: d => `${fmt.wind(d.avg_avg, d.gust_max, d.avg_dir)}`
       }})
 }</div>
