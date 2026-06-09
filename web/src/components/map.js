@@ -367,6 +367,8 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
       .attr('cy', d => d.y)
       .attr('r', dotRadius);
 
+    runG.selectAll('.fastest-segment-line').remove();
+
     // Add lines for fastest 1000m segment if found
     for (let i = 0; i < fastestSegments.length; i++) {
       const fastestSegment = fastestSegments[i];
