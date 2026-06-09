@@ -3,12 +3,11 @@ import * as d3h from 'npm:d3-hexbin';
 import * as d3t from 'npm:d3-tile';
 import * as fmt from './formatters.js';
 import _ from 'npm:lodash';
+import { MAPBOX_TOKEN } from '../token.js';
 
 function tileURL(x, y, z) {
-  const token =
-    'pk.eyJ1IjoiZGxzc3B5IiwiYSI6ImNtZzF2OG42cTBza3kybnB5YXd5OHY1ZWwifQ.EeGGfhgFW9amBAeiOEvbYw';
-  // return `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? "@2x" : ""}?access_token=${token}`
-  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? '@2x' : ''}?access_token=${token}`;
+  // return `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? "@2x" : ""}?access_token=${MAPBOX_TOKEN}`
+  return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? '@2x' : ''}?access_token=${MAPBOX_TOKEN}`;
 }
 
 export function renderCrashes(width, data) {
@@ -387,7 +386,6 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
 
     runG.selectAll('.fastest-segment-line').remove();
 
-    // Add lines for fastest 1000m segment if found
     fastestSegments.forEach(fastestSegment => {
       const startProjected = projection([
         +fastestSegment.startReading.lon,

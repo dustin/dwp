@@ -1,9 +1,9 @@
 name: Build and Deploy
 on:
   push:
-    branches: [ "main" ]
+    branches: ['main']
   pull_request:
-    branches: [ "main" ]
+    branches: ['main']
   workflow_dispatch:
 permissions:
   contents: read
@@ -49,4 +49,4 @@ jobs:
           echo "${{ secrets.deploykey }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H aws1.sallings.org >> ~/.ssh/known_hosts
-          rsync -avz --delete ./dist/ deploy@aws1.sallings.org:/var/www/dwp/
+          rsync -avz --delete --exclude token.js ./dist/ deploy@aws1.sallings.org:/var/www/dwp/
