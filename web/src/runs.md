@@ -5,7 +5,7 @@ toc: true
 ---
 
 ```js
-import {renderRun, findCallouts} from "./components/map.js";
+import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -74,13 +74,14 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
 
 ```js
 const csvs = await Promise.all(selection.map(d => fetchRun(d.id).then(r => ({id: d.id, ps: r}))));
-const callouts = csvs.flatMap(o => findCallouts(runMetaMap[o.id], o.ps));
+const callouts = csvs.flatMap(o => findCallouts(runMetaMap[o.id], o.ps, [findFastest1kSegment(o.ps)]));
 ```
 
 <div class="card">${resize(width => {
     if (csvs.length == 0) {
         return;
     }
-    return renderRun(width, csvs.map(c => c.ps), callouts, {});
+    const fastestSegments = csvs.map(o => findFastest1kSegment(o.ps));
+    return renderRun(width, csvs.map(c => c.ps), callouts, { fastestSegments: fastestSegments });
     })
 }</div>

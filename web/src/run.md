@@ -38,7 +38,9 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 ```js
 const [runCsv, wind, swell] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta), fetchSwell(runMeta)]);
 
-const callouts = findCallouts(runMeta, runCsv);
+const fastestSegment = findFastest1kSegment(runCsv);
+
+const callouts = findCallouts(runMeta, runCsv, [fastestSegment]);
 ```
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
@@ -74,7 +76,8 @@ const callouts = findCallouts(runMeta, runCsv);
         inset.update({ x: centerX, y: centerY });
       }
     };
-  }
+  },
+  fastestSegments: [fastestSegment],
 }))}</div>
 
 ## At a Glance

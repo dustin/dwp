@@ -16,7 +16,7 @@ toc: true
 </style>
 
 ```js
-import {renderRun, findCallouts, createWindRoseInset} from "./components/map.js";
+import {renderRun, findCallouts, findFastest1kSegment, createWindRoseInset} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -72,7 +72,12 @@ const colorizers = [
   createColorizer(runCsv2, 30), // Orange hue
 ];
 
-const callouts = [[runMeta1, runCsv1], [runMeta2, runCsv2]].flatMap(([m,c]) => findCallouts(m, c));
+const fastestSegments = [
+  findFastest1kSegment(runCsv1),
+  findFastest1kSegment(runCsv2),
+];
+
+const callouts = [[runMeta1, runCsv1], [runMeta2, runCsv2]].flatMap(([m,c,i]) => findCallouts(m, c, fastestSegments));
 const [wind1, wind2] = await windFetches;
 const [swell1, swell2] = await swellFetches;
 
@@ -109,7 +114,8 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
   additionalMarks: ({ d3, svg, width, height }) => {
     aRose(d3, svg, width, height, wind1, 1, colorizers[0], 0);
     aRose(d3, svg, width, height, wind2, 2, colorizers[1], 300)
-  }
+  },
+  fastestSegments: fastestSegments,
 }))}</div>
 
 ## At a Glance

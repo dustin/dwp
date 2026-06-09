@@ -148,7 +148,7 @@ function speedColor(speeds) {
   };
 }
 
-export function findCallouts(runMeta, data) {
+export function findCallouts(runMeta, data, fastestSegments = []) {
   const calloutSpots = {
     minHr: data.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
     maxSpeed: _.maxBy(data, d => d.speed),
@@ -178,6 +178,24 @@ export function findCallouts(runMeta, data) {
       text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm`,
     });
   }
+
+  fastestSegments.forEach(fastestSegment => {
+    if (fastestSegment) {
+      callouts.push({
+        lat: fastestSegment.startReading.lat,
+        lon: fastestSegment.startReading.lon,
+        icon: '🏁',
+        text: `Start of fastest 1km segment (${fmt.time(fastestSegment.startTime)})`,
+      });
+      callouts.push({
+        lat: fastestSegment.endReading.lat,
+        lon: fastestSegment.endReading.lon,
+        icon: '⏱️',
+        text: `End of fastest 1km segment (${fmt.time(fastestSegment.endTime)})`,
+      });
+    }
+  });
+
   return callouts;
 }
 
@@ -233,12 +251,12 @@ export function findFastest1kSegment(data) {
   return bestSegment;
 }
 
-export function renderRun(width, datas, callouts = [], opts = {}) {
+export function renderRun(width, datas, callouts = [], opts = { fastestSegments: null }) {
   const colorizers = opts.colorizers || datas.map(data => speedColor(data.map(d => d.speed)));
   const height = width * 0.5;
   const svg = d3.create('svg').attr('viewBox', [0, 0, width, height]);
 
-  const fastestSegments = datas.map(findFastest1kSegment);
+  const fastestSegments = opts.fastestSegments;
 
   // Add defs for arrowhead marker
   const defs = svg.append('defs');
@@ -370,8 +388,7 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
     runG.selectAll('.fastest-segment-line').remove();
 
     // Add lines for fastest 1000m segment if found
-    for (let i = 0; i < fastestSegments.length; i++) {
-      const fastestSegment = fastestSegments[i];
+    fastestSegments.forEach(fastestSegment => {
       const startProjected = projection([
         +fastestSegment.startReading.lon,
         +fastestSegment.startReading.lat,
@@ -406,7 +423,7 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
           .attr('opacity', 0.8)
           .style('pointer-events', 'none');
       }
-    }
+    });
 
     // Add hover behavior to data points
     dots
@@ -514,27 +531,7 @@ export function renderRun(width, datas, callouts = [], opts = {}) {
       });
 
     // Project and render callouts
-    const allCallouts = [...callouts];
-
-    // Add callouts for the fastest 1000m segment if found
-    for (let i = 0; i < fastestSegments.length; i++) {
-      const fastestSegment = fastestSegments[i];
-      allCallouts.push({
-        lat: fastestSegment.startReading.lat,
-        lon: fastestSegment.startReading.lon,
-        icon: '🏁',
-        text: `Start of fastest 1km segment (${fmt.time(fastestSegment.startTime)})`,
-      });
-
-      allCallouts.push({
-        lat: fastestSegment.endReading.lat,
-        lon: fastestSegment.endReading.lon,
-        icon: '⏱️',
-        text: `End of fastest 1km segment (${fmt.time(fastestSegment.endTime)})`,
-      });
-    }
-
-    const projectedCallouts = allCallouts
+    const projectedCallouts = callouts
       .map(callout => {
         const p = projection([+callout.lon, +callout.lat]);
         if (!p || p[0] < -100 || p[0] > width + 100 || p[1] < -100 || p[1] > height + 100) {
