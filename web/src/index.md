@@ -336,17 +336,25 @@ Plot.plot({
 
 </div>
 
-## Minimum Heart Rate on Foil (weekly)
-
-How low can I get my heart rate while riding on foil?
+## Heart Rate on Foil (weekly)
 
 ```js
-const hrs = Array.from(
+const hrs_min = Array.from(
   d3.rollup(
     runCsv.filter(d => d.min_foiling_hr > 0),
     g => ({
       min_hr: d3.min(g, d => d.min_foiling_hr),
       max_hr: d3.max(g, d => d.min_foiling_hr),
+    }),
+    d => d.week
+  ), ([w,o]) => ({week: w, ...o}));
+
+const hrs_avg = Array.from(
+  d3.rollup(
+    runCsv.filter(d => d.min_foiling_hr > 0),
+    g => ({
+      min_hr: d3.min(g, d => d.avg_foiling_hr),
+      max_hr: d3.max(g, d => d.avg_foiling_hr),
     }),
     d => d.week
   ), ([w,o]) => ({week: w, ...o}));
@@ -356,15 +364,36 @@ const hrs = Array.from(
 
 ```js
       Plot.plot({
+        title: 'Lowest Heart Rate on Foil',
         width,
         x: {type: "utc"},
         y: {grid: true, label: "heart bpm"},
         marks: [
-          Plot.rect(hrs,
+          Plot.rect(hrs_min,
                     {x: "week", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
                      interval: d3.utcWeek, strokeWidth: 2,
                      opacity: 0.3, tip: true}),
-          regress("week", "min_hr", hrs)
+          regress("week", "min_hr", hrs_min)
+        ]
+      })
+```
+
+</div>
+
+<div class="card">
+
+```js
+      Plot.plot({
+        title: 'Average Heart Rate on Foil',
+        width,
+        x: {type: "utc"},
+        y: {grid: true, label: "heart bpm"},
+        marks: [
+          Plot.rect(hrs_avg,
+                    {x: "week", y1: "min_hr", y2: "max_hr", stroke: "#100", fill: '#c00',
+                     interval: d3.utcWeek, strokeWidth: 2,
+                     opacity: 0.3, tip: true}),
+          regress("week", "min_hr", hrs_avg)
         ]
       })
 ```
