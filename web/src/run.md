@@ -199,6 +199,10 @@ const segments = tl.computeSegments(runCsv);
     }))
 }</div>
 
+```js
+const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > 11);
+```
+
 <div class="grid grid-cols-4">
     <div class="card">
       <h2>Average Speed</h2>
@@ -206,7 +210,7 @@ const segments = tl.computeSegments(runCsv);
     </div>
     <div class="card">
       <h2>Average Foiling Speed</h2>
-      <span class="big">${fmt.speed(d3.mean(runCsv.map(d => d.speed).filter(d => d > 11)))}</span>
+      <span class="big">${fmt.speed(d3.mean(foilingSpeeds))} (${fmt.pace(d3.mean(foilingSpeeds))})</span>
     </div>
     <div class="card">
       <h2>Max Speed</h2>
