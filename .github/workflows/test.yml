@@ -55,6 +55,13 @@ jobs:
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      - name: Setup token from secret
+        env:
+          MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
+        run: |
+          echo "// Mapbox token" > src/token.js
+          echo "export const MAPBOX_TOKEN = '$MAPBOX_TOKEN';" >> src/token.js
+
       # Build site if cache miss
       - name: Build site
         if: steps.build-cache.outputs.cache-hit != 'true'
