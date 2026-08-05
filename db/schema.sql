@@ -34,13 +34,10 @@ CREATE TABLE dwlist(
   wind_speed_kn DOUBLE,
   wind_direction VARCHAR,
   sport VARCHAR,
-  city VARCHAR,
-  country VARCHAR,
   feeling BIGINT,
   training_type BIGINT,
-  equip_1 VARCHAR,
-  equip_2 VARCHAR,
-  equip_3 VARCHAR,
+  board VARCHAR,
+  foil VARCHAR,
   filename VARCHAR,
 
   -- computed stats
@@ -70,4 +67,3 @@ order by date, time;
 
 
 commit;
-
