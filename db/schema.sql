@@ -65,5 +65,4 @@ join beaches bs on bs.id = start_pos
 join beaches be on be.id = end_pos
 order by date, time;
 
-
 commit;
