@@ -24,7 +24,10 @@ load httpfs;
 
 create or replace macro parse_wide_pairs(url) as table
 select
-  strptime(line[1:16], '%Y %m %d %H %M') as ts,
+  -- NDBC timestamps are UTC. AT TIME ZONE 'UTC' makes that explicit so the
+  -- naive-to-timestamptz conversion doesn't depend on the session's local
+  -- TimeZone setting (which silently relabels rather than shifts otherwise).
+  strptime(line[1:16], '%Y %m %d %H %M') at time zone 'UTC' as ts,
   unnest(regexp_extract_all(line, '([0-9.]+) \(([0-9.]+)\)', 1))::double as value,
   unnest(regexp_extract_all(line, '([0-9.]+) \(([0-9.]+)\)', 2))::double as freq
 from (
