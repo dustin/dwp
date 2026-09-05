@@ -4,6 +4,7 @@ lake=$HOME/stuff/duck
 dwruns=/Users/dustin/stuff/dwruns/
 wind=/Users/dustin/stuff/wind/
 swell=/Users/dustin/stuff/swell/
+swell_partition=/Users/dustin/stuff/swell_partition/
 
 consolidate() {
     d=`dirname $1`
@@ -47,6 +48,16 @@ find "$swell" -type f -name 'data_0.csv' -print0 |
     done
 
 rclone sync $swell s3:db.downwind.pro/swell/  --progress \
+    --header-upload "Content-Encoding: gzip" \
+    --header-upload "Content-Type: text/csv; charset=utf-8" \
+    --max-age 14d
+
+find "$swell_partition" -type f -name 'data_0.csv' -print0 |
+    while IFS= read -r -d '' file; do
+        consolidate "$file" ts
+    done
+
+rclone sync "$swell_partition" s3:db.downwind.pro/swell_partition/  --progress \
     --header-upload "Content-Encoding: gzip" \
     --header-upload "Content-Type: text/csv; charset=utf-8" \
     --max-age 14d

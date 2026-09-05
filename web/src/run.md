@@ -10,7 +10,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwell2} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -36,11 +36,27 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const [runCsv, wind, swell] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta), fetchSwell(runMeta)]);
+const [runCsv, wind, swell, swell2] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta), fetchSwell(runMeta), fetchSwell2(runMeta)]);
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
 const callouts = findCallouts(runMeta, runCsv, [fastestSegment]);
+
+const swellPartitionsByTimestamp = new Map(
+  swell2.map(({ts, values}) => [ts.getTime(), values])
+);
+
+function formatIndividualSwells(ts) {
+  const values = swellPartitionsByTimestamp.get(ts.getTime());
+  if (!values) return "";
+
+  return values
+    .map(
+      d =>
+        `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° - ${d.energykJ.toFixed(0)} kJ/m`
+    )
+    .join("\n");
+}
 ```
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
@@ -280,12 +296,37 @@ swell && swell.length > 0
           x: "ts",
           y: "wave_height",
           fontSize: 15,
-          title: d => `${fmt.time(d.ts)}: ${d.wave_height.toFixed(1)} feet @ ${d.wave_period.toFixed(0)} secs - ${Math.round(d.wave_direction)}°`
+          title: d => [
+            `${fmt.time(d.ts)}:`,
+            formatIndividualSwells(d.ts)
+          ].filter(Boolean).join("\n")
         }))
       ]
     }))
   : html`<p>No swell data found for this run.</p>`
 }</div>
+
+<div class="card">${
+swell2.length > 0
+  ? html`<h2>Individual Swells</h2><div>${
+      swell2.map(({ts, values}) => html`
+        <div style="margin-bottom: 1em;">
+          <strong>${fmt.time(ts)}</strong>
+          <ul style="margin: 0.25em 0 0 1em;">
+            ${values.map(d => html`
+              <li>
+                ${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s
+                ${Math.round(d.direction)}° -
+                ${d.energykJ.toFixed(0)} kJ/m
+              </li>
+            `)}
+          </ul>
+        </div>
+      `)
+    }</div>`
+  : html`<p>No individual swell data found for this run.</p>`
+}</div>
+
 
 ## Splits
 

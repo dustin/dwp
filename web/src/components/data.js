@@ -150,3 +150,40 @@ export async function fetchSwell(meta) {
     .catch(err => [])
     .then(allRows => inRange(meta, allRows));
 }
+
+export async function fetchSwell2(meta) {
+  let site = undefined;
+  if (meta.region == 'Maui North Shore') {
+    site = 'pauwela';
+  } else {
+    return [];
+  }
+  const day = fmt.date(meta.ts);
+
+  const runDataURL = `https://${DATAHOST}/swell_partition/site%3D${site}/day%3D${day}/data.csv`;
+  return d3
+    .csv(runDataURL, row => ({
+      ...row,
+      ts: new Date(row.ts),
+      rank: +row.rank,
+      period: +row.period,
+      direction: +row.direction,
+      spread: +row.spread,
+      height: +row.height * 3.2808399,
+      energy: +row.energy,
+      energykJ: +row.energy * 9.80665 * (row.period ** 2) / (2 * Math.PI)
+    }))
+    .catch(err => [])
+    .then(allRows => inRange(meta, allRows))
+    .then(rows => {
+      // Group by timestamp. Use getTime() so equal times collapse together.
+      const grouped = d3.group(rows, d => d.ts.getTime());
+
+      return Array.from(grouped, ([ts, groupRows]) => ({
+        ts: new Date(Number(ts)),
+        values: groupRows
+          .slice()                 // don't mutate the original rows
+          .sort((a, b) => d3.ascending(a.rank, b.rank))
+      })).sort((a, b) => d3.ascending(a.ts, b.ts));
+    });
+}
