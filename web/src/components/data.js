@@ -174,7 +174,6 @@ export async function fetchSwell2(meta) {
       energykJ: +row.energy * 9.80665 * (row.period ** 2) / (2 * Math.PI)
     }))
     .catch(err => [])
-    .then(allRows => inRange(meta, allRows))
     .then(rows => {
       // Group by timestamp. Use getTime() so equal times collapse together.
       const grouped = d3.group(rows, d => d.ts.getTime());
@@ -185,5 +184,6 @@ export async function fetchSwell2(meta) {
           .slice()                 // don't mutate the original rows
           .sort((a, b) => d3.ascending(a.rank, b.rank))
       })).sort((a, b) => d3.ascending(a.ts, b.ts));
-    });
+    })
+    .then(allRows => inRange(meta, allRows))
 }
