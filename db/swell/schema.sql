@@ -18,7 +18,7 @@ CREATE TABLE swell_partition(
 create or replace view swells_text as (
 select
   site, ts,
-  string_agg(printf('%.1fs @ %d° (%.2fm, %.2f kJ/m²)', period, direction::int, height, energy), ', ' order by rank) as swells
+  string_agg(printf('%.1f'' @ %.1fs - %d° (%.2fm, %.2f kJ/m²)', height * 3.28, period, direction::int, height, energy), ', ' order by rank) as swells
 from swell_partition
 group by all
 );
