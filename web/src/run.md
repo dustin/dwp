@@ -36,7 +36,7 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const [runCsv, wind, swell, swell2] = await Promise.all([fetchRun(runMeta.id), fetchWind(runMeta), fetchSwell(runMeta), fetchSwell2(runMeta)]);
+const [runCsv, wind, swell, swell2] = await Promise.all([fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta), fetchSwell2(runMeta)]);
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
@@ -120,7 +120,7 @@ function representativeSwellReading(swell2, meta) {
       // colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
     });
     let buoyMarker = null;
-    if (runMeta.region === 'Maui North Shore') {
+    if (swell2.length > 0 && (runMeta.region === 'Maui North Shore')) {
       const reading = representativeSwellReading(swell2, runMeta);
       const summary = summarizeSwellPartition(reading.values);
       if (reading) {

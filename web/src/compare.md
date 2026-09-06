@@ -32,9 +32,9 @@ const allRunsP = fetchMeta(() => FileAttachment('data/runs.csv')).then(data => d
   m[r.id] = r
   return m;
 }, {}));
-const csvFetches = [id1, id2].map(fetchRun);
 
 const runMetaMap = await allRunsP;
+const csvFetches = [runMetaMap[id1], runMetaMap[id2]].map(fetchRun);
 
 const runMeta1 = runMetaMap[id1];
 const runMeta2 = runMetaMap[id2];

@@ -73,7 +73,7 @@ const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
 ```
 
 ```js
-const csvs = await Promise.all(selection.map(d => fetchRun(d.id).then(r => ({id: d.id, ps: r}))));
+const csvs = await Promise.all(selection.map(d => fetchRun(d).then(r => ({id: d.id, ps: r}))));
 const callouts = csvs.flatMap(o => findCallouts(runMetaMap[o.id], o.ps, [findFastest1kSegment(o.ps)]));
 ```
 

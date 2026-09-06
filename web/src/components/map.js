@@ -195,6 +195,23 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
     }
   });
 
+  for (let i = 1; i < data.length; i++) {
+    const prevHundreds = Math.floor(data[i - 1].odometer / 100000);
+    const currHundreds = Math.floor(data[i].odometer / 100000);
+    for (let h = prevHundreds + 1; h <= currHundreds; h++) {
+      const km = h * 100;
+      const isThousand = h % 10 === 0;
+      callouts.push({
+        lat: data[i].lat,
+        lon: data[i].lon,
+        icon: isThousand ? '🎉' : '💯',
+        text: isThousand
+          ? `${km.toLocaleString()} km lifetime!`
+          : `${km.toLocaleString()} km lifetime`,
+      });
+    }
+  }
+
   return callouts;
 }
 
@@ -447,6 +464,7 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
           `Time: ${fmt.time(d.data.ts)}`,
           `Time so far: ${fmt.timeDiff(datas[d.dataset][0].ts, d.data.ts)}`,
           `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
+          `Odometer: ${fmt.distanceM(d.data.odometer)}`,
           `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
           `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
           `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,

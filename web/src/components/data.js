@@ -60,11 +60,11 @@ export async function fetchMeta(f) {
 // s3.us-east-1.amazonaws.com/db.downwind.pro
 const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
 
-export async function fetchRun(runId) {
-  const runDataURL = `https://${DATAHOST}/runs/dwid%3D${runId}/data.csv`;
+export async function fetchRun(meta) {
+  const runDataURL = `https://${DATAHOST}/runs/dwid%3D${meta.id}/data.csv`;
   return d3.csv(runDataURL, d3.autoType).then(data =>
     _.sortBy(
-      data.map(d => ({ ...d, ts: new Date(d.tsi * 1000) })),
+      data.map(d => ({ ...d, odometer: d.distance + 1000 * meta.odometer_km, ts: new Date(d.tsi * 1000) })),
       d => d.tsi
     )
   );
