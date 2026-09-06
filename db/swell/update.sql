@@ -2,6 +2,10 @@
 -- over HTTP. This is the same primary buoy observation Surfline displays:
 -- significant wave height, dominant period, and mean wave direction.
 --
+-- Also captures the raw per-frequency-bin spectral readings into
+-- swell_spectrum before any banding, so the swell_partition derivation can
+-- be recomputed later without re-fetching (NDBC only keeps ~45 days).
+--
 -- Defaults to the Pauwela buoy (NDBC station 51205). Override station/site
 -- without editing the file via -cmd, e.g.:
 --   duckdb mydb.duckdb \
@@ -49,20 +53,11 @@ where line not like '#%' and trim(line) <> '';
 
 begin;
 
-create or replace temp table incoming_swell as
-with primary_observations as (
-  select
-    getvariable('site') as site,
-    ts,
-    CAST(ts AT TIME ZONE 'Pacific/Honolulu' AS DATE) as day,
-    period,
-    direction,
-    height
-  from parse_stdmet(
-    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.txt'
-  )
-),
-energy as (
+-- Raw per-bin spectral readings, fetched once and kept around so both
+-- swell_spectrum (below) and the banding logic (in incoming_swell) read the
+-- same fetch instead of hitting NDBC twice.
+create or replace temp table incoming_spectrum as
+with energy as (
   select ts, freq, value as energy
   from parse_wide_pairs(
     'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.data_spec'
@@ -79,21 +74,34 @@ spread as (
   from parse_wide_pairs(
     'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.swr1'
   )
-),
-spectra as (
+)
+select
+  getvariable('site') as site,
+  e.ts,
+  e.freq,
+  e.energy,
+  d.direction,
+  sp.r1,
+  (
+    coalesce(lead(e.freq) over (partition by e.ts order by e.freq), e.freq) -
+    coalesce(lag(e.freq) over (partition by e.ts order by e.freq), e.freq)
+  ) / 2 as bin_width
+from energy e
+join direction d using (ts, freq)
+join spread sp using (ts, freq);
+
+create or replace temp table incoming_swell as
+with primary_observations as (
   select
-    e.ts,
-    e.freq,
-    e.energy,
-    d.direction,
-    sp.r1,
-    (
-      coalesce(lead(e.freq) over (partition by e.ts order by e.freq), e.freq) -
-      coalesce(lag(e.freq) over (partition by e.ts order by e.freq), e.freq)
-    ) / 2 as bin_width
-  from energy e
-  join direction d using (ts, freq)
-  join spread sp using (ts, freq)
+    getvariable('site') as site,
+    ts,
+    CAST(ts AT TIME ZONE 'Pacific/Honolulu' AS DATE) as day,
+    period,
+    direction,
+    height
+  from parse_stdmet(
+    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.txt'
+  )
 ),
 banded_spectra as (
   -- Broad period bands retain the distinct long-period swell, local swell,
@@ -105,7 +113,7 @@ banded_spectra as (
       when freq < 1.0 / 5 then 3
       else 4
     end as band
-  from spectra
+  from incoming_spectrum
 ),
 components as (
   select
@@ -172,8 +180,22 @@ select * from primary_rows
 union all
 select * from component_rows;
 
--- Replace only the source's rolling realtime window. This removes stale
--- hourly spectral rows written by earlier versions of this importer.
+-- swell_spectrum is append-only: it's the raw archive we can't re-fetch once
+-- NDBC's ~45-day window rolls past it, so it should only ever grow, even
+-- though each run only recomputes/replaces the recent window in
+-- swell_partition below. Insert whatever this run saw that isn't already
+-- captured; never delete from it.
+merge into swell_spectrum as s
+using incoming_spectrum as ins
+on (s.site = ins.site and s.ts = ins.ts and s.freq = ins.freq)
+when not matched then
+  insert (site, ts, freq, energy, direction, r1)
+  values (ins.site, ins.ts, ins.freq, ins.energy, ins.direction, ins.r1);
+
+-- swell_partition, by contrast, is fully recomputed each run from whatever's
+-- in incoming_swell: replace only the source's rolling realtime window, so
+-- a formula/banding change actually recomputes rather than silently keeping
+-- old values.
 delete from swell_partition
 where site = getvariable('site')
   and ts between (select min(ts) from incoming_swell)
@@ -186,5 +208,6 @@ select site, ts, day, rank, period, direction, spread, height, energy
 from incoming_swell;
 
 drop table incoming_swell;
+drop table incoming_spectrum;
 
 commit;
