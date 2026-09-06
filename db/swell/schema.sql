@@ -11,7 +11,17 @@ CREATE TABLE swell_partition(
   direction DOUBLE,  -- NDBC mean or energy-weighted component direction, degrees true
   spread DOUBLE,     -- null for rank 1; r1 for spectral components
   height DOUBLE,     -- meters; significant height or Hs-style component height
-  energy DOUBLE      -- kJ/m^2, derived from the reported height or component m0
+  energy DOUBLE,     -- kJ/m^2, derived from the reported height or component m0
+  -- Approximates Surfline's displayed "kJ" figure: the sum, across every
+  -- detected wave system in this reading, of single-wave energy
+  -- (rho*g*H^2/8 -- note /8, not the statistical Hs/16 form `energy` above
+  -- uses) times deep-water wavelength L = g*T^2/(2*pi). Reverse-engineered
+  -- against ~12 real Surfline readings spanning 8-14s periods and 1-6
+  -- components each -- not Surfline's actual (undocumented) formula, just
+  -- the closest match found so far. Computed once per (site, ts) in
+  -- update.sql and repeated across every rank row for that reading, so
+  -- consumers (the swells_text view, the web UI) don't each recompute it.
+  surfline_kj DOUBLE
 );
 
 -- Raw per-frequency-bin spectral readings (data_spec/swdir/swr1, joined),
@@ -42,18 +52,7 @@ select
     ),
     ', ' order by rank
   ) as swells,
-  -- Approximates Surfline's displayed "kJ" figure: the sum, across every
-  -- detected wave system in this reading, of single-wave energy
-  -- (rho*g*H^2/8 -- note /8, not the statistical Hs/16 form the `energy`
-  -- column above uses) times deep-water wavelength L = g*T^2/(2*pi).
-  -- Reverse-engineered against ~12 real Surfline readings spanning 8-14s
-  -- periods and 1-6 components each: consistent to within a few percent
-  -- once summed across components, vs. wildly wrong using height/period
-  -- from a single dominant reading alone. Not Surfline's actual formula
-  -- (undocumented), just the closest match found so far.
-  round(sum(
-    (1025 * 9.80665 * power(height, 2) / 8) * (9.80665 * power(period, 2) / (2 * pi())) / 1000
-  )) as surfline_kj
+  any_value(surfline_kj) as surfline_kj
 from swell_partition
 group by all
 );

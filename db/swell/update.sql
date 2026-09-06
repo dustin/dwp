@@ -175,10 +175,21 @@ component_rows as (
     round(4 * sqrt(m0), 2) as height,
     round(1025 * 9.80665 * m0 / 1000, 2) as energy
   from ranked_components
+),
+all_rows as (
+  select * from primary_rows
+  union all
+  select * from component_rows
 )
-select * from primary_rows
-union all
-select * from component_rows;
+select
+  *,
+  -- See swell_partition.surfline_kj: summed across every component sharing
+  -- this (site, ts), then repeated on each of that reading's rows so this
+  -- is computed once here instead of in every consumer.
+  round(sum(
+    (1025 * 9.80665 * power(height, 2) / 8) * (9.80665 * power(period, 2) / (2 * pi())) / 1000
+  ) over (partition by site, ts)) as surfline_kj
+from all_rows;
 
 -- swell_spectrum is append-only: it's the raw archive we can't re-fetch once
 -- NDBC's ~45-day window rolls past it, so it should only ever grow, even
@@ -202,9 +213,9 @@ where site = getvariable('site')
              and (select max(ts) from incoming_swell);
 
 insert into swell_partition (
-  site, ts, day, rank, period, direction, spread, height, energy
+  site, ts, day, rank, period, direction, spread, height, energy, surfline_kj
 )
-select site, ts, day, rank, period, direction, spread, height, energy
+select site, ts, day, rank, period, direction, spread, height, energy, surfline_kj
 from incoming_swell;
 
 drop table incoming_swell;
