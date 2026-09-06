@@ -122,11 +122,12 @@ function representativeSwellReading(swell2, meta) {
     let buoyMarker = null;
     if (runMeta.region === 'Maui North Shore') {
       const reading = representativeSwellReading(swell2, runMeta);
+      const summary = summarizeSwellPartition(reading.values);
       if (reading) {
         buoyMarker = createBuoySwellMarker(d3, svg, {
           lon: PAUWELA_BUOY.lon,
           lat: PAUWELA_BUOY.lat,
-          components: summarizeSwellPartition(reading.values).components,
+          summary: summary,
           tooltipText: `${fmt.time(reading.ts)}:\n${formatIndividualSwells(reading.ts)}`,
         });
       }

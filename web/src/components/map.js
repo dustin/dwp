@@ -1076,12 +1076,13 @@ export function createWindRoseInset(
 export function createBuoySwellMarker(
   d3,
   svg,
-  { lon, lat, components, tooltipText },
+  { lon, lat, summary, tooltipText },
   { minArrowLength = 15, maxArrowLength = 60, dotRadius = 6, color = '#0ea5e9', edgeMargin = 28 } = {}
 ) {
-  if (!components || components.length === 0) return null;
+  if (!summary) return null; // || components.length === 0) return null;
 
-  const maxHeight = d3.max(components, d => d.height) || 1;
+  const allSwell = [summary.primary, ...summary.components];
+  const maxHeight = summary.primary.height;
   const arrowLength = d3.scaleLinear().domain([0, maxHeight]).range([0, maxArrowLength]).clamp(true);
 
   const markerId = 'buoy-swell-arrowhead';
@@ -1110,7 +1111,7 @@ export function createBuoySwellMarker(
     .attr('stroke-width', 1.5);
 
   g.selectAll('.buoy-swell-arrow')
-    .data(components)
+    .data(allSwell)
     .join('line')
     .attr('class', 'buoy-swell-arrow')
     .attr('x1', 0)
