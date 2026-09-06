@@ -46,16 +46,35 @@ const swellPartitionsByTimestamp = new Map(
   swell2.map(({ts, values}) => [ts.getTime(), values])
 );
 
+// rank 1 is NDBC's own primary reading (the whole sea state); ranks 2+ are
+// the individual spectral components that make it up. The total kJ figure
+// only makes sense at the reading level (Surfline doesn't show it per
+// component either), so it belongs on the primary line, not repeated on
+// every component.
+function summarizeSwellPartition(values) {
+  return {
+    primary: values.find(d => d.rank === 1),
+    components: values.filter(d => d.rank !== 1),
+  };
+}
+
+function formatPrimaryLine(d) {
+  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° · ${d.surflineKJ.toFixed(0)} kJ`;
+}
+
+function formatComponentLine(d) {
+  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° (${d.energy.toFixed(2)} kJ/m²)`;
+}
+
 function formatIndividualSwells(ts) {
   const values = swellPartitionsByTimestamp.get(ts.getTime());
   if (!values) return "";
 
-  return values
-    .map(
-      d =>
-        `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° - ${d.energykJ.toFixed(0)} kJ/m`
-    )
-    .join("\n");
+  const { primary, components } = summarizeSwellPartition(values);
+  return [
+    primary && formatPrimaryLine(primary),
+    ...components.map(d => `  ${formatComponentLine(d)}`),
+  ].filter(Boolean).join("\n");
 }
 ```
 
@@ -309,20 +328,18 @@ swell && swell.length > 0
 <div class="card">${
 swell2.length > 0
   ? html`<h2>Individual Swells</h2><div>${
-      swell2.map(({ts, values}) => html`
+      swell2.map(({ts, values}) => {
+        const { primary, components } = summarizeSwellPartition(values);
+        return html`
         <div style="margin-bottom: 1em;">
-          <strong>${fmt.time(ts)}</strong>
+          <strong>${fmt.time(ts)}${primary ? html` — ${formatPrimaryLine(primary)}` : ''}</strong>
           <ul style="margin: 0.25em 0 0 1em;">
-            ${values.map(d => html`
-              <li>
-                ${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s
-                ${Math.round(d.direction)}° -
-                ${d.energykJ.toFixed(0)} kJ/m
-              </li>
+            ${components.map(d => html`
+              <li>${formatComponentLine(d)}</li>
             `)}
           </ul>
         </div>
-      `)
+      `})
     }</div>`
   : html`<p>No individual swell data found for this run.</p>`
 }</div>

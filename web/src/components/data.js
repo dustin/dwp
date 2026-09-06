@@ -171,7 +171,7 @@ export async function fetchSwell2(meta) {
       spread: +row.spread,
       height: +row.height * 3.2808399,
       energy: +row.energy,
-      energykJ: +row.energy * 9.80665 * (row.period ** 2) / (2 * Math.PI)
+      surflineKJ: +row.surfline_kj
     }))
     .catch(err => [])
     .then(rows => {
