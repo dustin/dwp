@@ -1072,3 +1072,149 @@ export function createWindRoseInset(
 
   return { node: g.node(), update, colorScale: color };
 }
+
+export function createBuoySwellMarker(
+  d3,
+  svg,
+  { lon, lat, components, tooltipText },
+  { minArrowLength = 15, maxArrowLength = 60, dotRadius = 6, color = '#0ea5e9', edgeMargin = 28 } = {}
+) {
+  if (!components || components.length === 0) return null;
+
+  const maxHeight = d3.max(components, d => d.height) || 1;
+  const arrowLength = d3.scaleLinear().domain([0, maxHeight]).range([0, maxArrowLength]).clamp(true);
+
+  const markerId = 'buoy-swell-arrowhead';
+  if (svg.select(`#${markerId}`).empty()) {
+    (svg.select('defs').empty() ? svg.append('defs') : svg.select('defs'))
+      .append('marker')
+      .attr('id', markerId)
+      .attr('viewBox', '0 0 10 10')
+      .attr('refX', 8)
+      .attr('refY', 5)
+      .attr('markerWidth', 6)
+      .attr('markerHeight', 6)
+      .attr('orient', 'auto')
+      .append('path')
+      .attr('d', 'M0,0 L10,5 L0,10 z')
+      .attr('fill', color);
+  }
+
+  const g = svg.append('g').attr('class', 'buoy-swell-marker');
+
+  g.append('circle')
+    .attr('r', dotRadius)
+    .attr('fill', color)
+    .attr('fill-opacity', 0.85)
+    .attr('stroke', 'white')
+    .attr('stroke-width', 1.5);
+
+  g.selectAll('.buoy-swell-arrow')
+    .data(components)
+    .join('line')
+    .attr('class', 'buoy-swell-arrow')
+    .attr('x1', 0)
+    .attr('y1', 0)
+    .attr('x2', d => Math.max(minArrowLength, arrowLength(d.height)) * Math.sin(((d.direction + 180) * Math.PI) / 180))
+    .attr('y2', d => -Math.max(minArrowLength, arrowLength(d.height)) * Math.cos(((d.direction + 180) * Math.PI) / 180))
+    .attr('stroke', color)
+    .attr('stroke-width', 2.5)
+    .attr('stroke-linecap', 'round')
+    .attr('opacity', 0.85)
+    .attr('marker-end', `url(#${markerId})`);
+
+  // Points outward when the buoy's real position is clamped to the edge of
+  // frame (see update() below); hidden otherwise.
+  const offscreenChevron = g
+    .append('path')
+    .attr('class', 'buoy-offscreen-chevron')
+    .attr('d', 'M10,0 L-6,-7 L-2,0 L-6,7 Z')
+    .attr('fill', color)
+    .attr('stroke', 'white')
+    .attr('stroke-width', 1)
+    .attr('opacity', 0);
+
+  g.raise();
+
+  const tooltip = d3
+    .select('body')
+    .append('div')
+    .attr('class', 'buoy-swell-tooltip')
+    .style('position', 'absolute')
+    .style('background', 'rgba(0,0,0,0.85)')
+    .style('color', '#fff')
+    .style('padding', '6px 10px')
+    .style('border-radius', '4px')
+    .style('font-size', '12px')
+    .style('white-space', 'pre-line')
+    .style('pointer-events', 'none')
+    .style('opacity', 0)
+    .style('z-index', 1000);
+
+  let isOffscreen = false;
+
+  g.style('cursor', 'pointer')
+    .on('pointerenter', () =>
+      tooltip
+        .style('opacity', 1)
+        .text(isOffscreen ? `${tooltipText}\n(buoy is off-screen)` : tooltipText)
+    )
+    .on('pointermove', event =>
+      tooltip.style('left', event.pageX + 10 + 'px').style('top', event.pageY - 18 + 'px')
+    )
+    .on('pointerleave', () => tooltip.style('opacity', 0));
+
+  // Finds where the ray from the viewport center through (px, py) crosses
+  // the inset [margin, dim - margin] box, so an off-screen buoy gets pulled
+  // to the edge of frame along the direction it actually lies in, rather
+  // than just disappearing.
+  function clampToRect(cx, cy, px, py, width, height, margin) {
+    const dx = px - cx;
+    const dy = py - cy;
+    if (dx === 0 && dy === 0) return [cx, cy];
+    let t = 1;
+    if (dx > 0) t = Math.min(t, (width - margin - cx) / dx);
+    if (dx < 0) t = Math.min(t, (margin - cx) / dx);
+    if (dy > 0) t = Math.min(t, (height - margin - cy) / dy);
+    if (dy < 0) t = Math.min(t, (margin - cy) / dy);
+    t = Math.max(0, t);
+    return [cx + dx * t, cy + dy * t];
+  }
+
+  function update({ transform, width, height }) {
+    const projection = d3
+      .geoMercator()
+      .scale(transform.k / (2 * Math.PI))
+      .translate([transform.x, transform.y]);
+    const p = projection([lon, lat]);
+    if (!p) return;
+    const [px, py] = p;
+
+    isOffscreen =
+      width != null &&
+      height != null &&
+      (px < edgeMargin || px > width - edgeMargin || py < edgeMargin || py > height - edgeMargin);
+
+    if (!isOffscreen) {
+      g.attr('transform', `translate(${px},${py})`);
+      offscreenChevron.attr('opacity', 0);
+      return;
+    }
+
+    const [cx, cy] = [width / 2, height / 2];
+    const [ex, ey] = clampToRect(cx, cy, px, py, width, height, edgeMargin);
+    g.attr('transform', `translate(${ex},${ey})`);
+    offscreenChevron
+      .attr('opacity', 0.9)
+      .attr('transform', `rotate(${(Math.atan2(py - ey, px - ex) * 180) / Math.PI})`);
+  }
+
+  return {
+    node: g.node(),
+    update,
+    remove: () => {
+      tooltip.remove();
+      g.remove();
+    },
+  };
+}

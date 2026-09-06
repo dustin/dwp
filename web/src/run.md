@@ -5,7 +5,7 @@ toc: true
 ---
 
 ```js
-import {renderRun, findCallouts, createWindRoseInset, findFastest1kSegment} from "./components/map.js";
+import {renderRun, findCallouts, createWindRoseInset, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -76,6 +76,20 @@ function formatIndividualSwells(ts) {
     ...components.map(d => `  ${formatComponentLine(d)}`),
   ].filter(Boolean).join("\n");
 }
+
+// NDBC station 51205 / Pauwela, Maui -- see db/swell/update.sql.
+const PAUWELA_BUOY = {lat: 21.018, lon: -156.421};
+
+// Swell drifts slowly enough over a run's timespan (usually well under a
+// day) that one representative reading -- the one closest to the run's
+// midpoint -- stands in fine for "what it was like out there", rather than
+// trying to average distinct wave systems across readings where a system's
+// rank can shift from one hour to the next.
+function representativeSwellReading(swell2, meta) {
+  if (!swell2 || swell2.length === 0) return null;
+  const mid = new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
+  return _.minBy(swell2, d => Math.abs(d.ts.getTime() - mid.getTime()));
+}
 ```
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
@@ -105,8 +119,22 @@ function formatIndividualSwells(ts) {
       title: "Wind (avg)",
       // colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
     });
+    let buoyMarker = null;
+    if (runMeta.region === 'Maui North Shore') {
+      const reading = representativeSwellReading(swell2, runMeta);
+      if (reading) {
+        buoyMarker = createBuoySwellMarker(d3, svg, {
+          lon: PAUWELA_BUOY.lon,
+          lat: PAUWELA_BUOY.lat,
+          components: summarizeSwellPartition(reading.values).components,
+          tooltipText: `${fmt.time(reading.ts)}:\n${formatIndividualSwells(reading.ts)}`,
+        });
+      }
+    }
     return {
-      updateOnZoom: null,
+      updateOnZoom: ({ transform, width, height }) => {
+        buoyMarker?.update({ transform, width, height });
+      },
       update: () => {
         inset.update({ x: centerX, y: centerY });
       }
