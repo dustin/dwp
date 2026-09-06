@@ -59,6 +59,13 @@ ORDER BY
 COPY (
   SELECT
     dr.*,
+    -- Lifetime distance *before* this run (0 for the first one), not
+    -- including it -- so a run's own distance_km carries it from this
+    -- reading up to the next run's odometer_km.
+    COALESCE(SUM(dr.distance_km) OVER (
+      ORDER BY dr.ts
+      ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+    ), 0) AS odometer_km,
     wind_stats.avg_wavg,
     wind_stats.max_wavg,
     wind_stats.avg_wgust,
