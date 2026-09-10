@@ -187,7 +187,7 @@ async function runTests() {
   const uniqueLevel2Links = [...new Set(level2Links)].filter(link => !testedUrls.has(link));
 
   if (uniqueLevel2Links.length > 0) {
-    const level2SampleSize = Math.min(5, uniqueLevel2Links.length); // Test up to 3 level 2 links
+    const level2SampleSize = Math.min(25, uniqueLevel2Links.length);
     const shuffledLevel2 = uniqueLevel2Links.sort(() => Math.random() - 0.5);
     const sampledLevel2Links = shuffledLevel2.slice(0, level2SampleSize);
 
