@@ -12,6 +12,8 @@ import {renderCrashes} from "./components/map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, dryLimit} from "./components/data.js";
+import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
+import {runsTableOptions} from "./components/runs-table.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -35,10 +37,10 @@ totals.max_speed_1k_id = runCsv.find(d => d.max_speed_1k === totals.max_speed_1k
 totals.longest_seg_id = runCsv.find(d => d.longest_segment_distance === totals.longest_seg).id;
 totals.max_dist_id = runCsv.find(d => d.max_distance === totals.max_dist).id;
 
-const beaches = [...new Set(runCsv.map(d => d.start_beach))].sort();
-const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
+const beaches = beachList(runCsv);
+const beachColor = beachColorScale(runCsv);
 function beachColorNamed(name) {
-  return d => beachColor(d[name]);
+  return beachColorBy(beachColor, name);
 }
 const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObservable10 })});
 const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })});
@@ -153,7 +155,8 @@ where once I paddled up for real, I stayed up until I was done.
 So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
 <div class="card">${
-Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
+Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts),
+  runsTableOptions(beachColor, htl, {
     columns: [
       "date",
       "linkedDate",
@@ -166,27 +169,8 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
       "max_speed_1k",
       "foil"
     ],
-    header: {
-      date: "Date",
-      linkedDate: "Time",
-      start_beach: "Start Beach",
-      end_beach: "End Beach",
-      distance_km: "Run Distance (km)",
-      distance_on_foil: "On Foil (km)",
-      duration_sec: "Run Duration",
-      duration_on_foil: "On Foil",
-      max_speed_1k: "Fastest km Pace",
-      foil: "Foil"
-      },
-      format: {
-        date: fmt.date,
-        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
-        distance_on_foil: d => (d / 1000).toFixed(2),
-        duration_on_foil: fmt.seconds,
-        duration_sec: fmt.seconds,
-        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0]
-      }})
+    linkHref: d => `/run.html?id=${d.id}`
+  }))
 }</div>
 
 ## Distances
@@ -431,7 +415,8 @@ beach's arc, it'll highlight the places I've gone from that beach.
 Click through to view details.
 
 <div class="card">${
-Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
+Inputs.table(runCsv.sort((a, b) => b.ts - a.ts),
+  runsTableOptions(beachColor, htl, {
     columns: [
       "date",
       "linkedDate",
@@ -446,28 +431,6 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts), {
       "paddle_up_count",
       "foil"
     ],
-    header: {
-      date: "Date",
-      linkedDate: "Time",
-      start_beach: "Start Beach",
-      end_beach: "End Beach",
-      distance_km: "Run Distance (km)",
-      distance_on_foil: "On Foil (km)",
-      duration_sec: "Run Duration",
-      duration_on_foil: "On Foil",
-      max_speed_1k: "Fastest km Pace",
-      wind_data: "Wind (kts)",
-      paddle_up_count: "Paddle Ups",
-      foil: "Foil"
-      },
-      format: {
-        date: fmt.date,
-        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
-        distance_on_foil: d => (d / 1000).toFixed(2),
-        duration_on_foil: fmt.seconds,
-        duration_sec: fmt.seconds,
-        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0],
-        wind_data: d => `${fmt.wind(d.avg_avg, d.gust_max, d.avg_dir)}`
-      }})
+    linkHref: d => `/run.html?id=${d.id}`
+  }))
 }</div>

@@ -12,11 +12,12 @@ import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
 import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 import {fetchMeta, fetchRun} from "./components/data.js";
+import {beachColorScale} from "./components/beaches.js";
+import {runsTableOptions} from "./components/runs-table.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
-const beaches = [...new Set(allRuns.map(d => d.start_beach))].sort();
-const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
+const beachColor = beachColorScale(allRuns);
 
 const runMetaMap = allRuns.reduce((m, r) => {
   m[r.id] = r
@@ -34,42 +35,24 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 Select runs to map.
 
 ```js
+const runLink = d => `/run.html?id=${d.id}`;
 const selection = view(Inputs.table(allRuns.sort((a, b) => b.ts - a.ts), {
-    columns: [
-      "date",
-      "linkedDate",
-      "region",
-      "start_beach",
-      "end_beach",
-      "distance_km",
-      "distance_on_foil",
-      "duration_sec",
-      "duration_on_foil",
-      "max_speed_1k",
-      "foil"
-    ],
-    header: {
-      date: "Date",
-      linkedDate: "Time",
-      region: "Region",
-      start_beach: "Start Beach",
-      end_beach: "End Beach",
-      distance_km: "Run Distance (km)",
-      distance_on_foil: "On Foil (km)",
-      duration_sec: "Run Duration",
-      duration_on_foil: "On Foil",
-      max_speed_1k: "Fastest km Pace",
-      foil: "Foil"
-      },
-      format: {
-        date: fmt.date,
-        linkedDate: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.time(d.date)}</a>`,
-        distance_on_foil: d => (d / 1000).toFixed(2),
-        duration_on_foil: fmt.seconds,
-        duration_sec: fmt.seconds,
-        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: d => fmt.pace(d).split(' ')[0]
-      },
+      ...runsTableOptions(beachColor, htl, {
+        columns: [
+          "date",
+          "linkedDate",
+          "region",
+          "start_beach",
+          "end_beach",
+          "distance_km",
+          "distance_on_foil",
+          "duration_sec",
+          "duration_on_foil",
+          "max_speed_1k",
+          "foil"
+        ],
+        linkHref: runLink
+      }),
       required: false}))
 ```
 

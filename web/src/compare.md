@@ -16,7 +16,9 @@ toc: true
 </style>
 
 ```js
-import {renderRun, findCallouts, findFastest1kSegment, createWindRoseInset} from "./components/map.js";
+import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
+import {compareColorizers} from "./components/color.js";
+import {windRoseOrigin, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
@@ -48,29 +50,7 @@ const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(toRelati
 ```js
 const [runCsv1, runCsv2] = await Promise.all(csvFetches);
 
-function createColorizer(data, baseHue) {
-  const speeds = data.map(d => d.speed).filter(s => s != null);
-  const minSpeed = Math.min(...speeds);
-  const maxSpeed = Math.max(...speeds);
-
-  return speed => {
-    if (speed == null) return `hsl(${baseHue}, 70%, 50%)`;
-    if (speed < 11) return `hsl(${baseHue}, 40%, 30%)`;
-
-    // Normalize speed to 0-1 range
-    const normalized = speeds.length > 1 ? (speed - minSpeed) / (maxSpeed - minSpeed) : 0.5;
-
-    const lightness = 30 + normalized * 40; // Range: 30% to 70%
-    const saturation = 70 + normalized * 20; // Range: 70% to 90%
-
-    return `hsl(${baseHue}, ${saturation}%, ${lightness}%)`;
-  };
-};
-
-const colorizers = [
-  createColorizer(runCsv1, 140), // Green hue
-  createColorizer(runCsv2, 30), // Orange hue
-];
+const colorizers = compareColorizers(runCsv1, runCsv2);
 
 const fastestSegments = [
   findFastest1kSegment(runCsv1),
@@ -82,23 +62,12 @@ const [wind1, wind2] = await windFetches;
 const [swell1, swell2] = await swellFetches;
 
 function aRose(d3, svg, width, height, wind, idx, colors, off) {
-  const size = 130;
-  const margin = 16;
-  const centerX = margin + size;
-  const centerY = margin + size + off;
-  const inset = createWindRoseInset(d3, svg, wind, {
+  const { centerX, centerY } = windRoseOrigin(16, 130, off);
+  const inset = addWindRose(d3, svg, wind, {
     x: centerX,
     y: centerY,
-    radius: size,
-    innerHole: 40,
-    nDirections: 36,
-    speedBreaks: [0, 15, 20, 25, 30],
-    colors: {
-      type: 'ordinal',
-      scheme: [0, 15, 20, 25, 30].map(colors)
-    },
-    normalize: false,
     title: "Wind Speed " + idx + " (knots)",
+    scheme: [0, 15, 20, 25, 30].map(colors)
   });
   return {
     updateOnZoom: null,

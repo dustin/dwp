@@ -5,7 +5,12 @@ toc: true
 ---
 
 ```js
-import {renderRun, findCallouts, createWindRoseInset, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
+import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
+import {beachColorScale} from "./components/beaches.js";
+import {runsTableOptions} from "./components/runs-table.js";
+import {compareColorizers} from "./components/color.js";
+import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
+import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
@@ -15,8 +20,7 @@ import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwell2} from "./compone
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
-const beaches = [...new Set(allRuns.map(d => d.start_beach))].sort();
-const beachColor = d3.scaleOrdinal(d3.schemeObservable10).domain(beaches);
+const beachColor = beachColorScale(allRuns);
 
 const runMetaMap = allRuns.reduce((m, r) => {
   m[r.id] = r
@@ -47,78 +51,19 @@ const swellPartitionsByTimestamp = new Map(
   swell2.map(({ts, values}) => [ts.getTime(), values])
 );
 
-// rank 1 is NDBC's own primary reading (the whole sea state); ranks 2+ are
-// the individual spectral components that make it up. The total kJ figure
-// only makes sense at the reading level (Surfline doesn't show it per
-// component either), so it belongs on the primary line, not repeated on
-// every component.
-function summarizeSwellPartition(values) {
-  return {
-    primary: values.find(d => d.rank === 1),
-    components: values.filter(d => d.rank !== 1),
-  };
-}
-
-function formatPrimaryLine(d) {
-  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° · ${d.surflineKJ.toFixed(0)} kJ`;
-}
-
-function formatComponentLine(d) {
-  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° (${d.energy.toFixed(2)} kJ/m²)`;
-}
-
 function formatIndividualSwells(ts) {
-  const values = swellPartitionsByTimestamp.get(ts.getTime());
-  if (!values) return "";
-
-  const { primary, components } = summarizeSwellPartition(values);
-  return [
-    primary && formatPrimaryLine(primary),
-    ...components.map(d => `  ${formatComponentLine(d)}`),
-  ].filter(Boolean).join("\n");
-}
-
-// NDBC station 51205 / Pauwela, Maui -- see db/swell/update.sql.
-const PAUWELA_BUOY = {lat: 21.018, lon: -156.421};
-
-// Swell drifts slowly enough over a run's timespan (usually well under a
-// day) that one representative reading -- the one closest to the run's
-// midpoint -- stands in fine for "what it was like out there", rather than
-// trying to average distinct wave systems across readings where a system's
-// rank can shift from one hour to the next.
-function representativeSwellReading(swell2, meta) {
-  if (!swell2 || swell2.length === 0) return null;
-  const mid = new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
-  return _.minBy(swell2, d => Math.abs(d.ts.getTime() - mid.getTime()));
+  return formatSwells(swellPartitionsByTimestamp, ts);
 }
 ```
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
   additionalMarks: ({ d3, svg, width, height }) => {
-    const size = 130;
-    const margin = 16;
-    const centerX = margin + size;
-    const centerY = margin + size;
-    const inset = createWindRoseInset(d3, svg, wind, {
+    const { size, centerX, centerY } = windRoseOrigin();
+    const inset = addWindRose(d3, svg, wind, {
       x: centerX,
       y: centerY,
-      radius: size,
-      innerHole: 40,
-      nDirections: 36,
-      speedBreaks: [0, 15, 20, 25, 30],
-      colors: {
-        type: 'ordinal',
-        scheme: [
-          '#ef4444', // red - 0-15
-          '#f97316', // orange - 15-20
-          '#eab308', // yellow - 20-25
-          '#22c55e', // green - 25-30
-          '#3b82f6'  // blue - 30+
-        ]
-      },
-      normalize: false,
       title: "Wind (avg)",
-      // colors: { type: "sequential", interpolator: d3.interpolatePurples, domain: [0, 30] }
+      scheme: WIND_SPEED_COLORS
     });
     let buoyMarker = null;
     if (swell2.length > 0 && (runMeta.region === 'Maui North Shore')) {
@@ -536,7 +481,8 @@ const compareFuns = {
 ```
 
 <div class="card">${
-Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts), {
+Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts),
+  runsTableOptions(beachColor, htl, {
     columns: [
       "date",
       "linkedDate",
@@ -551,28 +497,6 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
       "paddle_up_count",
       "foil"
     ],
-    header: {
-      date: "Date",
-      linkedDate: "Time",
-      start_beach: "Start Beach",
-      end_beach: "End Beach",
-      distance_km: "Run Distance (km)",
-      distance_on_foil: "On Foil (km)",
-      duration_sec: "Run Duration",
-      duration_on_foil: "On Foil",
-      max_speed_1k: "Fastest km Pace",
-      "wind_data": "Wind (kts)",
-      "paddle_up_count": "Paddle Ups",
-      foil: "Foil"
-      },
-      format: {
-        date: fmt.date,
-        linkedDate: d => htl.html`<a href="/compare.html?id1=${thisId}&id2=${d.id}">${fmt.time(d.date)}</a>`,
-        distance_on_foil: d => (d / 1000).toFixed(2),
-        duration_on_foil: fmt.seconds,
-        duration_sec: fmt.seconds,
-        start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
-        max_speed_1k: fmt.paceNoUnit,
-        wind_data: d => `${fmt.wind(d.avg_avg, d.gust_max, d.avg_dir)}`
-      }})
+    linkHref: d => `/compare.html?id1=${thisId}&id2=${d.id}`
+  }))
 }</div>
