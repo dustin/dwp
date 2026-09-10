@@ -42,18 +42,17 @@ jobs:
           path: ./web/dist
           key: build-${{ runner.os }}-${{ hashFiles('web/src/**/*', 'web/public/**/*') }}
 
-      # Cache Playwright binaries
-      - name: Cache Playwright
-        uses: actions/cache@v6
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-
       # Install dependencies if cache miss
       - name: Install dependencies
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
+
+      # Install the browser binaries matching the lockfile-pinned Playwright.
+      # Must run after npm ci (npx resolves playwright from node_modules);
+      # unconditional, since a cache keyed only on the lockfile can't self-heal
+      # if node_modules ever desyncs from the downloaded browsers.
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
 
       - name: Setup token from secret
         env:
@@ -66,17 +65,6 @@ jobs:
       - name: Build site
         if: steps.build-cache.outputs.cache-hit != 'true'
         run: npm run build
-
-      # Install Playwright if cache miss
-      - name: Install Playwright
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: |
-          npm install playwright
-          npx playwright install chromium --with-deps
-
-      # Always install Playwright CLI (lightweight)
-      - name: Install Playwright CLI
-        run: npm install playwright
 
       - name: Start server in background
         run: |
