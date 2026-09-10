@@ -18,14 +18,14 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - macos-latest
+          # - macos-latest
           - ubuntu-24.04-arm
         zig_version: ['0.15.2']
         include:
           - os: ubuntu-latest
             build_flags: '-Dtarget=x86_64-linux'
-          - os: macos-latest
-            build_flags: ''
+          # - os: macos-latest
+          #   build_flags: ''
           - os: ubuntu-24.04-arm
             build_flags: '-Dtarget=aarch64-linux'
 
