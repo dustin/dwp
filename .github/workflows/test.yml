@@ -80,7 +80,9 @@ jobs:
 
       - name: Start server in background
         run: |
-          npx http-server dist -p 3000 --silent &
+          PORT="${PORT:-3000}"
+          echo "BASE_URL=http://localhost:$PORT" >> "$GITHUB_ENV"
+          npx http-server dist -p "$PORT" --silent &
           echo $! > .server_pid
           sleep 3
 

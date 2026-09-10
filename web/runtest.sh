@@ -1,5 +1,9 @@
 #!/bin/bash
 
+# Base URL of the server under test. Override with e.g. BASE_URL=http://localhost:3001 ./runtest.sh
+PORT="${PORT:-3000}"
+BASE_URL="${BASE_URL:-http://localhost:$PORT}"
+
 # Step 1: Build your static site
 echo "Building static site..."
 npm run build
@@ -9,12 +13,12 @@ echo "Starting nginx server..."
 podman run -d \
   --name dashboard-server \
   -v ./dist:/usr/share/nginx/html:ro \
-  -p 3000:80 \
+  -p "$PORT":80 \
   docker.io/nginx:alpine
 
 # Wait for server to be ready
 sleep 2
-echo "Server running at http://localhost:3000"
+echo "Server running at $BASE_URL"
 
 # Step 3: Run Playwright tests
 # Note: This is a ~2GB download on first run
@@ -25,7 +29,7 @@ podman run --rm \
   -v ./tests:/tests:ro \
   -v ./test-output:/tests/test-output:rw \
   mcr.microsoft.com/playwright:v1.56.1-jammy \
-  sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright && node dashboard-test.js"
+  sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright && BASE_URL=$BASE_URL node dashboard-test.js"
 
 # Capture exit code
 TEST_EXIT=$?

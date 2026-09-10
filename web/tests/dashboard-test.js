@@ -3,6 +3,8 @@
 
 import { chromium } from 'playwright';
 
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
 async function runTests() {
   const browser = await chromium.launch({
     headless: true,
@@ -51,9 +53,9 @@ async function runTests() {
     errors.push(`Request failed: ${request.url()}`);
   });
 
-  console.log('Testing index page...');
-  await page.goto('http://localhost:3000', { waitUntil: 'networkidle' });
-  testedUrls.add('http://localhost:3000');
+  console.log(`Testing index page at ${BASE_URL}...`);
+  await page.goto(BASE_URL, { waitUntil: 'networkidle' });
+  testedUrls.add(BASE_URL);
 
   // Wait a bit for any graphs to render
   await page.waitForTimeout(2000);
@@ -75,13 +77,13 @@ async function runTests() {
   console.log('✓ Index page loaded successfully');
 
   // Find all links on the page
-  const links = await page.evaluate(() => {
+  const links = await page.evaluate(baseUrl => {
     return Array.from(document.querySelectorAll('a[href]'))
       .map(a => a.href)
       .filter(
-        href => href.startsWith('http://localhost:3000') && !href.includes('#') // Skip anchor links
+        href => href.startsWith(baseUrl) && !href.includes('#') // Skip anchor links
       );
-  });
+  }, BASE_URL);
 
   // Get unique links and randomly sample them
   const uniqueLinks = [...new Set(links)];
@@ -138,11 +140,11 @@ async function runTests() {
         console.log(`  ✓ ${link} loaded successfully`);
 
         // Collect links from this page for level 2 testing
-        const pageLinks = await linkPage.evaluate(() => {
+        const pageLinks = await linkPage.evaluate(baseUrl => {
           return Array.from(document.querySelectorAll('a[href]'))
             .map(a => a.href)
-            .filter(href => href.startsWith('http://localhost:3000') && !href.includes('#'));
-        });
+            .filter(href => href.startsWith(baseUrl) && !href.includes('#'));
+        }, BASE_URL);
         level2Links.push(...pageLinks);
       }
     } catch (error) {
