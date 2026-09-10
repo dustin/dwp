@@ -5,6 +5,62 @@ import { chromium } from 'playwright';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
+// Wind/swell CSVs live on the external data host and simply don't exist for
+// some runs/days. The app catches those fetch failures (data.js fetchWind /
+// fetchSwell / fetchSwell2) and renders "No data" UI, but the browser still
+// logs one "Failed to load resource ... 404" console error per missing file.
+// Chromium's console text doesn't name the failed resource, so scoping is
+// done by URL: each 404 response on an optional-data path excuses exactly
+// one subsequent 404 console message (the response event fires first).
+// Path match mirrors the fetchWind/fetchSwell/fetchSwell2 URLs in data.js;
+// the track CSV (/runs/...) is deliberately excluded -- a missing track is
+// a real failure.
+function isOptionalDataRequest(url) {
+  return /\/(wind|swell|swell_partition)\//.test(url);
+}
+
+function isMissingDataNoise(text) {
+  return /Failed to load resource:.*\b404\b/.test(text);
+}
+
+function attachErrorListeners(pg, bucket) {
+  // Count of un-attributed 404s on optional-data paths. Each excuses one
+  // subsequent "Failed to load resource ... 404" console message.
+  let excusedPending = 0;
+
+  pg.on('response', response => {
+    if (response.status() === 404 && isOptionalDataRequest(response.url())) {
+      excusedPending++;
+      console.log(`  (ignoring missing-data 404: ${response.url()})`);
+      return;
+    }
+    // Same-origin failures stay fatal: our own pages and assets must load.
+    if (response.url().startsWith(BASE_URL) && response.status() >= 400) {
+      bucket.push(`Bad same-origin response: ${response.status()} ${response.url()}`);
+    }
+  });
+
+  pg.on('console', msg => {
+    if (msg.type() !== 'error') return;
+    if (isMissingDataNoise(msg.text()) && excusedPending > 0) {
+      excusedPending--;
+      return;
+    }
+    const location = msg.location();
+    bucket.push(
+      `Console error: ${msg.text()} (at ${location.url}:${location.lineNumber}:${location.columnNumber})`
+    );
+  });
+
+  pg.on('pageerror', error => {
+    bucket.push(`Page error: ${error.message}\nStack: ${error.stack}`);
+  });
+
+  pg.on('requestfailed', request => {
+    bucket.push(`Request failed: ${request.url()}`);
+  });
+}
+
 async function runTests() {
   const browser = await chromium.launch({
     headless: true,
@@ -33,25 +89,8 @@ async function runTests() {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
-  // Listen for console errors with more detail
-  page.on('console', msg => {
-    if (msg.type() === 'error') {
-      const location = msg.location();
-      errors.push(
-        `Console error: ${msg.text()} (at ${location.url}:${location.lineNumber}:${location.columnNumber})`
-      );
-    }
-  });
-
-  // Listen for page errors with stack traces
-  page.on('pageerror', error => {
-    errors.push(`Page error: ${error.message}\nStack: ${error.stack}`);
-  });
-
-  // Listen for failed requests
-  page.on('requestfailed', request => {
-    errors.push(`Request failed: ${request.url()}`);
-  });
+  // Listen for console errors, page errors, and failed requests.
+  attachErrorListeners(page, errors);
 
   console.log(`Testing index page at ${BASE_URL}...`);
   await page.goto(BASE_URL, { waitUntil: 'networkidle' });
@@ -107,19 +146,7 @@ async function runTests() {
     // Create new page context for each link
     const linkPage = await context.newPage();
 
-    linkPage.on('console', msg => {
-      if (msg.type() === 'error') {
-        linkErrors.push(`Console error: ${msg.text()}`);
-      }
-    });
-
-    linkPage.on('pageerror', error => {
-      linkErrors.push(`Page error: ${error.message}`);
-    });
-
-    linkPage.on('requestfailed', request => {
-      linkErrors.push(`Request failed: ${request.url()}`);
-    });
+    attachErrorListeners(linkPage, linkErrors);
 
     try {
       await linkPage.goto(link, { waitUntil: 'networkidle', timeout: 10000 });
@@ -174,19 +201,7 @@ async function runTests() {
 
       const linkPage = await context.newPage();
 
-      linkPage.on('console', msg => {
-        if (msg.type() === 'error') {
-          linkErrors.push(`Console error: ${msg.text()}`);
-        }
-      });
-
-      linkPage.on('pageerror', error => {
-        linkErrors.push(`Page error: ${error.message}`);
-      });
-
-      linkPage.on('requestfailed', request => {
-        linkErrors.push(`Request failed: ${request.url()}`);
-      });
+      attachErrorListeners(linkPage, linkErrors);
 
       try {
         await linkPage.goto(link, { waitUntil: 'networkidle', timeout: 10000 });
