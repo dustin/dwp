@@ -43,7 +43,6 @@ function beachColorNamed(name) {
   return beachColorBy(beachColor, name);
 }
 const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObservable10 })});
-const regionLegend = Plot.legend({color: ({ domain: runCsv.map(d => d.region) })});
 ```
 
 <div class="grid grid-cols-4">

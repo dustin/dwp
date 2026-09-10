@@ -8,14 +8,12 @@ toc: true
 import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
 import {beachColorScale} from "./components/beaches.js";
 import {runsTableOptions} from "./components/runs-table.js";
-import {compareColorizers} from "./components/color.js";
+import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
-import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwell2} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
@@ -158,7 +156,7 @@ function formatIndividualSwells(ts) {
 ```js
 const [onFoil, offFoil] = _.unzip(
   _.map(runCsv, d => {
-    const on = d.speed > 11;
+    const on = d.speed > FOIL_THRESHOLD_KPH;
     return [ { ...d, speed: on ? d.speed : null, }, { ...d, speed: on ? null : d.speed }
     ]
   })
@@ -172,8 +170,8 @@ const segments = tl.computeSegments(runCsv);
         title: "Speed",
         width, x: {tickFormat: d3.timeFormat("%H:%M")},
         marks: [
-            Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= 11 ? d.speed : null, fill: "#500", stroke: "none" }),
-            Plot.areaY(runCsv, { x: "ts", y: d => d.speed > 11  ? d.speed : null, fill: "#030", stroke: "none" }),
+            Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= FOIL_THRESHOLD_KPH ? d.speed : null, fill: "#500", stroke: "none" }),
+            Plot.areaY(runCsv, { x: "ts", y: d => d.speed > FOIL_THRESHOLD_KPH  ? d.speed : null, fill: "#030", stroke: "none" }),
             Plot.lineY(onFoil, { x: "ts", y: "speed", stroke: "#050" }),
             Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
             Plot.lineY(runCsv, { x: "ts", y: "avg_speed_1k", stroke: "#808",
@@ -210,7 +208,7 @@ const segments = tl.computeSegments(runCsv);
 }</div>
 
 ```js
-const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > 11);
+const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > FOIL_THRESHOLD_KPH);
 ```
 
 <div class="grid grid-cols-4">
@@ -418,8 +416,8 @@ resize((width) => {
     x: {tickFormat: d3.timeFormat("%H:%M"), interval: 1},
     y: { label: "Speed (knots)" },
     marks: [
-    Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= 11 ? d.speed : null, fill: "#500", stroke: "none" }),
-    Plot.areaY(runCsv, { x: "ts", y: d => d.speed > 11  ? d.speed : null, fill: "#030", stroke: "none" }),
+    Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= FOIL_THRESHOLD_KPH ? d.speed : null, fill: "#500", stroke: "none" }),
+    Plot.areaY(runCsv, { x: "ts", y: d => d.speed > FOIL_THRESHOLD_KPH  ? d.speed : null, fill: "#030", stroke: "none" }),
     Plot.lineY(onFoil,  { x: "ts", y: "speed", stroke: "#050" }),
     Plot.lineY(offFoil, { x: "ts", y: "speed", stroke: "#900" }),
     Plot.axisY({ anchor: "left", label: "Speed (kph)" }),

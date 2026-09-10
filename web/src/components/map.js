@@ -4,6 +4,7 @@ import * as d3t from 'npm:d3-tile';
 import * as fmt from './formatters.js';
 import _ from 'npm:lodash';
 import { MAPBOX_TOKEN } from '../token.js';
+import {FOIL_THRESHOLD_KPH} from './color.js';
 
 function addAttribution(svg, width, height) {
   svg
@@ -153,17 +154,17 @@ function speedColor(speeds) {
 
   const colorScale = d3
     .scaleQuantile()
-    .domain(speeds.filter(s => s > 11))
+    .domain(speeds.filter(s => s > FOIL_THRESHOLD_KPH))
     .range(['#ff0', '#cf0', '#9f0', '#6f0', '#3f0', '#0f0']);
 
   return function (speed) {
-    return speed > 11 ? colorScale(speed) : '#900';
+    return speed > FOIL_THRESHOLD_KPH ? colorScale(speed) : '#900';
   };
 }
 
 export function findCallouts(runMeta, data, fastestSegments = []) {
   const calloutSpots = {
-    minHr: data.find(d => d.speed > 11 && d.hr === runMeta.min_foiling_hr),
+    minHr: data.find(d => d.speed > FOIL_THRESHOLD_KPH && d.hr === runMeta.min_foiling_hr),
     maxSpeed: _.maxBy(data, d => d.speed),
     maxDist: _.maxBy(data, d => d.distance_to_land),
   };

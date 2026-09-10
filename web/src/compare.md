@@ -21,8 +21,6 @@ import {compareColorizers} from "./components/color.js";
 import {windRoseOrigin, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";
-import {autoType} from "https://cdn.jsdelivr.net/npm/d3-dsv@3/+esm";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 
 const urlParams = new URLSearchParams(window.location.search);

@@ -2,6 +2,7 @@ import * as Plot from 'npm:@observablehq/plot';
 import _ from 'npm:lodash';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
+import {FOIL_THRESHOLD_KPH} from './color.js';
 
 function regress(src, x, y) {
   return Plot.linearRegressionY(src, { x, y, stroke: '#808' });
@@ -61,7 +62,6 @@ export function computeSplits(data) {
   );
 }
 
-const SPEED_THRESHOLD = 11;
 const MIN_DURATION_MS = 5000;
 
 export function computeSegments(data) {
@@ -71,7 +71,7 @@ export function computeSegments(data) {
 
       const currentSpeed = d.speed;
       const hasValidSpeed = currentSpeed != null;
-      const speedIndicatesOnFoil = hasValidSpeed && currentSpeed >= SPEED_THRESHOLD;
+      const speedIndicatesOnFoil = hasValidSpeed && currentSpeed >= FOIL_THRESHOLD_KPH;
 
       // Get current confirmed state
       let confirmedOnFoil = null;
