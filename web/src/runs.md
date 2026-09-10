@@ -1,11 +1,12 @@
 ---
 theme: dashboard
-title: a downwind run
+title: overlay downwind runs
 toc: true
 ---
 
 ```js
 import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
+import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {csv} from "https://cdn.jsdelivr.net/npm/d3-fetch@3/+esm";

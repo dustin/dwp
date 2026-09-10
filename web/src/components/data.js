@@ -91,9 +91,17 @@ function inRange(meta, allRows) {
     }
   }
 
-  const rv = lastBefore ? [lastBefore, ...inRange] : inRange;
-  rv[0].ts = meta.ts;
-  return rv;
+  // Clone the first row before pinning it to the run start: rows are
+  // references into allRows, so mutating in place would corrupt the
+  // cached day data for other callers.
+  if (lastBefore) {
+    return [{ ...lastBefore, ts: meta.ts }, ...inRange];
+  }
+  if (inRange.length === 0) {
+    return [];
+  }
+  const [first, ...rest] = inRange;
+  return [{ ...first, ts: meta.ts }, ...rest];
 }
 
 export async function fetchWind(meta) {

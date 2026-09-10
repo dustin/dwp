@@ -373,7 +373,7 @@ const maxHRY = Math.max(
 <div class="grid grid-cols-2">
 <div class="card">${
 resize((width) => Plot.plot({
-      title: `Speed (${fmt.timestamp(runMeta2.ts)})`,
+      title: `Speed (${fmt.timestamp(runMeta1.ts)})`,
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxSplitY] },
       marks: [

@@ -245,8 +245,8 @@ function regress(x, y, src) {
   <div class="card">${
     resize(tl.tl(runCsv, "Percentage of Distance on Foil",
         {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
-        "ts", "pct_dist_on_foil", {stroke: "start_beach"},
-        {fill: "start_beach",
+        "ts", "pct_dist_on_foil", {stroke: beachColorNamed("start_beach")},
+        {fill: beachColorNamed("start_beach"),
          title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                        d.end_beach, "on foil", (d.pct_dist_on_foil * 100).toFixed(0) + "%",
                        "on foil"

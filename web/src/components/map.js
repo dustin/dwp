@@ -5,6 +5,18 @@ import * as fmt from './formatters.js';
 import _ from 'npm:lodash';
 import { MAPBOX_TOKEN } from '../token.js';
 
+function addAttribution(svg, width, height) {
+  svg
+    .append('text')
+    .attr('x', width - 8)
+    .attr('y', height - 8)
+    .attr('text-anchor', 'end')
+    .attr('font-size', 11)
+    .attr('fill', 'rgba(255,255,255,0.85)')
+    .attr('pointer-events', 'none')
+    .text('© Mapbox © OpenStreetMap');
+}
+
 function tileURL(x, y, z) {
   // return `https://api.mapbox.com/styles/v1/mapbox/streets-v11/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? "@2x" : ""}?access_token=${MAPBOX_TOKEN}`
   return `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/${z}/${x}/${y}${devicePixelRatio > 1 ? '@2x' : ''}?access_token=${MAPBOX_TOKEN}`;
@@ -130,6 +142,8 @@ export function renderCrashes(width, data) {
       );
     }
   }
+
+  addAttribution(svg, width, height);
 
   return svg.node();
 }
@@ -691,6 +705,8 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
 
     if (additional?.updateOnZoom) additional.updateOnZoom({ transform, width, height });
   }
+
+  addAttribution(svg, width, height);
 
   return svg.node();
 }
