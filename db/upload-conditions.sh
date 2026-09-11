@@ -1,7 +1,6 @@
 #!/bin/sh -e
 
 lake=$HOME/stuff/duck
-dwruns=/Users/dustin/stuff/dwruns/
 wind=/Users/dustin/stuff/wind/
 swell=/Users/dustin/stuff/swell/
 swell_partition=/Users/dustin/stuff/swell_partition/
@@ -21,16 +20,6 @@ consolidate() {
 export=`pwd`/export-conditions.sql
 cd $lake
 duckdb --init init.sql < $export
-
-find "$dwruns" -type f -name 'data_0.csv' -print0 |
-    while IFS= read -r -d '' file; do
-        consolidate "$file" tsi
-    done
-
-rclone sync $dwruns s3:db.downwind.pro/runs/ \
-    --header-upload "Content-Encoding: gzip" \
-    --header-upload "Content-Type: text/csv; charset=utf-8" \
-    --max-age 14d
 
 find "$wind" -type f -name 'data_0.csv' -print0 |
     while IFS= read -r -d '' file; do
