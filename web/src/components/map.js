@@ -164,7 +164,6 @@ function speedColor(speeds) {
 
 export function findCallouts(runMeta, data, fastestSegments = []) {
   const calloutSpots = {
-    minHr: data.find(d => d.speed > FOIL_THRESHOLD_KPH && d.hr === runMeta.min_foiling_hr),
     maxSpeed: _.maxBy(data, d => d.speed),
     maxDist: _.maxBy(data, d => d.distance_to_land),
   };
@@ -183,14 +182,18 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
     },
   ];
 
-  // Sometimes I didn't get on foil enough to have a min heart rate there.
-  if (calloutSpots.minHr) {
-    callouts.push({
-      lat: calloutSpots.minHr.lat,
-      lon: calloutSpots.minHr.lon,
-      icon: '🫀',
-      text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm`,
-    });
+  if (runMeta.min_foiling_hr) {
+    let lastMinHrTs = null;
+    for (const reading of data.filter(d => d.speed > FOIL_THRESHOLD_KPH && d.hr === runMeta.min_foiling_hr)) {
+      if (lastMinHrTs !== null && reading.ts - lastMinHrTs < 2 * 60 * 1000) continue;
+      lastMinHrTs = reading.ts;
+      callouts.push({
+        lat: reading.lat,
+        lon: reading.lon,
+        icon: '🫀',
+        text: `Min foiling heart rate of ${runMeta.min_foiling_hr} bpm`,
+      });
+    }
   }
 
   fastestSegments.forEach(fastestSegment => {
