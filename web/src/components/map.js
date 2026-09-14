@@ -183,8 +183,9 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
   ];
 
   if (runMeta.min_foiling_hr) {
+    const firstPaddleUp = runMeta.distance_to_first_paddle_up || 0;
     let lastMinHrTs = null;
-    for (const reading of data.filter(d => d.speed > FOIL_THRESHOLD_KPH && d.hr === runMeta.min_foiling_hr)) {
+    for (const reading of data.filter(d => d.speed > FOIL_THRESHOLD_KPH && d.hr === runMeta.min_foiling_hr && d.distance >= firstPaddleUp)) {
       if (lastMinHrTs !== null && reading.ts - lastMinHrTs < 2 * 60 * 1000) continue;
       lastMinHrTs = reading.ts;
       callouts.push({
