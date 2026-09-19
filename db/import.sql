@@ -28,18 +28,24 @@ SELECT
   NULL::DOUBLE                                                    AS calories       -- still not present in the source data
 FROM read_csv_auto(getvariable('csv_path'));
 
--- Re-import support: match an existing run by its earliest
--- trackpoint timestamp (stable across gpx_filter.py re-runs,
--- since it never alters timestamps) and replace it in place
--- instead of creating a duplicate.
-CREATE TEMP TABLE new_run_start AS
-SELECT min(ts) AS start_ts FROM run_points;
+-- Re-import support: match an existing run by overlapping time
+-- range rather than an exact timestamp, and replace it in place
+-- instead of creating a duplicate. An exact match on the earliest
+-- trackpoint timestamp isn't reliable: GPX files that have been
+-- laundered through another system can come back with timestamps
+-- shifted by a few seconds. Since no two real runs ever start
+-- within a few minutes of each other or overlap in time, any
+-- existing run whose (buffered) time range overlaps the new run's
+-- range must be the same run, so we match on that instead.
+CREATE TEMP TABLE new_run_range AS
+SELECT min(ts) AS start_ts, max(ts) AS end_ts FROM run_points;
 
 CREATE TEMP TABLE existing_run AS
 SELECT dwid
 FROM dws
 GROUP BY dwid
-HAVING min(ts) = (SELECT start_ts FROM new_run_start);
+HAVING min(ts) - INTERVAL '5 minutes' <= (SELECT end_ts FROM new_run_range)
+   AND max(ts) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range);
 
 SELECT 'replacing ' || count(*) || ' existing run(s): ' ||
        coalesce(string_agg(dwid::VARCHAR, ', '), '(none)') AS reimport_notice
@@ -49,7 +55,7 @@ DELETE FROM dws WHERE dwid IN (SELECT dwid FROM existing_run);
 DELETE FROM dwlist WHERE id IN (SELECT dwid FROM existing_run);
 
 DROP TABLE existing_run;
-DROP TABLE new_run_start;
+DROP TABLE new_run_range;
 
 CREATE TEMP TABLE new_run AS
 SELECT gen_random_uuid() AS dwid;
