@@ -2,166 +2,131 @@ use lake;
 
 begin;
 
-call lake.set_commit_message('dustin', 'import DW runs');
+call lake.set_commit_message('dustin', 'import DW run from filtered csv');
 
-create temp table allthethings as
-  select
-    regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') AS filename,
-    "Timestamp (from 1970)" as tsi,
-     date, time,
-     Lat as lat,
-     Long as lon,
-     "Speed (m/s)" * 3.6 as speed,
-     Heading as heading,
-     HR as hr,
-     "Distance (m)" as distance_orig,
-     0::double as distance,
-     0::double as avg_speed_15s,
-     0::double as avg_speed_1k,
-     "Calories (SUM)" as calories
-  from read_csv("/Users/dustin/Library/Mobile Documents/iCloud~TNT~Waterspeed/Documents/runs/*.csv")
-  where regexp_replace(regexp_replace(filename, '^.*/', ''), '\.csv', '') not in (select filename from dwlist where id in (select distinct dwid from dws));
+SET VARIABLE csv_path = '/tmp/activity.csv';
+SET VARIABLE tz = 'Pacific/Honolulu';
+SET VARIABLE board = 'Kalama Gator  95.0 lt';
+SET VARIABLE foil = 'F4 Hammerhead 585';
 
-CREATE or replace TEMP TABLE tmp_distance AS
-WITH points AS (
-    SELECT
-        filename,
-        tsi,
-        -- Your installation expects (lat, lon)
-        ST_Point(lat, lon)                                   AS pt,
-        LAG(ST_Point(lat, lon)) OVER (
-            PARTITION BY filename
-            ORDER BY tsi
-        )                                                   AS prev_pt
-    FROM allthethings
-),
-segments AS (
-    SELECT
-        filename,
-        tsi,
-        pt,
-        prev_pt,
-        CASE
-            WHEN prev_pt IS NULL THEN 0
-            ELSE ST_Distance_Sphere(prev_pt, pt)
-        END                                                 AS seg_dist
-    FROM points
+-- All filtering happens in gpx_filter.py; speed_final_kmh,
+-- lat_filtered/lon_filtered, and distance_cumulative_m are
+-- already the values to trust, so nothing is re-derived here.
+CREATE TEMP TABLE run_points AS
+SELECT
+  time_utc::TIMESTAMPTZ                                          AS ts,
+  epoch(time_utc::TIMESTAMPTZ)                                   AS tsi,
+  (time_utc::TIMESTAMPTZ AT TIME ZONE getvariable('tz'))::DATE   AS date,
+  (time_utc::TIMESTAMPTZ AT TIME ZONE getvariable('tz'))::TIME   AS time,
+  lat_filtered                                                    AS lat,
+  lon_filtered                                                    AS lon,
+  speed_final_kmh                                                 AS speed,
+  NULL::DOUBLE                                                    AS heading,      -- still not present in the source data
+  hr,
+  NULL::DOUBLE                                                    AS distance_orig, -- still not present in the source data
+  distance_cumulative_m                                           AS distance,
+  NULL::DOUBLE                                                    AS calories       -- still not present in the source data
+FROM read_csv_auto(getvariable('csv_path'));
+
+-- Re-import support: match an existing run by its earliest
+-- trackpoint timestamp (stable across gpx_filter.py re-runs,
+-- since it never alters timestamps) and replace it in place
+-- instead of creating a duplicate.
+CREATE TEMP TABLE new_run_start AS
+SELECT min(ts) AS start_ts FROM run_points;
+
+CREATE TEMP TABLE existing_run AS
+SELECT dwid
+FROM dws
+GROUP BY dwid
+HAVING min(ts) = (SELECT start_ts FROM new_run_start);
+
+SELECT 'replacing ' || count(*) || ' existing run(s): ' ||
+       coalesce(string_agg(dwid::VARCHAR, ', '), '(none)') AS reimport_notice
+FROM existing_run;
+
+DELETE FROM dws WHERE dwid IN (SELECT dwid FROM existing_run);
+DELETE FROM dwlist WHERE id IN (SELECT dwid FROM existing_run);
+
+DROP TABLE existing_run;
+DROP TABLE new_run_start;
+
+CREATE TEMP TABLE new_run AS
+SELECT gen_random_uuid() AS dwid;
+
+INSERT INTO dwlist (id, sport, board, foil)
+SELECT
+  dwid,
+  'Downwind',
+  getvariable('board'),
+  getvariable('foil')
+FROM new_run;
+
+CREATE TEMP TABLE run_points_avg AS
+SELECT
+  p.*,
+  AVG(p.speed) OVER (
+    ORDER BY p.ts
+    RANGE BETWEEN INTERVAL '15' SECOND PRECEDING AND CURRENT ROW
+  ) AS avg_speed_15s,
+  (
+    SELECT AVG(d2.speed)
+    FROM run_points d2
+    WHERE d2.distance BETWEEN p.distance - 1000 AND p.distance
+  ) AS avg_speed_1k
+FROM run_points p;
+
+INSTALL spatial; LOAD spatial;
+
+INSERT INTO dws (
+  dwid, tsi, ts, date, time, lat, lon, speed, heading, hr,
+  distance, calories, nearest_land_lat, nearest_land_lon,
+  avg_speed_15s, avg_speed_1k
 )
 SELECT
-    filename,
-    tsi,
-    SUM(seg_dist) OVER (
-        PARTITION BY filename
-        ORDER BY tsi
-        ROWS UNBOUNDED PRECEDING
-    )                                                     AS distance
-FROM segments;
+  (SELECT dwid FROM new_run) AS dwid,
+  p.tsi,
+  p.ts,
+  p.date, p.time,
+  p.lat, p.lon,
+  p.speed,
+  p.heading,
+  nullif(p.hr, 0),
+  p.distance,
+  p.calories,
+  nearest_lat, nearest_lon,
+  p.avg_speed_15s, p.avg_speed_1k
+FROM run_points_avg AS p
+LEFT JOIN LATERAL (
+  SELECT ST_X(ST_PointN(ST_ShortestLine(ST_Point(p.lat, p.lon), pp.geom), 2)) AS nearest_lat,
+         ST_Y(ST_PointN(ST_ShortestLine(ST_Point(p.lat, p.lon), pp.geom), 2)) AS nearest_lon
+  FROM coastline_swapped AS pp
+  ORDER BY ST_Distance_Sphere(
+    ST_Point(p.lat, p.lon),
+    ST_PointN(ST_ShortestLine(ST_Point(p.lat, p.lon), pp.geom), 2))
+  LIMIT 1
+) AS nn ON true;
 
-MERGE INTO allthethings AS tgt
-USING tmp_distance AS src
-ON  tgt.filename = src.filename
-AND tgt.tsi   = src.tsi
-WHEN MATCHED THEN
-    UPDATE SET distance = src.distance;
+DROP TABLE run_points;
+DROP TABLE run_points_avg;
 
-drop table tmp_distance;
-
-UPDATE allthethings AS tgt
-SET    avg_speed_15s = src.avg_15s
+UPDATE dwlist AS l
+SET ts = ups.ts,
+    date = ups.date, time = ups.time,
+    max_speed_kmh = ups.max_speed_kmh, avg_speed_kmh = ups.avg_speed_kmh,
+    duration_sec = ups.duration_sec, distance_km = ups.distance_km
 FROM (
-        SELECT
-            filename,
-            tsi,
-            AVG(speed) OVER (
-              PARTITION BY filename
-              ORDER BY to_timestamp(tsi)
-              RANGE BETWEEN INTERVAL '15' SECOND PRECEDING AND CURRENT ROW
-        ) AS avg_15s        FROM allthethings
-     ) AS src
-WHERE  tgt.filename = src.filename
-  AND  tgt.tsi      = src.tsi;
-
-UPDATE allthethings AS tgt
-SET
-  avg_speed_1k = (
-    SELECT AVG(d2.speed)
-    FROM allthethings AS d2
-    WHERE
-      d2.filename = tgt.filename
-      AND d2.distance BETWEEN tgt.distance - 1000 AND tgt.distance
-  );
-
--- Match incoming runs to existing dwlist entries by timestamp proximity
-CREATE TEMP TABLE run_matches AS
-SELECT a.filename, l.id AS dwid
-FROM (
-    SELECT filename, min(tsi) AS first_tsi
-    FROM allthethings
-    GROUP BY filename
-) a
-JOIN dwlist l
-  ON abs(l.ts - a.first_tsi) < 300
- AND l.sport = 'Downwind';
-
--- Fail if any incoming run has no match
-SELECT
-    CASE WHEN count(*) > 0
-    THEN error('Unmatched runs (no dwlist entry within threshold): ' || string_agg(filename, ', '))
-    END
-FROM (
-    SELECT DISTINCT filename FROM allthethings
-    EXCEPT
-    SELECT filename FROM run_matches
-);
-
-update dwlist as l
-  set ts = ups.ts,
-      date = ups.date, time = ups.time,
-      max_speed_kmh = ups.max_speed_kmh, avg_speed_kmh = ups.avg_speed_kmh,
-      duration_sec = ups.duration_sec, distance_km = ups.distance_km
-  from (
-    select m.dwid,
-      min(tsi) as ts, min(date) as date, min(time) as time,
-      max(speed) as max_speed_kmh, avg(speed) as avg_speed_kmh,
-      max(tsi) - min(tsi) as duration_sec, (max(distance) / 1000) as distance_km
-    from allthethings a
-    join run_matches m using (filename)
-    group by m.dwid
-  ) as ups
-  where l.id = ups.dwid;
-
-insert into dws (dwid, tsi, ts, date, time, lat, lon, speed, heading, hr, distance, calories, nearest_land_lat, nearest_land_lon, avg_speed_15s, avg_speed_1k)
-  select
-     m.dwid,
-     tsi,
-     make_timestamp((tsi * 1000000)::BIGINT) as ts,
-     c.date, c.time,
-     c.lat,
-     c.lon,
-     speed,
-     heading,
-     nullif(hr, 0),
-     c.distance,
-     calories,
-     nearest_lat, nearest_lon,
-     avg_speed_15s, avg_speed_1k
-  from allthethings as c
-  join run_matches m using (filename)
-  left join lateral (
-    select ST_X(ST_PointN(ST_ShortestLine(ST_Point(c.lat, c.lon), pp.geom), 2)) as nearest_lat,
-           ST_Y(ST_PointN(ST_ShortestLine(ST_Point(c.lat, c.lon), pp.geom), 2)) as nearest_lon
-      from coastline_swapped as pp
-      order by ST_Distance_Sphere(
-        ST_Point(c.lat, c.lon),
-        ST_PointN(ST_ShortestLine(ST_Point(c.lat, c.lon), geom), 2))
-      limit 1
-      ) as nn on true;
-
-drop table allthethings;
-drop table run_matches;
+  SELECT
+    min(tsi) AS ts, min(date) AS date, min(time) AS time,
+    max(speed) AS max_speed_kmh, avg(speed) AS avg_speed_kmh,
+    max(tsi) - min(tsi) AS duration_sec, (max(distance) / 1000) AS distance_km
+  FROM dws
+  WHERE dwid = (SELECT dwid FROM new_run)
+) AS ups
+WHERE l.id = (SELECT dwid FROM new_run);
+-- dwlist.ts is `double` and stores tsi (epoch seconds), despite the column name.
 
 -- Name the start and end beaches
-
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
        end_pos   = x.end_loc
@@ -186,6 +151,7 @@ FROM   (
                                      ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)))
                       LIMIT 1 )                                      AS beach_id
                 FROM   dws d
+                WHERE  d.dwid = (SELECT dwid FROM new_run)
                 QUALIFY
                     ROW_NUMBER() OVER (PARTITION BY d.dwid
                                        ORDER BY d.ts) = 1
@@ -194,236 +160,154 @@ FROM   (
              ) sub
         GROUP BY dwid
       ) x
-WHERE l.id = x.dwid
-  and (start_pos is null or end_pos is null);
+WHERE l.id = x.dwid;
 
--- update heart rates
-
+-- heart rates
 UPDATE dwlist AS l
 SET    min_foiling_hr = x.min_hr,
-       avg_foiling_hr   = x.avg_hr
+       avg_foiling_hr = x.avg_hr
 FROM   (select dwid, min(HR) as min_hr, avg(HR) as avg_hr
           from dws
-          where speed > 15
+          where speed > 15 and dwid = (SELECT dwid FROM new_run)
           group by dwid
         ) x
-  where l.id = x.dwid
-    and (min_foiling_hr is null or avg_foiling_hr is null);
+WHERE l.id = x.dwid;
 
--- update max distance
-
+-- max distance
 UPDATE dwlist AS l
 SET    max_distance = x.dist
 FROM   (select dwid, max(ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon))) as dist
           from dws
+          where dwid = (SELECT dwid FROM new_run)
           group by dwid
         ) x
-  where l.id = x.dwid
-  and max_distance is null;
+WHERE l.id = x.dwid;
 
--- update max speed
-
+-- max speed
 UPDATE dwlist AS l
 SET    max_speed_1k = x.maxspeed
 FROM   (select dwid, max(avg_speed_1k) as maxspeed
           from dws
+          where dwid = (SELECT dwid FROM new_run)
           group by dwid
         ) x
-  where l.id = x.dwid
-  and max_speed_1k is null;
+WHERE l.id = x.dwid;
 
--- Find the longest segments
+-- Debounced on/off-foil islands, shared by the four blocks below.
+-- raw_islands: alternating fast/slow runs from speed > 11.
+-- fast_islands_merged: slow gaps under 15s are bridged (reclassified
+-- fast) and re-merged, since a brief drop doesn't mean coming off foil.
+CREATE TEMP TABLE raw_islands AS
+WITH flagged AS (
+  SELECT dwid, ts, distance, (speed > 11) AS fast
+  FROM dws
+  WHERE dwid = (SELECT dwid FROM new_run)
+),
+changes AS (
+  SELECT *,
+    CASE WHEN LAG(fast) OVER (ORDER BY ts) IS DISTINCT FROM fast
+         THEN 1 ELSE 0 END AS is_change
+  FROM flagged
+),
+grouped AS (
+  SELECT *, SUM(is_change) OVER (ORDER BY ts) AS grp
+  FROM changes
+)
+SELECT
+  dwid, grp, fast,
+  MIN(ts)       AS start_ts,
+  MAX(ts)       AS end_ts,
+  MIN(distance) AS start_distance,
+  MAX(distance) AS end_distance,
+  EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts))) AS duration_sec
+FROM grouped
+GROUP BY dwid, grp, fast;
 
+CREATE TEMP TABLE fast_islands_merged AS
+WITH reclassified AS (
+  SELECT *,
+    CASE
+      WHEN fast THEN TRUE
+      WHEN NOT fast AND duration_sec < 15 THEN TRUE   -- bridge brief drops
+      ELSE FALSE
+    END AS effective_fast
+  FROM raw_islands
+),
+changes2 AS (
+  SELECT *,
+    CASE WHEN LAG(effective_fast) OVER (ORDER BY grp) IS DISTINCT FROM effective_fast
+         THEN 1 ELSE 0 END AS is_change2
+  FROM reclassified
+),
+grouped2 AS (
+  SELECT *, SUM(is_change2) OVER (ORDER BY grp) AS merge_grp
+  FROM changes2
+)
+SELECT
+  dwid,
+  effective_fast                                  AS fast,
+  MIN(start_ts)                                   AS start_ts,
+  MAX(end_ts)                                      AS end_ts,
+  MIN(start_distance)                              AS start_distance,
+  MAX(end_distance)                                AS end_distance,
+  MAX(end_distance) - MIN(start_distance)         AS total_distance,
+  EXTRACT(EPOCH FROM (MAX(end_ts) - MIN(start_ts))) AS duration_sec
+FROM grouped2
+GROUP BY dwid, merge_grp, effective_fast;
+
+DROP TABLE raw_islands;
+
+-- longest segment
 UPDATE dwlist AS dl
 SET
     longest_segment_distance = bi.total_distance,
     longest_segment_start    = bi.start_ts,
     longest_segment_end      = bi.end_ts
 FROM (
-    SELECT
-        dwid,
-        start_ts,
-        end_ts,
-        total_distance
-    FROM (
-        WITH flagged AS (
-            SELECT
-                dwid,
-                ts,
-                speed,
-                distance,
-                (speed > 11)               AS fast          -- boolean
-            FROM dws
-        ),
-        island_start AS (
-            SELECT
-                *,
-                CASE
-                    WHEN fast
-                         AND ( LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
-                               OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE )
-                    THEN 1
-                    ELSE 0
-                END                       AS is_start
-            FROM flagged
-        ),
-        grouped AS (
-            SELECT
-                *,
-                SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
-            FROM island_start
-        ),
-        island_stats AS (
-            SELECT
-                dwid,
-                grp,
-                MIN(ts)                                            AS start_ts,
-                MAX(ts)                                            AS end_ts,
-                MAX(distance) - MIN(distance)                      AS total_distance,
-                EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))            AS duration_sec
-            FROM grouped
-            WHERE fast
-            GROUP BY dwid, grp
-        )
-        SELECT
-            dwid,
-            start_ts,
-            end_ts,
-            total_distance,
-            ROW_NUMBER() OVER (PARTITION BY dwid
-                               ORDER BY total_distance DESC) AS rn
-        FROM island_stats
-    ) AS ranked
-    WHERE rn = 1
+    SELECT dwid, start_ts, end_ts, total_distance,
+           ROW_NUMBER() OVER (PARTITION BY dwid ORDER BY total_distance DESC) AS rn
+    FROM fast_islands_merged
+    WHERE fast
 ) AS bi
-WHERE dl.id = bi.dwid;
+WHERE bi.rn = 1 AND dl.id = bi.dwid;
 
--- Paddle up counts
-
+-- paddle up counts: only merged fast islands sustained >= 30s count
 UPDATE dwlist AS dl
-SET
-    paddle_up_count = pc.paddle_up_count
+SET paddle_up_count = pc.paddle_up_count
 FROM (
-    SELECT dwid, paddle_up_count
-    FROM (
-        WITH flagged AS (
-            SELECT dwid, ts, speed, distance, (speed > 11) AS fast FROM dws
-        ),
-        island_start AS (
-            SELECT *,
-                CASE
-                    WHEN fast
-                         AND (LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
-                              OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE)
-                    THEN 1 ELSE 0 END AS is_start
-            FROM flagged
-        ),
-        grouped AS (
-            SELECT *, SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
-            FROM island_start
-        ),
-        fast_islands AS (
-            SELECT dwid,
-                   grp,
-                   MIN(ts)                                   AS start_ts,
-                   MAX(ts)                                   AS end_ts,
-                   EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))   AS duration_sec
-            FROM grouped
-            WHERE fast
-            GROUP BY dwid, grp
-        ),
-        eligible_islands AS (
-            SELECT dwid, grp
-            FROM fast_islands
-            WHERE duration_sec >= 15
-        )
-        SELECT dwid,
-               COUNT(*) AS paddle_up_count
-        FROM eligible_islands
-        GROUP BY dwid
-    ) cnt
+    SELECT dwid, COUNT(*) AS paddle_up_count
+    FROM fast_islands_merged
+    WHERE fast AND duration_sec >= 30
+    GROUP BY dwid
 ) pc
 WHERE dl.id = pc.dwid;
 
--- Find the distance to the first paddle up
-
+-- distance to first paddle up (first qualifying island, same >= 30s bar)
 UPDATE dwlist AS dl
-SET    distance_to_first_paddle_up = fu.distance_to_first_paddle_up
+SET distance_to_first_paddle_up = fu.start_distance
 FROM (
-    SELECT dwid,
-           start_dist AS distance_to_first_paddle_up
-    FROM (
-        SELECT dwid,
-               start_ts,
-               start_dist,
-               ROW_NUMBER() OVER (PARTITION BY dwid ORDER BY start_ts) AS rn
-        FROM (
-            WITH flagged AS (
-                SELECT dwid, ts, speed, distance, (speed > 11) AS fast FROM dws
-            ),
-            island_start AS (
-                SELECT *,
-                    CASE
-                        WHEN fast
-                             AND (LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) IS NULL
-                                  OR LAG(fast) OVER (PARTITION BY dwid ORDER BY ts) = FALSE)
-                        THEN 1 ELSE 0 END AS is_start
-                FROM flagged
-            ),
-            grouped AS (
-                SELECT *, SUM(is_start) OVER (PARTITION BY dwid ORDER BY ts) AS grp
-                FROM island_start
-            ),
-            fast_islands AS (
-                SELECT dwid,
-                       grp,
-                       MIN(ts)                                   AS start_ts,
-                       MIN(distance)                    AS start_dist,
-                       EXTRACT(EPOCH FROM (MAX(ts) - MIN(ts)))   AS duration_sec
-                FROM grouped
-                WHERE fast
-                GROUP BY dwid, grp
-            )
-            SELECT dwid,
-                   start_ts,
-                   start_dist,
-                   duration_sec
-            FROM fast_islands
-            WHERE duration_sec >= 60          -- "more than a minute"
-        ) islands
-    ) numbered
-    WHERE rn = 1
+    SELECT dwid, start_distance,
+           ROW_NUMBER() OVER (PARTITION BY dwid ORDER BY start_ts) AS rn
+    FROM fast_islands_merged
+    WHERE fast AND duration_sec >= 30
 ) fu
-WHERE dl.id = fu.dwid;
+WHERE fu.rn = 1 AND dl.id = fu.dwid;
 
--- Foil distances
-
+-- foil distances: sum across all merged fast islands, any duration
 UPDATE dwlist AS dl
 SET
-    duration_on_foil = (
-        SELECT
-            SUM(duration_sec) FILTER (WHERE speed > 11)
-        FROM (
-            SELECT
-                tsi,
-                speed,
-                lead(tsi) OVER (PARTITION BY dwid ORDER BY tsi) - tsi AS duration_sec
-            FROM dws
-            WHERE dwid = dl.id
-        ) AS t
-        WHERE t.duration_sec IS NOT NULL
-    ),
-    distance_on_foil = (
-        SELECT
-            SUM(seg_distance) FILTER (WHERE speed > 11)
-        FROM (
-            SELECT
-                distance - LAG(distance) OVER (PARTITION BY dwid ORDER BY tsi) AS seg_distance,
-                speed
-            FROM dws
-            WHERE dwid = dl.id
-        ) AS d
-        WHERE d.seg_distance IS NOT NULL
-    );
+    duration_on_foil = fo.dur,
+    distance_on_foil = fo.dist
+FROM (
+    SELECT dwid, SUM(duration_sec) AS dur, SUM(total_distance) AS dist
+    FROM fast_islands_merged
+    WHERE fast
+    GROUP BY dwid
+) fo
+WHERE dl.id = fo.dwid;
+
+DROP TABLE fast_islands_merged;
+
+DROP TABLE new_run;
 
 commit;
