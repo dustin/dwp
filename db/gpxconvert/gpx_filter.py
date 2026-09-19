@@ -21,7 +21,18 @@ Pipeline stages, in order:
   4. Hampel filter:          a robust (median/MAD-based) statistical
      outlier test on the speed series itself. Catches single-point
      temporal spikes that stage 1 can't see because they sit on a
-     geometrically straight line.
+     geometrically straight line. Uses a tighter threshold for points
+     immediately following an abnormally long sample gap (a dropped
+     fix), since the next fix after a gap is inherently a longer,
+     lower-confidence baseline and more likely to overshoot.
+  4b. Raw-leg Hampel filter: the same test again, but run on raw,
+     unsmoothed fix-to-fix leg speed instead of the ~2s-smoothed
+     series stage 3/4 use. Averaging into a trailing window can
+     dilute a single bad leg's spike below stage 4's threshold
+     before it's ever seen; this pass catches those. It does not
+     alter speed_hampel/speed_final -- it only feeds stage 8's
+     distrust mask (see below), so it can be tuned independently
+     without touching the despiked point-level series.
   5. Acceleration despike:   flags a point only if BOTH the incoming
      and outgoing rate of change exceed a plausible max AND point in
      opposite directions (a "spike" shape) -- a real acceleration
@@ -35,6 +46,14 @@ Pipeline stages, in order:
      stages 1-6 are what should actually be doing the work, since
      they judge *context/support*, not raw magnitude, and so
      correctly let genuine fast conditions through untouched.
+  8. Best sustained speed:   the headline "top speed" figure, computed
+     as the best average speed over any span of the track lasting at
+     least a configurable window (default 2s), using cumulative
+     distance that OMITS any point flagged by stage 1/2 (position) or
+     stage 4/4b (speed-domain Hampel, smoothed or raw-leg). Point-level
+     speed_final can still carry a residual single-fix glitch; this
+     metric asks whether real ground was covered in real time, so a
+     one- or two-fix crash/GPS-noise artifact can't produce it.
 
 Run with --help for the full list of tunable thresholds.
 """
@@ -148,41 +167,77 @@ class CleanedPoint:
 
 
 def clean_positions(points: list[Point], outlier_ratio: float, outlier_min_m: float,
-                     hdop_max: float) -> list[CleanedPoint]:
+                     hdop_max: float, max_passes: int = 3) -> list[CleanedPoint]:
+    """
+    Stage 1+2, iterated to convergence (or `max_passes`).
+
+    A single forward pass only ever compares point i against its *raw*
+    neighbors i-1/i+1. That misses short bursts of 2+ consecutive bad
+    fixes -- e.g. from a crash -- because if i-1 is itself a bad fix,
+    the "direct" leg of the detour test is already corrupted and the
+    via/direct ratio no longer looks anomalous, so the point right next
+    to a bad one can slip through untouched.
+
+    Re-running the test using the *held* positions from the previous
+    pass fixes this: once pass N corrects a bad fix to the last known
+    good position, that neighbor looks normal to pass N+1, which
+    exposes the point(s) beside it. This converges in a couple of
+    passes for the short bursts a crash/tumble typically produces.
+    """
     n = len(points)
+    raw_lat = [p.lat for p in points]
+    raw_lon = [p.lon for p in points]
+    hdop_outlier = [p.hdop is not None and p.hdop > hdop_max for p in points]
+
+    held_lat = raw_lat[:]
+    held_lon = raw_lon[:]
+    geo_outlier = [False] * n
+    combined = [False] * n
+    prev_combined = None
+
+    for _ in range(max(1, max_passes)):
+        geo_outlier = [False] * n
+        for i in range(1, n - 1):
+            prev_lat, prev_lon = held_lat[i - 1], held_lon[i - 1]
+            next_lat, next_lon = held_lat[i + 1], held_lon[i + 1]
+            direct = haversine_m(prev_lat, prev_lon, next_lat, next_lon)
+            via = (haversine_m(prev_lat, prev_lon, raw_lat[i], raw_lon[i])
+                   + haversine_m(raw_lat[i], raw_lon[i], next_lat, next_lon))
+            # direct == 0 means the track is (per the held positions)
+            # stationary on either side of i -- any real detour there is
+            # suspect regardless of ratio, so don't let it short-circuit
+            # the test the way `direct > 0` used to.
+            if via > outlier_min_m and (direct == 0 or via > direct * outlier_ratio):
+                geo_outlier[i] = True
+
+        combined = [geo_outlier[i] or hdop_outlier[i] for i in range(n)]
+
+        last_good_lat = last_good_lon = None
+        for i in range(n):
+            if combined[i] and last_good_lat is not None:
+                held_lat[i], held_lon[i] = last_good_lat, last_good_lon
+            else:
+                held_lat[i], held_lon[i] = raw_lat[i], raw_lon[i]
+                last_good_lat, last_good_lon = raw_lat[i], raw_lon[i]
+
+        if combined == prev_combined:
+            break
+        prev_combined = combined
+
     cleaned: list[CleanedPoint] = []
-    last_good_lat = last_good_lon = None
-
     for i, p in enumerate(points):
-        geo_outlier = False
-        if 0 < i < n - 1:
-            prev_p, next_p = points[i - 1], points[i + 1]
-            direct = haversine_m(prev_p.lat, prev_p.lon, next_p.lat, next_p.lon)
-            via = (haversine_m(prev_p.lat, prev_p.lon, p.lat, p.lon)
-                   + haversine_m(p.lat, p.lon, next_p.lat, next_p.lon))
-            if direct > 0 and via > outlier_min_m and via > direct * outlier_ratio:
-                geo_outlier = True
-
-        hdop_outlier = p.hdop is not None and p.hdop > hdop_max
-
-        is_outlier = geo_outlier or hdop_outlier
+        is_outlier = combined[i]
         reason = ""
-        if geo_outlier and hdop_outlier:
+        if geo_outlier[i] and hdop_outlier[i]:
             reason = "both"
-        elif geo_outlier:
+        elif geo_outlier[i]:
             reason = "geometric"
-        elif hdop_outlier:
+        elif hdop_outlier[i]:
             reason = "hdop"
-
-        if is_outlier and last_good_lat is not None:
-            lat, lon = last_good_lat, last_good_lon
-        else:
-            lat, lon = p.lat, p.lon
-            last_good_lat, last_good_lon = p.lat, p.lon
 
         cleaned.append(CleanedPoint(
             idx=p.idx, time=p.time, lat_raw=p.lat, lon_raw=p.lon,
-            lat=lat, lon=lon, ele=p.ele, hr=p.hr, hdop=p.hdop,
+            lat=held_lat[i], lon=held_lon[i], ele=p.ele, hr=p.hr, hdop=p.hdop,
             position_outlier=is_outlier, position_outlier_reason=reason,
         ))
     return cleaned
@@ -209,17 +264,56 @@ def compute_instant_speed(cleaned: list[CleanedPoint], window_s: float) -> list[
     return speeds
 
 
+def compute_leg_speed(cleaned: list[CleanedPoint]) -> list[float]:
+    """
+    Raw, unsmoothed fix-to-fix speed: leg_speed[i] is the speed of the single
+    leg from point i-1 to point i (leg_speed[0] is always 0). Unlike
+    compute_instant_speed's trailing window, this does no averaging, so a
+    single bad fix's full spike survives right up until something explicitly
+    tests for it -- which is the point: stage 4 runs a second Hampel pass on
+    this series (see below) specifically because averaging into speed_2s can
+    dilute a single-leg spike below the point-level Hampel's threshold.
+    """
+    n = len(cleaned)
+    speeds = [0.0] * n
+    for i in range(1, n):
+        dt = (cleaned[i].time - cleaned[i - 1].time).total_seconds()
+        if dt > 0:
+            d = haversine_m(cleaned[i - 1].lat, cleaned[i - 1].lon, cleaned[i].lat, cleaned[i].lon)
+            speeds[i] = (d / dt) * 3.6
+    return speeds
+
+
 # ----------------------------------------------------------------
 # Stage 4: Hampel filter (robust median/MAD outlier test)
 # ----------------------------------------------------------------
 
 def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
-                   z_thresh: float, min_abs_kmh: float, mad_floor_kmh: float
+                   z_thresh: float, min_abs_kmh: float, mad_floor_kmh: float,
+                   gap_z_thresh: float | None = None, gap_ratio: float = 1.5
                    ) -> tuple[list[float], list[bool]]:
+    """
+    Robust (median/MAD) outlier test on the speed series.
+
+    `gap_z_thresh`, if given, applies a *tighter* z threshold to any point
+    whose incoming sample interval is abnormally long relative to the
+    track's typical cadence (dt_in > gap_ratio * median_dt). A dropped GPS
+    fix means the very next fix is a longer-baseline, lower-confidence
+    measurement -- a straight-line overshoot that snaps back on the
+    following (normal-cadence) sample looks geometrically unremarkable
+    (stage 1 can't see it -- there's no detour shape) but is exactly the
+    kind of fix a receiver is more likely to get wrong. Without this, such
+    a point can sit just under the default threshold and slip through as
+    an uncorrected speed spike.
+    """
     n = len(speeds)
     epochs = [t.timestamp() for t in times]
     out = speeds[:]
     flagged = [False] * n
+
+    dts = [epochs[i] - epochs[i - 1] for i in range(1, n)]
+    median_dt = statistics.median(dts) if dts else 1.0
+
     for i in range(n):
         lo = bisect.bisect_left(epochs, epochs[i] - window_s)
         hi = bisect.bisect_right(epochs, epochs[i] + window_s)
@@ -230,7 +324,14 @@ def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
         mad = statistics.median([abs(x - med) for x in local])
         mad_floored = max(mad, mad_floor_kmh / 1.4826)
         z = abs(speeds[i] - med) / (1.4826 * mad_floored)
-        if z > z_thresh and abs(speeds[i] - med) > min_abs_kmh:
+
+        thresh = z_thresh
+        if gap_z_thresh is not None and i > 0 and median_dt > 0:
+            dt_in = epochs[i] - epochs[i - 1]
+            if dt_in > median_dt * gap_ratio:
+                thresh = min(thresh, gap_z_thresh)
+
+        if z > thresh and abs(speeds[i] - med) > min_abs_kmh:
             out[i] = med
             flagged[i] = True
     return out, flagged
@@ -328,6 +429,7 @@ def sanity_ceiling(speeds: list[float], pre_flanks: list[float | None],
 # ----------------------------------------------------------------
 
 def cumulative_distance(cleaned: list[CleanedPoint]) -> list[float]:
+    """Running distance along the track's (stage 1-2 filtered) positions."""
     dist = [0.0] * len(cleaned)
     running = 0.0
     for i in range(1, len(cleaned)):
@@ -338,10 +440,90 @@ def cumulative_distance(cleaned: list[CleanedPoint]) -> list[float]:
 
 
 # ----------------------------------------------------------------
+# Stage 8: best sustained average speed, not a single sample
+# ----------------------------------------------------------------
+
+# Finds the best average speed over any span of track covering at least
+# window_s seconds. It asks a different question than any single point's
+# speed_final: is there a real span of track that covers this much ground
+# in this much time? A crash-related whip/glitch that only displaces one
+# or two fixes can't satisfy that for any window long enough to matter.
+# This is the number that should be reported as top speed, not the max
+# of speed_final.
+#
+# `distrust` (position_outlier OR hampel_flag -- any signal that judges
+# the *position itself* untrustworthy, geometric or speed-domain) marks
+# points to leave out of this calculation entirely, rather than holding
+# them at a substituted position the way stages 1-2 do for the point-level
+# series. Substituting a position but keeping the point's real elapsed
+# time in the chain creates a "hold, then catch-up" artifact: the
+# substituted point's own leg collapses to ~0 distance, but the *next*
+# leg (real position - substituted position) then has to cover the real
+# ground in only the time since the flagged point, not since the last
+# trusted one -- understating that leg's duration and overstating its
+# speed, which is exactly the kind of bogus spike this function exists to
+# avoid. Omitting the point instead connects the two neighboring trusted
+# fixes directly, using their true positions and the true elapsed time
+# between them, so ground and time stay consistent.
+#
+# Uses a two-pointer sweep (O(n)) over the trusted subsequence: for each
+# start index i, advance the end index j to the first point at least
+# window_s beyond it. Windows that hit a sampling gap (dt far exceeds
+# window_s -- including gaps created by omitting a distrusted point) or
+# run off the end of the track (dt short of window_s) are skipped rather
+# than counted, since neither represents a genuine window_s-long
+# sustained span.
+def best_sustained_speed(cleaned: list[CleanedPoint], distrust: list[bool],
+                          window_s: float, max_gap_ratio: float = 1.5) -> dict:
+    best = {
+        "speed_kmh": 0.0,
+        "start_idx": None,
+        "end_idx": None,
+        "start_time": None,
+        "end_time": None,
+        "duration_s": None,
+    }
+
+    trusted = [i for i in range(len(cleaned)) if not distrust[i]]
+    n = len(trusted)
+    if n < 2:
+        return best
+
+    times = [cleaned[i].time for i in trusted]
+    dist = [0.0] * n
+    running = 0.0
+    for k in range(1, n):
+        a, b = cleaned[trusted[k - 1]], cleaned[trusted[k]]
+        running += haversine_m(a.lat, a.lon, b.lat, b.lon)
+        dist[k] = running
+
+    j = 0
+    for i in range(n):
+        if j < i:
+            j = i
+        while j < n - 1 and (times[j] - times[i]).total_seconds() < window_s:
+            j += 1
+        dt = (times[j] - times[i]).total_seconds()
+        if dt < window_s or dt > window_s * max_gap_ratio:
+            continue
+        speed = (dist[j] - dist[i]) / dt * 3.6
+        if speed > best["speed_kmh"]:
+            best = {
+                "speed_kmh": speed,
+                "start_idx": trusted[i],
+                "end_idx": trusted[j],
+                "start_time": times[i],
+                "end_time": times[j],
+                "duration_s": dt,
+            }
+    return best
+
+
+# ----------------------------------------------------------------
 # Main pipeline + CSV output
 # ----------------------------------------------------------------
 
-def run_pipeline(gpx_path: str, args: argparse.Namespace) -> list[dict]:
+def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], dict]:
     points = parse_gpx(gpx_path)
     if not points:
         raise SystemExit(f"No trackpoints with timestamps found in {gpx_path}")
@@ -352,7 +534,8 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> list[dict]:
     speed_2s = compute_instant_speed(cleaned, args.speed_window_s)
     speed_hampel, hampel_flag = hampel_filter(
         times, speed_2s, args.hampel_window_s, args.hampel_z_thresh,
-        args.hampel_min_abs_kmh, args.hampel_mad_floor_kmh)
+        args.hampel_min_abs_kmh, args.hampel_mad_floor_kmh,
+        gap_z_thresh=args.hampel_gap_z_thresh, gap_ratio=args.hampel_gap_ratio)
     speed_accel, accel_flag = accel_despike(times, speed_hampel, args.max_accel_kmh_s)
     speed_plateau, plateau_flag, pre_flanks, post_flanks = plateau_despike(
         times, speed_accel, args.plateau_flank_lo_s, args.plateau_flank_hi_s,
@@ -360,7 +543,22 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> list[dict]:
     speed_final, sanity_flag = sanity_ceiling(
         speed_plateau, pre_flanks, post_flanks, args.absolute_max_speed_kmh)
 
+    # Stage 4b: a second Hampel pass on raw, unsmoothed fix-to-fix leg speed.
+    # speed_2s's trailing-window averaging can dilute a single bad leg's
+    # spike below the point-level Hampel's threshold, letting a genuinely
+    # bad fix (in-line, so stage 1 can't see it either) through untouched.
+    # This only feeds `position_distrust` below -- it does NOT alter
+    # speed_hampel/speed_final, so the point-level despike pipeline and its
+    # existing flag columns are unaffected.
+    leg_speed = compute_leg_speed(cleaned)
+    _, leg_hampel_flag = hampel_filter(
+        times, leg_speed, args.leg_hampel_window_s, args.leg_hampel_z_thresh,
+        args.leg_hampel_min_abs_kmh, args.leg_hampel_mad_floor_kmh)
+
     dist = cumulative_distance(cleaned)
+    position_distrust = [c.position_outlier or hampel_flag[i] or leg_hampel_flag[i]
+                          for i, c in enumerate(cleaned)]
+    sustained = best_sustained_speed(cleaned, position_distrust, args.sustained_window_s)
     tz = ZoneInfo(args.tz)
 
     rows = []
@@ -388,8 +586,11 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> list[dict]:
             "speed_final_kmh": round(speed_final[i], 3),
             "sanity_capped": sanity_flag[i],
             "distance_cumulative_m": round(dist[i], 2),
+            "leg_speed_raw_kmh": round(leg_speed[i], 3),
+            "leg_hampel_outlier": leg_hampel_flag[i],
+            "sustained_distrust": position_distrust[i],
         })
-    return rows
+    return rows, sustained
 
 
 def write_csv(rows: list[dict], out_path: str) -> None:
@@ -430,6 +631,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
                      help="...and must differ from local median by at least this much (default: 8.0)")
     g2.add_argument("--hampel-mad-floor-kmh", type=float, default=3.0,
                      help="Assume at least this much natural speed noise (default: 3.0)")
+    g2.add_argument("--hampel-gap-z-thresh", type=float, default=2.5,
+                     help="Tighter z-score threshold applied only to points immediately "
+                          "following an abnormally long sample gap, since the fix after a "
+                          "dropped sample is inherently lower-confidence (default: 2.5)")
+    g2.add_argument("--hampel-gap-ratio", type=float, default=1.5,
+                     help="A sample interval above this multiple of the track's median "
+                          "cadence counts as a gap for --hampel-gap-z-thresh (default: 1.5)")
+
+    g2b = ap.add_argument_group("Stage 4b: raw-leg Hampel filter")
+    g2b.add_argument("--leg-hampel-window-s", type=float, default=6.0,
+                      help="Half-window (seconds) for the local median/MAD, applied to "
+                           "raw unsmoothed fix-to-fix leg speed (default: 6.0)")
+    g2b.add_argument("--leg-hampel-z-thresh", type=float, default=3.0,
+                      help="Robust z-score threshold to flag (default: 3.0)")
+    g2b.add_argument("--leg-hampel-min-abs-kmh", type=float, default=6.0,
+                      help="...and must differ from local median by at least this much (default: 6.0)")
+    g2b.add_argument("--leg-hampel-mad-floor-kmh", type=float, default=4.0,
+                      help="Assume at least this much natural speed noise (default: 4.0)")
 
     g3 = ap.add_argument_group("Stage 5: acceleration despike")
     g3.add_argument("--max-accel-kmh-s", type=float, default=20.0,
@@ -449,6 +668,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     g5.add_argument("--absolute-max-speed-kmh", type=float, default=65.0,
                      help="Last-resort ceiling for physically-impossible values; should rarely fire (default: 65.0)")
 
+    g6 = ap.add_argument_group("Stage 8: sustained top speed")
+    g6.add_argument("--sustained-window-s", type=float, default=2.0,
+                     help="Window (seconds) for the best-sustained-average \"top speed\" metric, "
+                          "computed from cumulative distance independent of the despike pipeline "
+                          "(default: 2.0)")
+
     return ap
 
 
@@ -461,10 +686,11 @@ def main(argv=None):
         stem = args.gpx_path.rsplit(".", 1)[0]
         out_path = stem + ".csv"
 
-    rows = run_pipeline(args.gpx_path, args)
+    rows, sustained = run_pipeline(args.gpx_path, args)
     write_csv(rows, out_path)
 
     n = len(rows)
+    n_hdop = sum(1 for r in rows if r["hdop"] is not None)
     n_pos_outliers = sum(1 for r in rows if r["position_outlier"])
     n_hampel = sum(1 for r in rows if r["hampel_outlier"])
     n_accel = sum(1 for r in rows if r["accel_outlier"])
@@ -473,12 +699,32 @@ def main(argv=None):
     max_final = max((r["speed_final_kmh"] for r in rows), default=0.0)
 
     print(f"wrote {n} rows to {out_path}", file=sys.stderr)
+    if n_hdop == 0:
+        print(f"  hdop: not present in source GPX -- stage 2 is inert, "
+              f"position filtering relies on stage 1 (geometric) alone", file=sys.stderr)
+    else:
+        print(f"  hdop: present on {n_hdop}/{n} points", file=sys.stderr)
     print(f"  position outliers: {n_pos_outliers}", file=sys.stderr)
     print(f"  hampel flagged:    {n_hampel}", file=sys.stderr)
     print(f"  accel flagged:     {n_accel}", file=sys.stderr)
     print(f"  plateau flagged:   {n_plateau}", file=sys.stderr)
     print(f"  sanity capped:     {n_sanity}", file=sys.stderr)
-    print(f"  max speed (final): {max_final:.2f} km/h", file=sys.stderr)
+    print(f"  max speed (point, despiked): {max_final:.2f} km/h", file=sys.stderr)
+    if sustained["start_idx"] is not None:
+        print(f"  top speed (best {args.sustained_window_s:.0f}s sustained): "
+              f"{sustained['speed_kmh']:.2f} km/h "
+              f"[idx {sustained['start_idx']}-{sustained['end_idx']}, "
+              f"{sustained['start_time'].isoformat()} -> {sustained['end_time'].isoformat()}, "
+              f"{sustained['duration_s']:.1f}s]", file=sys.stderr)
+    else:
+        print(f"  top speed (best {args.sustained_window_s:.0f}s sustained): "
+              f"n/a (track shorter than window or has a gap covering it)", file=sys.stderr)
+
+    if max_final > sustained["speed_kmh"] * 1.15 and max_final > 20:
+        print(f"  NOTE: point-level max ({max_final:.2f} km/h) is notably higher than "
+              f"the sustained top speed ({sustained['speed_kmh']:.2f} km/h) -- worth a manual look, "
+              f"this can indicate a residual single-fix glitch the despike stages didn't fully catch.",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":
