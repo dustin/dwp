@@ -17,26 +17,52 @@ Pipeline stages, in order:
   3. Instantaneous speed:    computed from a ~2s trailing window
      against the (already-cleaned) positions, not a single-sample
      delta -- better signal-to-noise for the same reason a longer
-     baseline reduces relative position-error impact.
-  4. Hampel filter:          a robust (median/MAD-based) statistical
-     outlier test on the speed series itself. Catches single-point
-     temporal spikes that stage 1 can't see because they sit on a
-     geometrically straight line. Uses a tighter threshold for points
-     immediately following an abnormally long sample gap (a dropped
-     fix), since the next fix after a gap is inherently a longer,
-     lower-confidence baseline and more likely to overshoot.
-  4b. Raw-leg Hampel filter: the same test again, but run on raw,
-     unsmoothed fix-to-fix leg speed instead of the ~2s-smoothed
-     series stage 3/4 use. Averaging into a trailing window can
-     dilute a single bad leg's spike below stage 4's threshold
-     before it's ever seen; this pass catches those. It does not
-     alter speed_hampel/speed_final -- it only feeds stage 8's
-     distrust mask (see below), so it can be tuned independently
-     without touching the despiked point-level series.
-  5. Acceleration despike:   flags a point only if BOTH the incoming
-     and outgoing rate of change exceed a plausible max AND point in
-     opposite directions (a "spike" shape) -- a real acceleration
-     ramp stays elevated, so this leaves genuine speed changes alone.
+     baseline reduces relative position-error impact. Executes AFTER
+     stage 4a below (the numbering reflects each stage's conceptual
+     role in the pipeline, not code order): stage 4a's verdict marks
+     points this stage's trailing window must skip over when choosing
+     its anchor, so a "stutter then catch-up" glitch (a receiver that
+     reports near-zero motion for a fix or two, then jumps to make up
+     the lost ground) can't anchor the window on the stuck fix and
+     smear a straight-line speed across the whole stutter+catch-up
+     span.
+  4a. Raw-leg Hampel filter: a robust (median/MAD-based) statistical
+     outlier test run on raw, unsmoothed fix-to-fix leg speed. Runs
+     BEFORE stage 3 above and stage 4b below, because a crash glitch that lands inside
+     an already-fast window (e.g. a wipeout in the middle of a fast
+     run) can produce a large absolute jump but only a mediocre
+     z-score against the smoothed series' own local median/MAD --
+     the smoothing dilutes the spike into the very baseline the
+     z-test measures it against, letting it slide under threshold.
+     The raw, unsmoothed leg series doesn't have that self-masking
+     problem, so it catches spikes stage 4b's smoothed test alone
+     would miss. Also excludes a small window immediately around the
+     tested point from its own local median/MAD baseline, so a GPS
+     bulge-and-snap-back (an overshoot fix whose immediate neighbors
+     partially correct for it) can't inflate that baseline enough to
+     mask its own worst point.
+  4b. Hampel filter:          the same test again, on the ~2s-smoothed
+     instantaneous speed series. Catches single-point temporal spikes
+     that stage 1 can't see because they sit on a geometrically
+     straight line. Uses a tighter threshold for points immediately
+     following an abnormally long sample gap (a dropped fix), since
+     the next fix after a gap is inherently a longer, lower-confidence
+     baseline and more likely to overshoot. Any point stage 4a already
+     flagged is forced through this stage's substitution too (using
+     stage 4b's own local median), even if its z-score here wouldn't
+     independently clear threshold -- closing the self-masking gap
+     above so a crash glitch can't leak into speed_final uncorrected.
+  5. Acceleration despike:   flags a point whose incoming and outgoing
+     rate of change point in opposite directions (a "spike" shape).
+     For an upward peak, either flank individually exceeding a
+     plausible max is enough, provided the net swing between them is
+     also large -- a single bad fix can rise into a spike at a
+     plausible rate (masking as normal acceleration) while its fall
+     back out is what's actually implausible, so requiring both
+     flanks to clear the threshold independently would miss it.
+     Downward dips keep the stricter both-flanks test, so a real quick
+     deceleration (a touchdown or gybe) that recovers quickly isn't
+     smoothed away just because the swing is large.
   6. Guard-band plateau test: the same idea as (5) generalized to
      spikes 1-2 points wide, using medians from windows a few
      seconds away on each side (deliberately excluding the immediate
@@ -50,10 +76,15 @@ Pipeline stages, in order:
      as the best average speed over any span of the track lasting at
      least a configurable window (default 2s), using cumulative
      distance that OMITS any point flagged by stage 1/2 (position) or
-     stage 4/4b (speed-domain Hampel, smoothed or raw-leg). Point-level
-     speed_final can still carry a residual single-fix glitch; this
-     metric asks whether real ground was covered in real time, so a
-     one- or two-fix crash/GPS-noise artifact can't produce it.
+     stage 4a/4b (speed-domain Hampel, raw-leg or smoothed), plus a
+     configurable buffer of samples immediately around each flagged
+     point (a glitch's position error doesn't necessarily end cleanly
+     at the one point that crossed a flagging threshold). This is a
+     second line of defense, independent of speed_final: it asks
+     whether real ground was covered in real time, so a one- or
+     two-fix crash/GPS-noise artifact can't produce it even in the
+     event stages 4a/4b's substitution logic above doesn't fully
+     correct a glitch's point-level value.
 
 Run with --help for the full list of tunable thresholds.
 """
@@ -247,17 +278,51 @@ def clean_positions(points: list[Point], outlier_ratio: float, outlier_min_m: fl
 # Stage 3: instantaneous speed from a trailing time window
 # ----------------------------------------------------------------
 
-def compute_instant_speed(cleaned: list[CleanedPoint], window_s: float) -> list[float]:
+def compute_instant_speed(cleaned: list[CleanedPoint], window_s: float,
+                           distrust: list[bool] | None = None,
+                           max_reach_s: float | None = None) -> list[float]:
+    """
+    `distrust`, if given, marks points already known (from stage 1/2
+    geometric/HDOP position outliers, or stage 4a's raw-leg Hampel test)
+    to be untrustworthy anchors for this trailing window -- even though
+    the point being measured (i) itself looks fine. Without this, a
+    "stutter then catch-up" run of raw fixes (a receiver briefly reports
+    near-zero motion, then jumps forward to make up the lost ground) gets
+    caught and corrected leg-by-leg by stage 4a, but the very next,
+    perfectly ordinary-looking point can still land its trailing window's
+    anchor on one of those stuck fixes -- producing a straight-line speed
+    across the whole stutter-and-catch-up span that looks like a single
+    plausible reading and so isn't shaped like a spike to any later stage.
+    Skipping distrusted points when choosing the window's anchor (falling
+    back further in time, up to `max_reach_s`, if the whole window is
+    contaminated) keeps the measurement anchored on ground truth instead.
+    """
     n = len(cleaned)
     times = [p.time for p in cleaned]
     speeds = [0.0] * n
+    if max_reach_s is None:
+        max_reach_s = window_s * 5
     j = 0  # two-pointer: earliest index within the trailing window of i
     for i in range(n):
         while (times[i] - times[j]).total_seconds() > window_s:
             j += 1
-        dt = (times[i] - times[j]).total_seconds()
+        k = j
+        if distrust is not None:
+            while k < i and distrust[k]:
+                k += 1
+            if k == i:
+                # Whole window is distrusted; reach further back for the
+                # nearest trustworthy point, bounded by max_reach_s so a
+                # long distrusted run doesn't anchor arbitrarily far away.
+                k = j - 1
+                while k >= 0 and distrust[k]:
+                    k -= 1
+                if k < 0 or (times[i] - times[k]).total_seconds() > max_reach_s:
+                    speeds[i] = 0.0
+                    continue
+        dt = (times[i] - times[k]).total_seconds()
         if dt > 0:
-            d = haversine_m(cleaned[j].lat, cleaned[j].lon, cleaned[i].lat, cleaned[i].lon)
+            d = haversine_m(cleaned[k].lat, cleaned[k].lon, cleaned[i].lat, cleaned[i].lon)
             speeds[i] = (d / dt) * 3.6
         else:
             speeds[i] = 0.0
@@ -270,9 +335,9 @@ def compute_leg_speed(cleaned: list[CleanedPoint]) -> list[float]:
     leg from point i-1 to point i (leg_speed[0] is always 0). Unlike
     compute_instant_speed's trailing window, this does no averaging, so a
     single bad fix's full spike survives right up until something explicitly
-    tests for it -- which is the point: stage 4 runs a second Hampel pass on
-    this series (see below) specifically because averaging into speed_2s can
-    dilute a single-leg spike below the point-level Hampel's threshold.
+    tests for it -- which is the point: stage 4a runs a Hampel pass on this
+    series (see below) specifically because averaging into speed_2s can
+    dilute a single-leg spike below stage 4b's point-level Hampel threshold.
     """
     n = len(cleaned)
     speeds = [0.0] * n
@@ -285,12 +350,13 @@ def compute_leg_speed(cleaned: list[CleanedPoint]) -> list[float]:
 
 
 # ----------------------------------------------------------------
-# Stage 4: Hampel filter (robust median/MAD outlier test)
+# Stage 4a/4b: Hampel filter (robust median/MAD outlier test)
 # ----------------------------------------------------------------
 
 def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
                    z_thresh: float, min_abs_kmh: float, mad_floor_kmh: float,
-                   gap_z_thresh: float | None = None, gap_ratio: float = 1.5
+                   gap_z_thresh: float | None = None, gap_ratio: float = 1.5,
+                   force_flag: list[bool] | None = None, excl_s: float = 0.0
                    ) -> tuple[list[float], list[bool]]:
     """
     Robust (median/MAD) outlier test on the speed series.
@@ -305,6 +371,26 @@ def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
     kind of fix a receiver is more likely to get wrong. Without this, such
     a point can sit just under the default threshold and slip through as
     an uncorrected speed spike.
+
+    `force_flag`, if given, marks points that must be substituted
+    regardless of whether this call's own z-score test clears threshold
+    for them. This exists because a crash glitch that lands inside an
+    already-fast window inflates this test's own local median/MAD just
+    enough to mask itself -- a large absolute jump but a middling z-score.
+    The caller (stage 4b) uses this to honor stage 4a's raw-leg verdict,
+    which doesn't share that self-masking failure mode, so a glitch either
+    test alone would miss gets caught by the two in combination.
+
+    `excl_s`, if given, excludes points within that many seconds of i from
+    i's own local median/MAD baseline (a gap around the point being
+    tested, the same trick stage 6's plateau test uses via its flank
+    windows). A GPS "bulge and snap-back" -- a fix that overshoots, then
+    one or two neighbors that partially correct for it -- otherwise pulls
+    the window's own median/MAD up just enough that the worst point in
+    the bulge clears the absolute-jump floor but not the z-score: its
+    "local normal" is contaminated by the very glitch it's supposed to be
+    judged against. Carving out a small gap around i keeps the baseline
+    clean of that self-contamination.
     """
     n = len(speeds)
     epochs = [t.timestamp() for t in times]
@@ -317,7 +403,12 @@ def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
     for i in range(n):
         lo = bisect.bisect_left(epochs, epochs[i] - window_s)
         hi = bisect.bisect_right(epochs, epochs[i] + window_s)
-        local = speeds[lo:hi]
+        if excl_s > 0:
+            excl_lo = bisect.bisect_left(epochs, epochs[i] - excl_s)
+            excl_hi = bisect.bisect_right(epochs, epochs[i] + excl_s)
+            local = speeds[lo:excl_lo] + speeds[excl_hi:hi]
+        else:
+            local = speeds[lo:hi]
         if len(local) < 3:
             continue
         med = statistics.median(local)
@@ -331,7 +422,8 @@ def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
             if dt_in > median_dt * gap_ratio:
                 thresh = min(thresh, gap_z_thresh)
 
-        if z > thresh and abs(speeds[i] - med) > min_abs_kmh:
+        forced = force_flag is not None and force_flag[i]
+        if forced or (z > thresh and abs(speeds[i] - med) > min_abs_kmh):
             out[i] = med
             flagged[i] = True
     return out, flagged
@@ -342,7 +434,27 @@ def hampel_filter(times: list[datetime], speeds: list[float], window_s: float,
 # ----------------------------------------------------------------
 
 def accel_despike(times: list[datetime], speeds: list[float], max_accel_kmh_s: float,
-                   max_dt_s: float = 3.0) -> tuple[list[float], list[bool]]:
+                   max_dt_s: float = 3.0, peak_swing_mult: float = 2.0
+                   ) -> tuple[list[float], list[bool]]:
+    """
+    A single bad fix in an otherwise-fast run can look like a plausible
+    *rise* into the spike (a receiver catching up after a brief stutter,
+    or just normal acceleration) followed by an implausible *fall* out of
+    it back to the real speed -- i.e. only one side of the V is extreme.
+    Requiring both accel_in and accel_out to individually clear
+    max_accel_kmh_s misses this: a moderate accel_in can mask a glitch
+    whose accel_out alone is enormous.
+
+    For an upward peak (accel_in > 0, accel_out < 0) this loosens the test
+    to fire when *either* side exceeds max_accel_kmh_s, as long as the net
+    swing between them (accel_in - accel_out) exceeds peak_swing_mult *
+    max_accel_kmh_s -- a large swing is itself strong evidence of a single-
+    point glitch even if one flank looks individually unremarkable. A
+    downward dip (accel_in < 0, accel_out > 0) keeps the original stricter
+    both-sides-exceed test, since a brief plausible deceleration (e.g. a
+    touchdown or gybe) that recovers quickly shouldn't be smoothed away
+    just because the swing is large.
+    """
     n = len(speeds)
     out = speeds[:]
     flagged = [False] * n
@@ -353,8 +465,18 @@ def accel_despike(times: list[datetime], speeds: list[float], max_accel_kmh_s: f
             continue
         accel_in = (speeds[i] - speeds[i - 1]) / dt_in
         accel_out = (speeds[i + 1] - speeds[i]) / dt_out
-        if (abs(accel_in) > max_accel_kmh_s and abs(accel_out) > max_accel_kmh_s
-                and (accel_in > 0) != (accel_out > 0)):
+        is_peak = accel_in > 0 and accel_out < 0
+        is_dip = accel_in < 0 and accel_out > 0
+        triggered = False
+        if is_peak:
+            swing = accel_in - accel_out
+            if ((abs(accel_in) > max_accel_kmh_s or abs(accel_out) > max_accel_kmh_s)
+                    and swing > peak_swing_mult * max_accel_kmh_s):
+                triggered = True
+        elif is_dip:
+            if abs(accel_in) > max_accel_kmh_s and abs(accel_out) > max_accel_kmh_s:
+                triggered = True
+        if triggered:
             frac = dt_in / (dt_in + dt_out)
             out[i] = speeds[i - 1] + (speeds[i + 1] - speeds[i - 1]) * frac
             flagged[i] = True
@@ -473,8 +595,18 @@ def cumulative_distance(cleaned: list[CleanedPoint]) -> list[float]:
 # run off the end of the track (dt short of window_s) are skipped rather
 # than counted, since neither represents a genuine window_s-long
 # sustained span.
+#
+# `distrust_buffer` also treats the `distrust_buffer` samples immediately
+# on either side of a distrusted point as untrustworthy. A GPS glitch's
+# position error doesn't necessarily end cleanly at the flagged point --
+# a partial-overshoot neighbor that itself falls under the flagging
+# thresholds can still combine with a genuinely trusted point on its far
+# side to produce a bogus straight-line speed once the flagged point in
+# between is omitted. Buffering the exclusion outward keeps the window's
+# two endpoints clear of that residual contamination.
 def best_sustained_speed(cleaned: list[CleanedPoint], distrust: list[bool],
-                          window_s: float, max_gap_ratio: float = 1.5) -> dict:
+                          window_s: float, max_gap_ratio: float = 1.5,
+                          distrust_buffer: int = 1) -> dict:
     best = {
         "speed_kmh": 0.0,
         "start_idx": None,
@@ -483,6 +615,17 @@ def best_sustained_speed(cleaned: list[CleanedPoint], distrust: list[bool],
         "end_time": None,
         "duration_s": None,
     }
+
+    if distrust_buffer > 0:
+        buffered = distrust[:]
+        for i, flagged in enumerate(distrust):
+            if flagged:
+                for k in range(1, distrust_buffer + 1):
+                    if i - k >= 0:
+                        buffered[i - k] = True
+                    if i + k < len(distrust):
+                        buffered[i + k] = True
+        distrust = buffered
 
     trusted = [i for i in range(len(cleaned)) if not distrust[i]]
     n = len(trusted)
@@ -531,34 +674,50 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], d
     cleaned = clean_positions(points, args.outlier_ratio, args.outlier_min_m, args.hdop_max)
     times = [c.time for c in cleaned]
 
-    speed_2s = compute_instant_speed(cleaned, args.speed_window_s)
+    # Stage 4a: Hampel pass on raw, unsmoothed fix-to-fix leg speed, run
+    # BEFORE stage 3/4b. speed_2s's trailing-window averaging can dilute
+    # a single bad leg's spike below stage 4b's own z-score threshold --
+    # especially when the glitch lands inside an already-fast window
+    # (e.g. a wipeout mid-run), where it inflates 4b's local median/MAD
+    # just enough to mask itself. The raw leg series doesn't share that
+    # failure mode, so this pass catches those glitches independently.
+    # Also runs before stage 3 so its verdict can steer stage 3 away
+    # from anchoring a trailing window on a point already known to be
+    # untrustworthy (see compute_instant_speed's `distrust` docstring).
+    leg_speed = compute_leg_speed(cleaned)
+    _, leg_hampel_flag = hampel_filter(
+        times, leg_speed, args.leg_hampel_window_s, args.leg_hampel_z_thresh,
+        args.leg_hampel_min_abs_kmh, args.leg_hampel_mad_floor_kmh,
+        excl_s=args.leg_hampel_excl_s)
+
+    speed_2s_distrust = [c.position_outlier or leg_hampel_flag[i]
+                         for i, c in enumerate(cleaned)]
+    speed_2s = compute_instant_speed(cleaned, args.speed_window_s, distrust=speed_2s_distrust)
+
+    # Stage 4b: Hampel pass on the ~2s-smoothed instantaneous speed. Any
+    # point stage 4a already flagged is forced through this stage's own
+    # substitution too (via force_flag), even if its z-score here
+    # wouldn't independently clear threshold -- this is what closes the
+    # self-masking gap described above, so a crash glitch can't leak
+    # into speed_final uncorrected.
     speed_hampel, hampel_flag = hampel_filter(
         times, speed_2s, args.hampel_window_s, args.hampel_z_thresh,
         args.hampel_min_abs_kmh, args.hampel_mad_floor_kmh,
-        gap_z_thresh=args.hampel_gap_z_thresh, gap_ratio=args.hampel_gap_ratio)
-    speed_accel, accel_flag = accel_despike(times, speed_hampel, args.max_accel_kmh_s)
+        gap_z_thresh=args.hampel_gap_z_thresh, gap_ratio=args.hampel_gap_ratio,
+        force_flag=leg_hampel_flag)
+    speed_accel, accel_flag = accel_despike(times, speed_hampel, args.max_accel_kmh_s,
+                                             peak_swing_mult=args.accel_peak_swing_mult)
     speed_plateau, plateau_flag, pre_flanks, post_flanks = plateau_despike(
         times, speed_accel, args.plateau_flank_lo_s, args.plateau_flank_hi_s,
         args.plateau_spike_kmh, args.plateau_match_kmh)
     speed_final, sanity_flag = sanity_ceiling(
         speed_plateau, pre_flanks, post_flanks, args.absolute_max_speed_kmh)
 
-    # Stage 4b: a second Hampel pass on raw, unsmoothed fix-to-fix leg speed.
-    # speed_2s's trailing-window averaging can dilute a single bad leg's
-    # spike below the point-level Hampel's threshold, letting a genuinely
-    # bad fix (in-line, so stage 1 can't see it either) through untouched.
-    # This only feeds `position_distrust` below -- it does NOT alter
-    # speed_hampel/speed_final, so the point-level despike pipeline and its
-    # existing flag columns are unaffected.
-    leg_speed = compute_leg_speed(cleaned)
-    _, leg_hampel_flag = hampel_filter(
-        times, leg_speed, args.leg_hampel_window_s, args.leg_hampel_z_thresh,
-        args.leg_hampel_min_abs_kmh, args.leg_hampel_mad_floor_kmh)
-
     dist = cumulative_distance(cleaned)
     position_distrust = [c.position_outlier or hampel_flag[i] or leg_hampel_flag[i]
                           for i, c in enumerate(cleaned)]
-    sustained = best_sustained_speed(cleaned, position_distrust, args.sustained_window_s)
+    sustained = best_sustained_speed(cleaned, position_distrust, args.sustained_window_s,
+                                      distrust_buffer=args.sustained_distrust_buffer)
     tz = ZoneInfo(args.tz)
 
     rows = []
@@ -622,7 +781,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     g1.add_argument("--hdop-max", type=float, default=5.0,
                      help="Fixes with HDOP above this are held/skipped, if the GPX supplies HDOP (default: 5.0)")
 
-    g2 = ap.add_argument_group("Stage 4: Hampel filter")
+    g2 = ap.add_argument_group("Stage 4b: Hampel filter")
     g2.add_argument("--hampel-window-s", type=float, default=12.0,
                      help="Half-window (seconds) for the local median/MAD (default: 12.0)")
     g2.add_argument("--hampel-z-thresh", type=float, default=4.0,
@@ -639,7 +798,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
                      help="A sample interval above this multiple of the track's median "
                           "cadence counts as a gap for --hampel-gap-z-thresh (default: 1.5)")
 
-    g2b = ap.add_argument_group("Stage 4b: raw-leg Hampel filter")
+    g2b = ap.add_argument_group("Stage 4a: raw-leg Hampel filter")
     g2b.add_argument("--leg-hampel-window-s", type=float, default=6.0,
                       help="Half-window (seconds) for the local median/MAD, applied to "
                            "raw unsmoothed fix-to-fix leg speed (default: 6.0)")
@@ -649,10 +808,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
                       help="...and must differ from local median by at least this much (default: 6.0)")
     g2b.add_argument("--leg-hampel-mad-floor-kmh", type=float, default=4.0,
                       help="Assume at least this much natural speed noise (default: 4.0)")
+    g2b.add_argument("--leg-hampel-excl-s", type=float, default=2.0,
+                      help="Exclude points within this many seconds of the tested point from "
+                           "its own local median/MAD baseline, so a GPS bulge-and-snap-back "
+                           "(an overshoot fix whose neighbors partially correct for it) can't "
+                           "inflate the baseline enough to mask its own worst point. Set to 0 "
+                           "to disable (default: 2.0)")
 
     g3 = ap.add_argument_group("Stage 5: acceleration despike")
     g3.add_argument("--max-accel-kmh-s", type=float, default=20.0,
                      help="Max plausible speed change per second for the two-sided spike test (default: 20.0)")
+    g3.add_argument("--accel-peak-swing-mult", type=float, default=2.0,
+                     help="For an upward speed peak, trigger when only one flank's acceleration "
+                          "exceeds --max-accel-kmh-s, as long as the net swing between accel_in "
+                          "and accel_out exceeds this multiple of --max-accel-kmh-s. Downward dips "
+                          "always require both flanks to individually exceed the threshold "
+                          "(default: 2.0)")
 
     g4 = ap.add_argument_group("Stage 6: guard-band plateau test")
     g4.add_argument("--plateau-flank-lo-s", type=float, default=3.0,
@@ -673,6 +844,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
                      help="Window (seconds) for the best-sustained-average \"top speed\" metric, "
                           "computed from cumulative distance independent of the despike pipeline "
                           "(default: 2.0)")
+    g6.add_argument("--sustained-distrust-buffer", type=int, default=1,
+                     help="Also exclude this many samples immediately on either side of a "
+                          "distrusted (position/speed-outlier) point, since a glitch's residual "
+                          "position error doesn't necessarily end cleanly at the flagged point "
+                          "itself. Set to 0 to disable (default: 1)")
 
     return ap
 
