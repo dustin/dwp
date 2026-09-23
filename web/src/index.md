@@ -14,7 +14,9 @@ import * as tl from "./components/timeline.js";
 import {fetchMeta, dryLimit} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
+import {foilColorScale} from "./components/foils.js";
 import {runsTableOptions} from "./components/runs-table.js";
+import {computeOdometerCrossings} from "./components/odometer.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -47,6 +49,7 @@ const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObse
 
 const regions = regionList(runCsv);
 const regionColor = regionColorScale(runCsv);
+const foilColor = foilColorScale(runCsv);
 ```
 
 ```js
@@ -374,6 +377,48 @@ function regress(x, y, src) {
 </div>
 
 Broken down by start beach:  ${beachLegend}
+
+## Odometer Milestones
+
+Every time my lifetime odometer ticks over a round number, here's roughly when and where it happened.
+Crossing times are interpolated across the run assuming a steady pace, so treat them as approximate.
+
+```js
+const odometerStepKm = view(Inputs.radio([100, 1000],
+                            {label: "Milestone every", value: 100, format: d => `${d} km`}));
+```
+
+```js
+const odometerCrossings = computeOdometerCrossings(runCsv, odometerStepKm)
+  .slice()
+  .reverse();
+```
+
+The odometer has crossed a ${odometerStepKm} km milestone ${fmt.comma(odometerCrossings.length)} times so far.
+
+<div class="card">${
+Inputs.table(odometerCrossings, {
+  columns: ["milestone_km", "linked_ts", "region", "start_beach", "end_beach", "foil", "into_run_km"],
+  header: {
+    milestone_km: "Odometer (km)",
+    linked_ts: "Crossed At",
+    region: "Region",
+    start_beach: "Start Beach",
+    end_beach: "End Beach",
+    foil: "Foil",
+    into_run_km: "Progress Into Run"
+  },
+  format: {
+    milestone_km: fmt.comma,
+    linked_ts: d => htl.html`<a href="/run.html?id=${d.id}">${fmt.timestamp(d.date)}</a>`,
+    region: d => htl.html`<span style="color: ${regionColor(d)}">${d}</span>`,
+    start_beach: d => htl.html`<span style="color: ${beachColor(d)}">${d}</span>`,
+    foil: d => htl.html`<span style="color: ${foilColor(d)}">${d}</span>`,
+    into_run_km: d => `${d.into.toFixed(2)} km / ${d.total.toFixed(2)} km (${((d.into / d.total) * 100).toFixed(0)}%)`
+  },
+  select: false,
+})
+}</div>
 
 ## Paddling
 
