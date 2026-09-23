@@ -13,6 +13,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, dryLimit} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
+import {regionList, regionColorScale} from "./components/regions.js";
 import {runsTableOptions} from "./components/runs-table.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
@@ -43,45 +44,162 @@ function beachColorNamed(name) {
   return beachColorBy(beachColor, name);
 }
 const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObservable10 })});
+
+const regions = regionList(runCsv);
+const regionColor = regionColorScale(runCsv);
 ```
+
+```js
+function bestOf(rows, field) {
+  return rows.reduce((best, d) => (d[field] > (best?.[field] ?? -Infinity) ? d : best), null);
+}
+
+const regionStats = new Map(regions.map(r => {
+  const rows = runCsv.filter(d => d.region === r);
+  return [r, {
+    sessions: rows.length,
+    time: d3.sum(rows, d => d.duration_sec),
+    dist: d3.sum(rows, d => d.distance_km),
+    paddle_ups: d3.sum(rows, d => d.paddle_up_count),
+    max_speed: bestOf(rows, "max_speed_kmh"),
+    max_speed_1k: bestOf(rows, "max_speed_1k"),
+    longest_seg: bestOf(rows, "longest_segment_distance"),
+    max_dist: bestOf(rows, "max_distance")
+  }];
+}));
+
+function regionBreakdown(items) {
+  const sorted = items
+    .filter(d => d.value != null)
+    .sort((a, b) => d3.descending(a.value, b.value));
+  return htl.html`<div class="region-breakdown">${sorted.map(d => htl.html`
+    <div class="region-row">
+      <span class="region-swatch" style=${`background:${regionColor(d.region)}`}></span>
+      <span class="region-name">${d.region}</span>
+      <span class="region-value">${d.href ? htl.html`<a href=${d.href}>${d.text}</a>` : d.text}</span>
+    </div>`)}</div>`;
+}
+```
+
+<style>
+  .region-breakdown {
+    margin-top: 0.6rem;
+    padding-top: 0.4rem;
+    border-top: solid 1px var(--theme-foreground-faintest);
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.7rem;
+  }
+  .region-row {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--theme-foreground-muted);
+  }
+  .region-swatch {
+    display: inline-block;
+    width: 0.6rem;
+    height: 0.6rem;
+    min-width: 0.6rem;
+    border-radius: 50%;
+  }
+  .region-name {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .region-value {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .region-value a {
+    color: inherit;
+  }
+</style>
 
 <div class="grid grid-cols-4">
   <div class="card">
     <h2>Total Sessions</h2>
     <span class="big">${fmt.comma(totals.sessions)}</span>
+    ${regionBreakdown(regions.map(r => ({
+      region: r, value: regionStats.get(r).sessions, text: fmt.comma(regionStats.get(r).sessions)
+    })))}
   </div>
   <div class="card">
     <h2>Total Time</h2>
     <span class="big">${fmt.seconds(totals.time)}</span>
+    ${regionBreakdown(regions.map(r => ({
+      region: r, value: regionStats.get(r).time, text: fmt.seconds(regionStats.get(r).time)
+    })))}
   </div>
   <div class="card">
     <h2>Distance Traveled</h2>
     <span class="big">${fmt.comma(totals.dist.toFixed(2))} km</span>
+    ${regionBreakdown(regions.map(r => ({
+      region: r, value: regionStats.get(r).dist, text: fmt.comma(regionStats.get(r).dist.toFixed(2)) + " km"
+    })))}
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
     <span class="big">${fmt.comma(totals.paddle_ups)}</span>
+    ${regionBreakdown(regions.map(r => ({
+      region: r, value: regionStats.get(r).paddle_ups, text: fmt.comma(regionStats.get(r).paddle_ups)
+    })))}
   </div>
 
   <div class="card">
     <h2>Max Speed</h2>
     <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_id}">
         ${totals.max_speed.toFixed(2)} kph</a>`}</span>
+    ${regionBreakdown(regions.map(r => {
+      const best = regionStats.get(r).max_speed;
+      return best ? {
+        region: r, value: best.max_speed_kmh,
+        text: `${best.max_speed_kmh.toFixed(2)} kph`,
+        href: `/run.html?id=${best.id}`
+      } : { region: r, value: null };
+    }))}
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
     <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_1k_id}">
         ${fmt.pace(totals.max_speed_1k)}</a>`}</span>
+    ${regionBreakdown(regions.map(r => {
+      const best = regionStats.get(r).max_speed_1k;
+      return best ? {
+        region: r, value: best.max_speed_1k,
+        text: fmt.pace(best.max_speed_1k),
+        href: `/run.html?id=${best.id}`
+      } : { region: r, value: null };
+    }))}
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
     <span class="big">${htl.html`<a href="/run.html?id=${totals.longest_seg_id}">
         ${(totals.longest_seg / 1000).toFixed(2)} km</a>`}</span>
+    ${regionBreakdown(regions.map(r => {
+      const best = regionStats.get(r).longest_seg;
+      return best ? {
+        region: r, value: best.longest_segment_distance,
+        text: (best.longest_segment_distance / 1000).toFixed(2) + " km",
+        href: `/run.html?id=${best.id}`
+      } : { region: r, value: null };
+    }))}
   </div>
   <div class="card">
     <h2>Furthest From Land</h2>
     <span class="big">${htl.html`<a href="/run.html?id=${totals.max_dist_id}">
         ${(totals.max_dist / 1000).toFixed(2)} km</a>`}</span>
+    ${regionBreakdown(regions.map(r => {
+      const best = regionStats.get(r).max_dist;
+      return best ? {
+        region: r, value: best.max_distance,
+        text: (best.max_distance / 1000).toFixed(2) + " km",
+        href: `/run.html?id=${best.id}`
+      } : { region: r, value: null };
+    }))}
   </div>
 </div>
 
@@ -116,7 +234,7 @@ const outings = d3.rollups(runCsv,
   <div class="card">${
     resize((width) => Plot.plot({
                         title: "Outings",
-                        color: { legend: true },
+                        color: { domain: regions, range: regions.map(r => regionColor(r)), legend: true },
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
                         marks: [
                           Plot.barY(outings,{x:"ts",y:"count", fill: "region",
@@ -128,7 +246,7 @@ const outings = d3.rollups(runCsv,
   <div class="card">${
     resize((width) => Plot.plot({
                         title: "Outings (Duration)",
-                        color: { legend: true },
+                        color: { domain: regions, range: regions.map(r => regionColor(r)), legend: true },
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
                         y: { tickFormat: d => fmt.seconds(d).split(' ')[0] },
                         marks: [
