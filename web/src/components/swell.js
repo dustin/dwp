@@ -23,6 +23,23 @@ export function formatComponentLine(d) {
   return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° (${d.energy.toFixed(2)} kJ/m²)`;
 }
 
+// Flattens partitioned swell data down to one primary (rank 1) reading
+// per timestamp, shaped for the simple wave-height chart marks.
+export function primarySwell(swell) {
+  return swell
+    .map(({ ts, values }) => {
+      const primary = values.find(d => d.rank === 1);
+      if (!primary) return null;
+      return {
+        ts,
+        wave_height: primary.height,
+        wave_period: primary.period,
+        wave_direction: primary.direction,
+      };
+    })
+    .filter(Boolean);
+}
+
 export function formatIndividualSwells(partitionByTimestamp, ts) {
   const values = partitionByTimestamp.get(ts.getTime());
   if (!values) return '';
@@ -38,8 +55,8 @@ export function formatIndividualSwells(partitionByTimestamp, ts) {
 // midpoint -- stands in fine for "what it was like out there", rather than
 // trying to average distinct wave systems across readings where a system's
 // rank can shift from one hour to the next.
-export function representativeSwellReading(swell2, meta) {
-  if (!swell2 || swell2.length === 0) return null;
+export function representativeSwellReading(swell, meta) {
+  if (!swell || swell.length === 0) return null;
   const mid = new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
-  return _.minBy(swell2, d => Math.abs(d.ts.getTime() - mid.getTime()));
+  return _.minBy(swell, d => Math.abs(d.ts.getTime() - mid.getTime()));
 }

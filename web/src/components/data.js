@@ -145,29 +145,6 @@ export async function fetchSwell(meta) {
   }
   const day = fmt.date(meta.ts);
 
-  const runDataURL = `https://${DATAHOST}/swell/site%3D${site}/day%3D${day}/data.csv`;
-  return d3
-    .csv(runDataURL, row => ({
-      ...row,
-      ts: new Date(row.ts),
-      wave_height: +row.wave_height * 3.2808399, // meters -> feet
-      wave_period: +row.wave_period,
-      wave_direction: +row.wave_direction,
-      water_temp: +row.water_temp,
-    }))
-    .catch(err => [])
-    .then(allRows => inRange(meta, allRows));
-}
-
-export async function fetchSwell2(meta) {
-  let site = undefined;
-  if (meta.region == 'Maui North Shore') {
-    site = 'pauwela';
-  } else {
-    return [];
-  }
-  const day = fmt.date(meta.ts);
-
   const runDataURL = `https://${DATAHOST}/swell_partition/site%3D${site}/day%3D${day}/data.csv`;
   return d3
     .csv(runDataURL, row => ({

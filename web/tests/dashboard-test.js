@@ -7,19 +7,18 @@ const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
 // Wind/swell CSVs live on the external data host and simply don't exist for
 // some runs/days. The app catches those fetch failures (data.js fetchWind /
-// fetchSwell / fetchSwell2) and renders "No data" UI, but the browser still
+// fetchSwell) and renders "No data" UI, but the browser still
 // logs one "Failed to load resource ... 404" console error per missing file.
 // Chromium's console text doesn't name the failed resource, so scoping is
 // done by URL: each 404 response on an optional-data path excuses exactly
 // one subsequent 404 console message (the response event fires first).
 // Only these exact shapes are excused:
 //   https://d2qwe1xndvncw9.cloudfront.net/wind/site%3D<site>/day%3D<day>/data.csv
-//   https://d2qwe1xndvncw9.cloudfront.net/swell/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_partition/site%3D<site>/day%3D<day>/data.csv
 // The track CSV (/runs/...) is deliberately excluded -- a missing track is
 // a real failure.
 function isOptionalDataRequest(url) {
-  return /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell|swell_partition)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
+  return /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
     url
   );
 }

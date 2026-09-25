@@ -10,11 +10,11 @@ import {beachColorScale} from "./components/beaches.js";
 import {runsTableOptions} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
-import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
+import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwell2} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -39,14 +39,15 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const [runCsv, wind, swell, swell2] = await Promise.all([fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta), fetchSwell2(runMeta)]);
+const [runCsv, wind, swell] = await Promise.all([fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta)]);
+const swellPrimary = primarySwell(swell);
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
 const callouts = findCallouts(runMeta, runCsv, [fastestSegment]);
 
 const swellPartitionsByTimestamp = new Map(
-  swell2.map(({ts, values}) => [ts.getTime(), values])
+  swell.map(({ts, values}) => [ts.getTime(), values])
 );
 
 function formatIndividualSwells(ts) {
@@ -64,8 +65,8 @@ function formatIndividualSwells(ts) {
       scheme: WIND_SPEED_COLORS
     });
     let buoyMarker = null;
-    if (swell2.length > 0 && (runMeta.region === 'Maui North Shore')) {
-      const reading = representativeSwellReading(swell2, runMeta);
+    if (swell.length > 0 && (runMeta.region === 'Maui North Shore')) {
+      const reading = representativeSwellReading(swell, runMeta);
       const summary = summarizeSwellPartition(reading.values);
       if (reading) {
         buoyMarker = createBuoySwellMarker(d3, svg, {
@@ -267,24 +268,24 @@ wind && wind.length > 0
 }</div>
 
 <div class="card">${
-swell && swell.length > 0
+swellPrimary && swellPrimary.length > 0
   ? resize((width) => Plot.plot({
       title: "Swell",
       color: { legend: true },
       width,
       x: {tickFormat: d3.timeFormat("%H:%M")},
-      y: { domain: [0, d3.max(swell, d => d.wave_height * 1.1)] },
+      y: { domain: [0, d3.max(swellPrimary, d => d.wave_height * 1.1)] },
       marks: [
-        Plot.areaY(swell, { x: "ts", y: "wave_height", curve: 'basis', fill: "#3b82f6", fillOpacity: 0.5 }),
-        Plot.lineY(swell, { x: "ts", y: "wave_height", curve: 'basis', stroke: "#2563eb", strokeWidth: 2 }),
-        Plot.vector(swell, { x: "ts", y: "wave_height",
+        Plot.areaY(swellPrimary, { x: "ts", y: "wave_height", curve: 'basis', fill: "#3b82f6", fillOpacity: 0.5 }),
+        Plot.lineY(swellPrimary, { x: "ts", y: "wave_height", curve: 'basis', stroke: "#2563eb", strokeWidth: 2 }),
+        Plot.vector(swellPrimary, { x: "ts", y: "wave_height",
           length: 30,
           rotate: d => d.wave_direction + 180,
           anchor: "middle",
           stroke: "#dc2626",
           strokeWidth: 4
         }),
-        Plot.tip(swell, Plot.pointer({
+        Plot.tip(swellPrimary, Plot.pointer({
           x: "ts",
           y: "wave_height",
           fontSize: 15,
@@ -299,9 +300,9 @@ swell && swell.length > 0
 }</div>
 
 <div class="card">${
-swell2.length > 0
+swell.length > 0
   ? html`<h2>Individual Swells</h2><div>${
-      swell2.map(({ts, values}) => {
+      swell.map(({ts, values}) => {
         const { primary, components } = summarizeSwellPartition(values);
         return html`
         <div style="margin-bottom: 1em;">

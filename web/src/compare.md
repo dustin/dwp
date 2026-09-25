@@ -22,6 +22,7 @@ import {windRoseOrigin, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
+import {primarySwell} from "./components/swell.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 
@@ -40,7 +41,7 @@ const runMeta1 = runMetaMap[id1];
 const runMeta2 = runMetaMap[id2];
 
 const windFetches = [id1, id2].map(i => fetchWind(runMetaMap[i]).then(toRelative));
-const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(toRelative));
+const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(primarySwell).then(toRelative));
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
