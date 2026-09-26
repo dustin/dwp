@@ -28,7 +28,7 @@ podman run --rm \
   --network host \
   -v ./tests:/tests:ro \
   -v ./test-output:/tests/test-output:rw \
-  mcr.microsoft.com/playwright:v1.56.1-jammy \
+  mcr.microsoft.com/playwright:v1.63.0-jammy \
   sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright && BASE_URL=$BASE_URL node dashboard-test.js"
 
 # Capture exit code
