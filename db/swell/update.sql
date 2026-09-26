@@ -123,6 +123,10 @@ components as (
     bs.band,
     sum(bs.energy * bs.bin_width) as m0,
     sum(bs.energy * bs.bin_width * bs.freq) / sum(bs.energy * bs.bin_width) as mean_freq,
+    -- Period of the most energetic bin in the band. Surfline's per-swell
+    -- periods (and its kJ figure) track the peak, which runs longer than the
+    -- energy-weighted mean; since wavelength goes as T^2, that matters.
+    1.0 / arg_max(bs.freq, bs.energy) as peak_period,
     mod(
       degrees(atan2(
         sum(bs.energy * bs.bin_width * sin(radians(bs.direction))),
@@ -149,6 +153,24 @@ ranked_components as (
     row_number() over (partition by site, ts order by m0 desc, band) + 1 as rank
   from components
   where m0 >= 0.02
+),
+component_kj as (
+  -- See swell_partition.surfline_kj. Per component, single-wave energy
+  -- rho*g*H^2/8 times deep-water wavelength g*T^2/(2*pi), with H = 4*sqrt(m0)
+  -- and T = the band's peak period; that simplifies to rho*g^2*m0*T^2/pi.
+  -- Summed over spectral components only: rank 1 is the whole sea state, so
+  -- including it would double-count the same energy. Uses every band with
+  -- any energy (not just ranked_components' m0 >= 0.02), because small
+  -- long-period swells still carry a noticeable share at long wavelengths.
+  select
+    site,
+    ts,
+    round(sum(
+      1025 * power(9.80665, 2) * m0 * power(peak_period, 2) / pi()
+    ) / 1000) as surfline_kj
+  from components
+  where m0 > 0
+  group by all
 ),
 primary_rows as (
   select
@@ -181,15 +203,18 @@ all_rows as (
   union all
   select * from component_rows
 )
+-- Readings without their own spectrum (the :26 reports) reuse the most
+-- recent spectral kJ, the way Surfline carries its last partition set
+-- forward. Capped at 3 hours so a stalled spectral feed goes null rather
+-- than repeating a stale figure indefinitely.
 select
-  *,
-  -- See swell_partition.surfline_kj: summed across every component sharing
-  -- this (site, ts), then repeated on each of that reading's rows so this
-  -- is computed once here instead of in every consumer.
-  round(sum(
-    (1025 * 9.80665 * power(height, 2) / 8) * (9.80665 * power(period, 2) / (2 * pi())) / 1000
-  ) over (partition by site, ts)) as surfline_kj
-from all_rows;
+  r.*,
+  case
+    when r.ts - k.ts <= interval 3 hours then k.surfline_kj
+  end as surfline_kj
+from all_rows r
+asof left join component_kj k
+  on r.site = k.site and r.ts >= k.ts;
 
 -- swell_spectrum is append-only: it's the raw archive we can't re-fetch once
 -- NDBC's ~45-day window rolls past it, so it should only ever grow, even
