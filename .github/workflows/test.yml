@@ -47,6 +47,11 @@ jobs:
         if: steps.npm-cache.outputs.cache-hit != 'true'
         run: npm ci
 
+      # Quick, cheap check: run before the Playwright browser install and
+      # build below so a broken backend link fails fast.
+      - name: Verify run backends published
+        run: node tests/run-backend-availability-test.js
+
       # Install the browser binaries matching the lockfile-pinned Playwright.
       # Must run after npm ci (npx resolves playwright from node_modules);
       # unconditional, since a cache keyed only on the lockfile can't self-heal

@@ -1,8 +1,21 @@
 #!/bin/bash
+set -euo pipefail
 
 # Base URL of the server under test. Override with e.g. BASE_URL=http://localhost:3001 ./runtest.sh
 PORT="${PORT:-3000}"
 BASE_URL="${BASE_URL:-http://localhost:$PORT}"
+
+cleanup() {
+  echo "Cleaning up..."
+  podman stop dashboard-server >/dev/null 2>&1 || true
+  podman rm dashboard-server >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+# Step 0: Quick check, run first so we fail fast before the slower build/
+# podman/Playwright steps below.
+echo "Checking run backend availability..."
+node tests/run-backend-availability-test.js
 
 # Step 1: Build your static site
 echo "Building static site..."
@@ -31,18 +44,4 @@ podman run --rm \
   mcr.microsoft.com/playwright:v1.63.0-jammy \
   sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright && BASE_URL=$BASE_URL node dashboard-test.js"
 
-# Capture exit code
-TEST_EXIT=$?
-
-# Step 4: Cleanup
-echo "Cleaning up..."
-podman stop dashboard-server
-podman rm dashboard-server
-
-if [ $TEST_EXIT -eq 0 ]; then
-  echo "✓ All tests passed!"
-else
-  echo "✗ Tests failed with exit code $TEST_EXIT"
-fi
-
-exit $TEST_EXIT
+echo "✓ All tests passed!"
