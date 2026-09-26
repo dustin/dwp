@@ -211,6 +211,8 @@ from ${latestRun.start_beach} to ${latestRun.end_beach}
 from ${fmt.relativeTime(latestRun.ts)} where I was
 on foil ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% of the way.
 
+I've used a few different foils and have <a href="foils.html">breakdowns by foil</a> as well.
+
 ## Time on Water
 
 ```js
