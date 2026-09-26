@@ -55,7 +55,7 @@ const HeaderItem = struct {
 
 pub fn Reading(T: type) type {
     return struct {
-        val: T,
+        val: ?T,
         unit: Unit,
     };
 }
@@ -129,10 +129,10 @@ pub fn parse_buoy(alloc: std.mem.Allocator, ri: *std.io.Reader, rows: *std.Array
         try rows.append(alloc, .{
             .timestamp = try mk_timestamp(alloc, fieldLocations, v),
             // TODO: handle MM
-            .waveHeight = .{ .val = try std.fmt.parseFloat(f32, v[fieldLocations.get("WVHT").?]), .unit = fieldUnits.get("WVHT").? },
-            .wavePeriod = .{ .val = try std.fmt.parseFloat(f32, v[fieldLocations.get("DPD").?]), .unit = fieldUnits.get("DPD").? },
-            .waveDirection = .{ .val = try std.fmt.parseInt(u10, v[fieldLocations.get("MWD").?], 10), .unit = fieldUnits.get("MWD").? },
-            .waterTemp = .{ .val = try std.fmt.parseFloat(f32, v[fieldLocations.get("WTMP").?]), .unit = fieldUnits.get("WTMP").? },
+            .waveHeight = .{ .val = std.fmt.parseFloat(f32, v[fieldLocations.get("WVHT").?]) catch null, .unit = fieldUnits.get("WVHT").? },
+            .wavePeriod = .{ .val = std.fmt.parseFloat(f32, v[fieldLocations.get("DPD").?]) catch null, .unit = fieldUnits.get("DPD").? },
+            .waveDirection = .{ .val = std.fmt.parseInt(u10, v[fieldLocations.get("MWD").?], 10) catch null, .unit = fieldUnits.get("MWD").? },
+            .waterTemp = .{ .val = std.fmt.parseFloat(f32, v[fieldLocations.get("WTMP").?]) catch null, .unit = fieldUnits.get("WTMP").? },
         });
     } else |err| {
         if (err == error.EndOfStream) {
@@ -169,15 +169,37 @@ test parse_buoy_file {
 
     try std.testing.expectEqual(2188, rows.items.len);
 
-    try std.testing.expectApproxEqRel(2.4, rows.items[1].waveHeight.val, 0.1);
+    try std.testing.expectApproxEqRel(2.4, rows.items[1].waveHeight.val.?, 0.1);
     try std.testing.expectEqual(.meters, rows.items[1].waveHeight.unit);
 
-    try std.testing.expectEqual(8, rows.items[1].wavePeriod.val);
+    try std.testing.expectEqual(8, rows.items[1].wavePeriod.val.?);
     try std.testing.expectEqual(.seconds, rows.items[1].wavePeriod.unit);
 
-    try std.testing.expectEqual(51, rows.items[1].waveDirection.val);
+    try std.testing.expectEqual(51, rows.items[1].waveDirection.val.?);
     try std.testing.expectEqual(.degrees, rows.items[1].waveDirection.unit);
 
-    try std.testing.expectApproxEqRel(25.4, rows.items[1].waterTemp.val, 0.1);
+    try std.testing.expectApproxEqRel(25.4, rows.items[1].waterTemp.val.?, 0.1);
+    try std.testing.expectEqual(.degrees, rows.items[1].waterTemp.unit);
+}
+
+test "parse a buoy file that failed" {
+    const rows = try parse_buoy_file(std.testing.allocator, "examples/pauwela-failed.txt");
+    defer {
+        rows.deinit(std.testing.allocator);
+        std.testing.allocator.destroy(rows);
+    }
+
+    try std.testing.expectEqual(2193, rows.items.len);
+
+    try std.testing.expectApproxEqRel(3.4, rows.items[1].waveHeight.val.?, 0.1);
+    try std.testing.expectEqual(.meters, rows.items[1].waveHeight.unit);
+
+    try std.testing.expectEqual(9, rows.items[1].wavePeriod.val.?);
+    try std.testing.expectEqual(.seconds, rows.items[1].wavePeriod.unit);
+
+    try std.testing.expectEqual(75, rows.items[1].waveDirection.val.?);
+    try std.testing.expectEqual(.degrees, rows.items[1].waveDirection.unit);
+
+    try std.testing.expectApproxEqRel(25.4, rows.items[1].waterTemp.val.?, 0.1);
     try std.testing.expectEqual(.degrees, rows.items[1].waterTemp.unit);
 }
