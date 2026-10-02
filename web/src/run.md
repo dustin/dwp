@@ -11,10 +11,12 @@ import {runsTableOptions} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
+import {renderSpectrumHeatmap, renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
+import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -39,8 +41,11 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
 </div>
 
 ```js
-const [runCsv, wind, swell] = await Promise.all([fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta)]);
+const [runCsv, wind, swell, swellSpectrum] = await Promise.all([
+  fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta), fetchSwellSpectrum(runMeta)
+]);
 const swellPrimary = primarySwell(swell);
+const latestSpectrumReading = readingNear(swellSpectrum);
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
@@ -297,6 +302,27 @@ swellPrimary && swellPrimary.length > 0
       ]
     }))
   : html`<p>No swell data found for this run.</p>`
+}</div>
+
+<div class="grid grid-cols-2">
+  <div class="card">${
+  swell.length > 0
+    ? resize(renderPartitionBubbles(swell, { title: "Wave Partitions" }))
+    : html`<p>No swell partition data found for this run.</p>`
+  }</div>
+  <div class="card">${
+  latestSpectrumReading.length > 0
+    ? resize(renderSpectrumHistogram(latestSpectrumReading, {
+        title: `Spectral Energy — ${fmt.time(latestSpectrumReading[0].ts)}`
+      }))
+    : html`<p>No spectral data found for this run.</p>`
+  }</div>
+</div>
+
+<div class="card">${
+swellSpectrum.length > 0
+  ? resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours)" }))
+  : html`<p>No spectral data found for this run.</p>`
 }</div>
 
 <div class="card">${

@@ -213,6 +213,8 @@ on foil ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% of the way.
 
 I've used a few different foils and have <a href="foils.html">breakdowns by foil</a> as well.
 
+Curious about current conditions? Check out the <a href="buoy.html">buoy analysis</a> page for a live look at the swell spectrum and wave partitions off Pauwela.
+
 ## Time on Water
 
 ```js

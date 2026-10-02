@@ -136,6 +136,32 @@ export function toRelative(series, tsKey = 'ts', outKey = 't') {
   return series.map(d => ({ ...d, [outKey]: toScalar(d[tsKey]) - t0 }));
 }
 
+function parseSwellPartitionRow(row) {
+  return {
+    ...row,
+    ts: new Date(row.ts),
+    rank: +row.rank,
+    period: +row.period,
+    direction: +row.direction,
+    spread: +row.spread,
+    height: +row.height * 3.2808399,
+    energy: +row.energy,
+    surflineKJ: +row.surfline_kj
+  };
+}
+
+function groupSwellPartitionRows(rows) {
+  // Group by timestamp. Use getTime() so equal times collapse together.
+  const grouped = d3.group(rows, d => d.ts.getTime());
+
+  return Array.from(grouped, ([ts, groupRows]) => ({
+    ts: new Date(Number(ts)),
+    values: groupRows
+      .slice()                 // don't mutate the original rows
+      .sort((a, b) => d3.ascending(a.rank, b.rank))
+  })).sort((a, b) => d3.ascending(a.ts, b.ts));
+}
+
 export async function fetchSwell(meta) {
   let site = undefined;
   if (meta.region == 'Maui North Shore') {
@@ -147,28 +173,82 @@ export async function fetchSwell(meta) {
 
   const runDataURL = `https://${DATAHOST}/swell_partition/site%3D${site}/day%3D${day}/data.csv`;
   return d3
-    .csv(runDataURL, row => ({
-      ...row,
-      ts: new Date(row.ts),
-      rank: +row.rank,
-      period: +row.period,
-      direction: +row.direction,
-      spread: +row.spread,
-      height: +row.height * 3.2808399,
-      energy: +row.energy,
-      surflineKJ: +row.surfline_kj
-    }))
+    .csv(runDataURL, parseSwellPartitionRow)
     .catch(err => [])
-    .then(rows => {
-      // Group by timestamp. Use getTime() so equal times collapse together.
-      const grouped = d3.group(rows, d => d.ts.getTime());
-
-      return Array.from(grouped, ([ts, groupRows]) => ({
-        ts: new Date(Number(ts)),
-        values: groupRows
-          .slice()                 // don't mutate the original rows
-          .sort((a, b) => d3.ascending(a.rank, b.rank))
-      })).sort((a, b) => d3.ascending(a.ts, b.ts));
-    })
+    .then(groupSwellPartitionRows)
     .then(allRows => inRange(meta, allRows))
+}
+
+// Every calendar day (formatted the same way fmt.date partitions the
+// uploaded data) that [start, end] touches, inclusive.
+function enumerateDays(start, end) {
+  const days = [];
+  let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+  while (d <= last) {
+    days.push(fmt.date(d));
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  }
+  return days;
+}
+
+async function fetchCsvForDay(table, site, day, rowMapper) {
+  const url = `https://${DATAHOST}/${table}/site%3D${site}/day%3D${day}/data.csv`;
+  return d3.csv(url, rowMapper).catch(err => []);
+}
+
+function parseSwellSpectrumRow(row) {
+  return {
+    ...row,
+    ts: new Date(row.ts),
+    freq: +row.freq,
+    energy: +row.energy,
+    direction: +row.direction,
+    r1: +row.r1
+  };
+}
+
+// Flat per-(ts, freq) rows -- not grouped, since a spectrogram/histogram
+// wants every bin as its own mark rather than one array per reading.
+export async function fetchSwellSpectrumWindow(site, start, end) {
+  if (!site) return [];
+  const days = enumerateDays(start, end);
+  const rows = (
+    await Promise.all(days.map(day => fetchCsvForDay('swell_spectrum', site, day, parseSwellSpectrumRow)))
+  ).flat();
+  return rows
+    .filter(d => d.ts >= start && d.ts <= end)
+    .sort((a, b) => d3.ascending(a.ts, b.ts) || d3.ascending(a.freq, b.freq));
+}
+
+export async function fetchSwellPartitionWindow(site, start, end) {
+  if (!site) return [];
+  const days = enumerateDays(start, end);
+  const rows = (
+    await Promise.all(days.map(day => fetchCsvForDay('swell_partition', site, day, parseSwellPartitionRow)))
+  ).flat();
+  return groupSwellPartitionRows(rows.filter(d => d.ts >= start && d.ts <= end));
+}
+
+// Windowed around a run: from `lookbackHours` before the run started through
+// the end of the run, so a spectrogram/partition chart can show the
+// conditions building into the run, not just the run's own duration.
+export async function fetchSwellSpectrum(meta, lookbackHours = 6) {
+  if (meta.region != 'Maui North Shore') return [];
+  const start = new Date(meta.ts.getTime() - lookbackHours * 3600 * 1000);
+  const end = new Date(meta.ts.getTime() + meta.duration_sec * 1000);
+  return fetchSwellSpectrumWindow('pauwela', start, end);
+}
+
+// Rolling window ending now, for standalone (non-run) buoy analysis.
+export async function fetchRecentSwellSpectrum(hours = 24, site = 'pauwela') {
+  const end = new Date();
+  const start = new Date(end.getTime() - hours * 3600 * 1000);
+  return fetchSwellSpectrumWindow(site, start, end);
+}
+
+export async function fetchRecentSwellPartition(hours = 24, site = 'pauwela') {
+  const end = new Date();
+  const start = new Date(end.getTime() - hours * 3600 * 1000);
+  return fetchSwellPartitionWindow(site, start, end);
 }
