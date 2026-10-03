@@ -17,6 +17,9 @@
 #      September with NDBC's final :56 ones, while NDBC still has them.
 #   2. swell/backfill.sh -- recomputes everything older than NDBC's window.
 #   3. ./upload-conditions.sh 120 -- the normal export only covers 14 days.
+#   4. Invalidate /swell_partition/* and /swell_spectrum/* in CloudFront.
+#      Settled days are served with a year-long cache lifetime (see
+#      upload-conditions.sh), so rewritten ones won't show up otherwise.
 #
 # Runs against the lake the same way import.sh does; set LAKE to point
 # elsewhere.
