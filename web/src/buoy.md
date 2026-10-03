@@ -23,9 +23,10 @@ import {renderSpectrumHistogram, renderSpectrumWaterfall, readingNear} from "./c
 import {partitionReading, spectralPartitions, spectrumSimilarity} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import {swellLine, primaryLine, compassValues, buoyComparison} from "./components/buoy-snapshot.js";
+import {timePicker} from "./components/time-picker.js";
 
 const COLORS = {view: "#3b82f6", time: "hsl(280, 70%, 60%)", runA: "hsl(140, 80%, 45%)", runB: "hsl(30, 85%, 55%)"};
-const shortStamp = ts => fmt.timestamp(ts).slice(0, 16);
+const shortStamp = fmt.minuteStamp;
 ```
 
 ```js
@@ -44,8 +45,7 @@ const setCompareTime = t => { compareTime.value = t == null ? null : new Date(Ma
 
 ```js
 {
-  const input = Inputs.datetime({label: "View time", value: viewTime ?? undefined, min: BUOY_DATA_START, max: new Date()});
-  input.addEventListener("input", () => input.value && setViewTime(input.value));
+  const input = timePicker({label: "View time", value: viewTime, min: BUOY_DATA_START, max: new Date(), onChange: setViewTime});
   const step = hours => setViewTime(new Date((viewTime ?? new Date()).getTime() + hours * 3600 * 1000));
   const button = (label, onclick, disabled = false) =>
     Object.assign(html`<button>${label}</button>`, {onclick, disabled});
@@ -151,8 +151,7 @@ Compare ${viewTime ? "the view time" : "now"} with another time, or with North S
 
 ```js
 {
-  const input = Inputs.datetime({label: "Compare with a time", value: compareTime ?? undefined, min: BUOY_DATA_START, max: new Date()});
-  input.addEventListener("input", () => input.value && setCompareTime(input.value));
+  const input = timePicker({label: "Compare with a time", value: compareTime, min: BUOY_DATA_START, max: new Date(), onChange: setCompareTime});
   const clear = Object.assign(html`<button>Clear</button>`, {onclick: () => setCompareTime(null), disabled: compareTime == null});
   display(html`<div class="time-controls">${input}${clear}</div>`);
 }
@@ -211,8 +210,11 @@ const selectedRuns = view(Inputs.table(compareRows, {
 
 ```js
 // Keep the view time, compare time and run selection in the URL so any of
-// it can be linked to.
+// it can be linked to. Changing a time adds a history entry, so Back steps
+// back through the times viewed (see the popstate handler below); ticking
+// runs in the table just updates the current entry.
 {
+  const current = new URLSearchParams(location.search);
   const params = new URLSearchParams(location.search);
   for (const k of ["t", "c", "a", "b"]) params.delete(k);
   if (viewTime) params.set("t", toHstParam(viewTime));
@@ -223,7 +225,27 @@ const selectedRuns = view(Inputs.table(compareRows, {
   // Colons are fine in a query string; leaving them unescaped keeps the
   // times readable (t=2026-10-02T18:56).
   const qs = params.toString().replace(/%3A/gi, ":");
-  history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+  const url = `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`;
+  const timeChanged = ["t", "c"].some(k => (current.get(k) ?? "") !== (params.get(k) ?? ""));
+  if (url !== `${location.pathname}${location.search}${location.hash}`) {
+    if (timeChanged) history.pushState(null, "", url);
+    else history.replaceState(null, "", url);
+  }
+}
+```
+
+```js
+// Back/Forward: put the times back the way the URL now has them. That
+// changes viewTime/compareTime, whose URL then already matches, so nothing
+// new is pushed.
+{
+  const onPop = () => {
+    const params = new URLSearchParams(location.search);
+    setViewTime(parseHstParam(params.get("t")));
+    setCompareTime(parseHstParam(params.get("c")));
+  };
+  addEventListener("popstate", onPop);
+  invalidation.then(() => removeEventListener("popstate", onPop));
 }
 ```
 

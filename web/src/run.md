@@ -176,7 +176,7 @@ const segments = tl.computeSegments(runCsv);
 <div class="card">${
     resize(width => Plot.plot({
         title: "Speed",
-        width, x: {tickFormat: d3.timeFormat("%H:%M")},
+        width, x: {tickFormat: fmt.clock},
         marks: [
             Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= FOIL_THRESHOLD_KPH ? d.speed : null, fill: "#500", stroke: "none" }),
             Plot.areaY(runCsv, { x: "ts", y: d => d.speed > FOIL_THRESHOLD_KPH  ? d.speed : null, fill: "#030", stroke: "none" }),
@@ -246,7 +246,7 @@ wind && wind.length > 0
       title: "Wind",
       color: { legend: true },
       width,
-      x: {tickFormat: d3.timeFormat("%H:%M")},
+      x: {tickFormat: fmt.clock},
       y: { domain: [0, d3.max(wind, d => Math.max(d.wavg, d.wgust)) * 1.1] },
       marks: [
         Plot.areaY(wind, { x: "ts", y: "wgust", curve: 'basis', fill: "#dbeafe", fillOpacity: 0.3 }),
@@ -282,7 +282,7 @@ swellPrimary && swellPrimary.length > 0
       title: "Swell",
       color: { legend: true },
       width,
-      x: {tickFormat: d3.timeFormat("%H:%M")},
+      x: {tickFormat: fmt.clock},
       y: { domain: [0, d3.max(swellPrimary, d => d.wave_height * 1.1)] },
       marks: [
         Plot.areaY(swellPrimary, { x: "ts", y: "wave_height", curve: 'basis', fill: "#3b82f6", fillOpacity: 0.5 }),
@@ -453,7 +453,7 @@ resize((width) => {
     title: "Heart Rate vs. Speed",
     color: { legend: true },
     width,
-    x: {tickFormat: d3.timeFormat("%H:%M"), interval: 1},
+    x: {tickFormat: fmt.clock, interval: 1},
     y: { label: "Speed (knots)" },
     marks: [
     Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= FOIL_THRESHOLD_KPH ? d.speed : null, fill: "#500", stroke: "none" }),

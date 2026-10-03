@@ -64,7 +64,7 @@ export function renderPartitionBubbles(
             dy: 2,
             fontSize: 11,
             fill: 'currentColor',
-            text: d => `Run start ${d3.timeFormat('%H:%M')(d)}`,
+            text: d => `Run start ${fmt.clock(d)}`,
           }),
         ]
       : [];
@@ -74,7 +74,7 @@ export function renderPartitionBubbles(
       width,
       height,
       marginLeft: 50,
-      x: { type: 'time', label: null },
+      x: { type: 'time', label: null, tickFormat: fmt.timeTick },
       y: { label: 'Period (s)', grid: true },
       r: { label: 'Height (ft)', domain: rDomain, range: [3, 22] },
       color: DIRECTION_COLOR,

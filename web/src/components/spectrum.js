@@ -12,6 +12,7 @@
 
 import * as Plot from 'npm:@observablehq/plot';
 import * as d3 from 'npm:d3';
+import * as fmt from './formatters.js';
 import { withBinEdges } from './spectral-partitions.js';
 
 const COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -261,7 +262,7 @@ export function renderSpectrumWaterfall(
     const offY = depth => (n > 1 ? (depth / (n - 1)) * depthY : 0);
     const baseY = depth => margin.top + plotH - offY(depth);
     const px = (f, depth) => margin.left + x(f) + offX(depth);
-    const timeFmt = d3.timeFormat('%-m/%-d %H:%M');
+    const timeFmt = fmt.shortStamp;
 
     const svg = d3
       .create('svg')

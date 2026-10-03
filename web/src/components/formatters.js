@@ -3,10 +3,24 @@ import * as luxon from 'npm:luxon';
 
 export const relativeTime = d => luxon.DateTime.fromJSDate(new Date(d)).toRelative();
 
+// Always the 24-hour clock. (The browser's locale isn't a usable signal:
+// US English reports 12-hour whatever the person actually prefers.)
+const clockSpec = '%H:%M';
+const clockSecondsSpec = '%H:%M:%S';
+
 export const date = d3.timeFormat('%Y-%m-%d');
-export const time = d3.timeFormat('%H:%M:%S');
-export const timestamp = d3.timeFormat('%Y-%m-%d %H:%M:%S');
+export const time = d3.timeFormat(clockSecondsSpec);
+export const timestamp = d3.timeFormat(`%Y-%m-%d ${clockSecondsSpec}`);
+// To the minute: 14:30, 2026-10-02 14:30, 10/2 14:30.
+export const clock = d3.timeFormat(clockSpec);
+export const minuteStamp = d3.timeFormat(`%Y-%m-%d ${clockSpec}`);
+export const shortStamp = d3.timeFormat(`%-m/%-d ${clockSpec}`);
 export const comma = d3.format(',');
+
+// 24-hour time-axis ticks: the time of day, or the date at midnight (where
+// Plot's default would show "12 AM").
+const tickDay = d3.timeFormat('%-m/%-d');
+export const timeTick = d => (d3.timeDay(d) < d ? clock(d) : tickDay(d));
 
 export function timeDiff(start, end) {
   const diffMs = end - start;
