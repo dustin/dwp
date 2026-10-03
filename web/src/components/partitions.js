@@ -32,13 +32,42 @@ export function flattenPartitions(swell) {
   );
 }
 
+// `run` ({start, end}) marks a run on the chart: its span is shaded, its
+// start labeled, and readings from before it faded. Spectra come hourly, so
+// a short run may not have a reading of its own; the last one before the
+// start is what conditions were at launch, so it stays at full strength
+// and only the lead-in before that fades.
 export function renderPartitionBubbles(
   swell,
-  { height = 340, title = 'Wave Partitions', rDomain } = {}
+  { height = 340, title = 'Wave Partitions', rDomain, run } = {}
 ) {
   return width => {
     const components = flattenPartitions(swell);
     if (components.length === 0) return null;
+
+    const atLaunch = run ? d3.max(components.filter(d => d.ts <= run.start), d => +d.ts) : null;
+    const leadIn = d => run != null && +d.ts < (atLaunch ?? +run.start);
+    const runMarks = run
+      ? [
+          Plot.rect([run], {
+            x1: 'start',
+            x2: 'end',
+            fill: 'currentColor',
+            fillOpacity: 0.08,
+          }),
+          Plot.ruleX([run.start], { stroke: 'currentColor', strokeDasharray: '4,3', strokeOpacity: 0.7 }),
+          Plot.text([run.start], {
+            x: d => d,
+            frameAnchor: 'top',
+            textAnchor: 'start',
+            dx: 4,
+            dy: 2,
+            fontSize: 11,
+            fill: 'currentColor',
+            text: d => `Run start ${d3.timeFormat('%H:%M')(d)}`,
+          }),
+        ]
+      : [];
 
     return Plot.plot({
       title,
@@ -50,6 +79,7 @@ export function renderPartitionBubbles(
       r: { label: 'Height (ft)', domain: rDomain, range: [3, 22] },
       color: DIRECTION_COLOR,
       marks: [
+        ...runMarks,
         Plot.dot(components, {
           x: 'ts',
           y: 'period',
@@ -57,9 +87,10 @@ export function renderPartitionBubbles(
           fill: 'direction',
           stroke: 'white',
           strokeWidth: 1,
-          fillOpacity: 0.85,
+          fillOpacity: d => (leadIn(d) ? 0.3 : 0.85),
+          strokeOpacity: d => (leadIn(d) ? 0.4 : 1),
           title: d =>
-            `${fmt.timestamp(d.ts)}\n${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)}\n${d.energy.toFixed(2)} kJ/m²`,
+            `${leadIn(d) ? 'Before the run\n' : ''}${fmt.timestamp(d.ts)}\n${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)}\n${d.energy.toFixed(2)} kJ/m²`,
         }),
         // Arrow shows where each wave system is heading (direction + 180),
         // matching the arrow convention used for wind/swell elsewhere in
@@ -74,7 +105,7 @@ export function renderPartitionBubbles(
           length: d => 24 + d.height * 3,
           anchor: 'middle',
           stroke: 'currentColor',
-          strokeOpacity: 0.9,
+          strokeOpacity: d => (leadIn(d) ? 0.3 : 0.9),
           strokeWidth: 2,
         }),
       ],

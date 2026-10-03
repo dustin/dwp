@@ -329,7 +329,10 @@ swellPrimary && swellPrimary.length > 0
     partitions: midRunPartitions
   }))}</div>
 </div>
-<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))}</div>`
+<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), {
+  title: "Wave Partitions (faded: the hours before the run)",
+  run: {start: runMeta.ts, end: new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000)}
+}))}</div>`
 }</div>
 
 <div>${
