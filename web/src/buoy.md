@@ -88,6 +88,14 @@ const now = {
     : html`<p>No spectral data in this window.</p>`
 }</div>
 
+<div class="card">${
+  swellSpectrum.length > 0
+    ? resize(renderSpectrumWaterfall(swellSpectrum, {
+        title: `Spectral Energy Over Time \u2014 newest in front, colored by direction`
+      }))
+    : html`<p>No spectral data in this window.</p>`
+}</div>
+
 ## Over the Last ${lookbackHours} Hours
 
 Each distinct swell system over time: size is height, vertical position is period, color is the direction it comes from. The arrows point the way it travels.
@@ -95,14 +103,6 @@ Each distinct swell system over time: size is height, vertical position is perio
 <div class="card">${
   swellSpectrum.length > 0
     ? resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { height: 380 }))
-    : html`<p>No spectral data in this window.</p>`
-}</div>
-
-<div class="card">${
-  swellSpectrum.length > 0
-    ? resize(renderSpectrumWaterfall(swellSpectrum, {
-        title: `Spectral Energy Over Time \u2014 newest in front, colored by direction`
-      }))
     : html`<p>No spectral data in this window.</p>`
 }</div>
 
