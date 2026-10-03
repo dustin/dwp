@@ -275,6 +275,19 @@ export function buoySite(meta) {
   return meta?.region == 'Maui North Shore' ? 'pauwela' : null;
 }
 
+// Timestamps in page URLs (the buoy page's ?t= and ?c=) are written as
+// Hawaii local time to the minute, e.g. 2026-10-02T18:56 -- readable, and
+// the same moment for anyone opening the link.
+export function toHstParam(ts) {
+  return new Date(ts.getTime() - HST_OFFSET_MS).toISOString().slice(0, 16);
+}
+
+export function parseHstParam(s) {
+  if (!s || !/^\d{4}-\d\d-\d\dT\d\d:\d\d$/.test(s)) return null;
+  const ts = new Date(`${s}:00-10:00`);
+  return isNaN(ts) ? null : ts;
+}
+
 export function hasBuoyData(meta) {
   return buoySite(meta) != null && meta.ts >= BUOY_DATA_START;
 }

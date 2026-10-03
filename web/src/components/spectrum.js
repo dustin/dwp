@@ -223,10 +223,13 @@ export function renderDirectionComparison(series, { height = 240, title = 'Direc
 // background so newer ones hide the parts of older ones behind them, and
 // stroked segment by segment in its bins' direction colors. Energy is on a
 // square-root scale so a big groundswell peak doesn't flatten everything
-// else. Long windows are thinned to at most `maxReadings` rows.
+// else. Longer windows are thinned to at most `maxReadings` rows. With
+// `onSelect`, the rows behind the front one are clickable, calling
+// onSelect(ts) with that reading's time (to bring it to the front).
 export function renderSpectrumWaterfall(
   rows,
-  { height = 420, title = 'Spectral Energy Over Time', maxReadings = 24 } = {}
+  // 25: a 24-hour window holds 25 hourly readings, counting both ends.
+  { height = 420, title = 'Spectral Energy Over Time', maxReadings = 25, onSelect } = {}
 ) {
   return width => {
     if (!rows || rows.length === 0) return null;
@@ -281,7 +284,8 @@ export function renderSpectrumWaterfall(
       const pts = r.bins.map(b => [px(b.freq, depth), baseY(depth) - amp(b.energy), b]);
       if (pts.length < 2) return;
       const g = svg.append('g');
-      g.append('title').text(timeFmt(r.ts));
+      const selectable = onSelect && depth > 0;
+      g.append('title').text(timeFmt(r.ts) + (selectable ? ' \u2014 click to view this time' : ''));
       const y0 = baseY(depth);
       g.append('path')
         .attr('d', d3.line()([[pts[0][0], y0], ...pts.map(p => [p[0], p[1]]), [pts[pts.length - 1][0], y0]]))
@@ -302,16 +306,34 @@ export function renderSpectrumWaterfall(
         // near-empty bins rather than flashing random colors.
         const e = Math.max(a[2].energy, b[2].energy);
         const presence = Math.min(1, Math.max(0.15, 3 * Math.sqrt(e / eMax)));
+        const segOpacity = opacity * (presence < 0.5 ? 0.35 : presence);
         g.append('line')
           .attr('x1', a[0])
           .attr('y1', a[1])
           .attr('x2', b[0])
           .attr('y2', b[1])
           .attr('stroke', presence < 0.5 ? 'currentColor' : directionColor(a[2].direction))
-          .attr('stroke-opacity', opacity * (presence < 0.5 ? 0.35 : presence))
+          .attr('stroke-opacity', segOpacity)
           .attr('stroke-width', strokeWidth)
-          .attr('stroke-linecap', 'round');
+          .attr('stroke-linecap', 'round')
+          .attr('class', 'seg')
+          // Remembered so a hover highlight can restore them.
+          .attr('data-o', segOpacity)
+          .attr('data-w', strokeWidth);
       });
+      if (selectable) {
+        // The fill under each line is the hit area: the visible band
+        // between this row and the one in front of it.
+        g.style('cursor', 'pointer')
+          .on('click', () => onSelect(r.ts))
+          .on('mouseenter', () => g.selectAll('line.seg').attr('stroke-width', 3).attr('stroke-opacity', 1))
+          .on('mouseleave', function () {
+            g.selectAll('line.seg').each(function () {
+              const el = d3.select(this);
+              el.attr('stroke-width', el.attr('data-w')).attr('stroke-opacity', el.attr('data-o'));
+            });
+          });
+      }
       // Time labels down the right-hand edge: the front row, the back row,
       // and every few in between.
       const every = Math.max(1, Math.round(n / 6));
