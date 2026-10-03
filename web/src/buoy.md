@@ -129,7 +129,7 @@ const now = {
 <div class="card">${
   swellSpectrum.length > 0
     ? resize(renderSpectrumWaterfall(swellSpectrum, {
-        title: `Spectral Energy Over Time — newest in front, colored by direction; click an older one to view that time`,
+        title: `Spectral Energy Over Time`,
         onSelect: setViewTime
       }))
     : html`<p>No spectral data in this window.</p>`
@@ -181,6 +181,7 @@ const compareRows = runSnapshots
     duration_sec: meta.duration_sec,
     paddle_ups: meta.paddle_up_count,
     first_paddle_up_m: meta.distance_to_first_paddle_up,
+    foil: meta.foil,
     // Heart rate while foiling.
     min_hr: meta.min_foiling_hr,
     avg_hr: meta.avg_foiling_hr,
@@ -197,14 +198,15 @@ const initialIds = (() => {
   return [params.get("a"), params.get("b")].filter(Boolean);
 })();
 const selectedRuns = view(Inputs.table(compareRows, {
-  columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "conditions", "similarity"],
+  columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "foil", "conditions", "similarity"],
   header: {
     when: "Run",
     route: "Route",
     distance_km: "km",
-    duration_sec: "Time",
+    duration_sec: "Duration",
+    foil: "Foil",
     paddle_ups: "Paddle ups",
-    first_paddle_up_m: "1st PU km",
+    first_paddle_up_m: "1st PU (m)",
     min_hr: "Min HR",
     avg_hr: "Avg HR",
     conditions: "Buoy at mid-run",
@@ -214,7 +216,7 @@ const selectedRuns = view(Inputs.table(compareRows, {
     when: d => shortStamp(d),
     distance_km: d => d.toFixed(1),
     duration_sec: d => `${Math.floor(d / 3600)}:${String(Math.floor((d % 3600) / 60)).padStart(2, "0")}`,
-    first_paddle_up_m: d => d == null ? "" : (d / 1000).toFixed(1),
+    first_paddle_up_m: d => d == null ? "" : d.toFixed(0),
     min_hr: d => d == null ? "" : Math.round(d),
     avg_hr: d => d == null ? "" : Math.round(d),
     similarity: d => d == null ? "" : `${Math.round(d * 100)}%`,
