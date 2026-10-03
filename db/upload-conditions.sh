@@ -18,9 +18,13 @@ consolidate() {
     mv data.csv.gz data.csv
 }
 
+# Optional: how many days of swell_partition/swell_spectrum to export
+# (default 14). Pass a bigger number once after swell/backfill.sh.
+buoy_days=${1:-14}
+
 export=`pwd`/export-conditions.sql
 cd $lake
-duckdb --init init.sql < $export
+duckdb --init init.sql -cmd "set variable buoy_export_days = $buoy_days;" < $export
 
 find "$wind" -type f -name 'data_0.csv' -print0 |
     while IFS= read -r -d '' file; do

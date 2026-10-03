@@ -17,9 +17,27 @@
 --   https://www.ndbc.noaa.gov/data/realtime2/<station>.txt
 -- NDBC keeps a rolling ~45 days here, so this should run at least that often
 -- to avoid gaps.
+--
+-- Backfill mode recomputes swell_partition from what's already stored
+-- instead of fetching from NDBC: spectra from swell_spectrum, and NDBC's
+-- primary observations from swell_partition's own rank 1 rows (the only
+-- copy of them older than NDBC's window). Use it after changing the
+-- derivation below; swell/backfill.sh wraps it. Optionally bounded with
+-- since/until (timestamptz, inclusive; give an offset, or it's read in the
+-- session's time zone):
+--   duckdb mydb.duckdb \
+--     -cmd "set variable mode = 'backfill';" \
+--     -cmd "set variable since = '2026-07-22'::timestamptz;" \
+--     < swell/update.sql
 
 set variable station = coalesce(getvariable('station'), '51205');
 set variable site = coalesce(getvariable('site'), 'pauwela');
+set variable mode = coalesce(getvariable('mode'), 'update');
+set variable since = coalesce(getvariable('since'), '-infinity'::timestamptz);
+set variable until = coalesce(getvariable('until'), 'infinity'::timestamptz);
+-- Where the realtime files come from; overridable for testing against
+-- saved copies.
+set variable ndbc_base = coalesce(getvariable('ndbc_base'), 'https://www.ndbc.noaa.gov/data/realtime2/');
 
 install httpfs;
 load httpfs;
@@ -55,55 +73,78 @@ begin;
 
 -- Raw per-bin spectral readings, fetched once and kept around so both
 -- swell_spectrum (below) and the banding logic (in incoming_swell) read the
--- same fetch instead of hitting NDBC twice.
-create or replace temp table incoming_spectrum as
+-- same fetch instead of hitting NDBC twice. In backfill mode they come from
+-- swell_spectrum instead. (DuckDB resolves read_text's URLs while planning,
+-- before the mode filters below can rule them out, so a backfill still
+-- reads whatever ndbc_base points at; backfill.sh points it at empty local
+-- files so a backfill never touches NDBC and works offline.)
+create or replace temp table fetched_spectrum as
 with energy as (
   select ts, freq, value as energy
-  from parse_wide_pairs(
-    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.data_spec'
-  )
+  from parse_wide_pairs(getvariable('ndbc_base') || getvariable('station') || '.data_spec')
+  where getvariable('mode') = 'update'
 ),
 direction as (
   select ts, freq, value as direction
-  from parse_wide_pairs(
-    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.swdir'
-  )
+  from parse_wide_pairs(getvariable('ndbc_base') || getvariable('station') || '.swdir')
+  where getvariable('mode') = 'update'
 ),
 spread as (
   select ts, freq, value as r1
-  from parse_wide_pairs(
-    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.swr1'
-  )
+  from parse_wide_pairs(getvariable('ndbc_base') || getvariable('station') || '.swr1')
+  where getvariable('mode') = 'update'
 )
-select
-  getvariable('site') as site,
-  e.ts,
-  e.freq,
-  e.energy,
-  d.direction,
-  sp.r1,
-  (
-    coalesce(lead(e.freq) over (partition by e.ts order by e.freq), e.freq) -
-    coalesce(lag(e.freq) over (partition by e.ts order by e.freq), e.freq)
-  ) / 2 as bin_width
+select getvariable('site') as site, e.ts, e.freq, e.energy, d.direction, sp.r1
 from energy e
 join direction d using (ts, freq)
 join spread sp using (ts, freq);
 
+create or replace temp table incoming_spectrum as
+with readings as (
+  select * from fetched_spectrum
+  union all
+  select site, ts, freq, energy, direction, r1
+  from swell_spectrum
+  where getvariable('mode') = 'backfill'
+    and site = getvariable('site')
+    -- Padded past the range: a reading's spectrum is stamped 4 minutes
+    -- after it, and readings without their own spectrum carry forward the
+    -- last kJ for up to 3 hours (see the end of incoming_swell).
+    and ts between getvariable('since') - interval 3 hours
+               and getvariable('until') + interval 1 hour
+)
+select
+  *,
+  (
+    coalesce(lead(freq) over (partition by ts order by freq), freq) -
+    coalesce(lag(freq) over (partition by ts order by freq), freq)
+  ) / 2 as bin_width
+from readings;
+
+-- NDBC's primary observations: the standard meteorological feed, or in
+-- backfill mode the rank 1 rows already stored (padded to match the
+-- spectra above; incoming_swell trims back to since/until).
+create or replace temp table primary_observations as
+select
+  getvariable('site') as site,
+  ts,
+  CAST(ts AT TIME ZONE 'Pacific/Honolulu' AS DATE) as day,
+  period,
+  direction,
+  height
+from parse_stdmet(getvariable('ndbc_base') || getvariable('station') || '.txt')
+where getvariable('mode') = 'update'
+union all
+select site, ts, day, period, direction, height
+from swell_partition
+where getvariable('mode') = 'backfill'
+  and site = getvariable('site')
+  and rank = 1
+  and ts between getvariable('since') - interval 3 hours
+             and getvariable('until') + interval 1 hour;
+
 create or replace temp table incoming_swell as
-with primary_observations as (
-  select
-    getvariable('site') as site,
-    ts,
-    CAST(ts AT TIME ZONE 'Pacific/Honolulu' AS DATE) as day,
-    period,
-    direction,
-    height
-  from parse_stdmet(
-    'https://www.ndbc.noaa.gov/data/realtime2/' || getvariable('station') || '.txt'
-  )
-),
-banded_spectra as (
+with banded_spectra as (
   -- Broad period bands retain the distinct long-period swell, local swell,
   -- wind sea, and chop systems that the earlier nearest-peak assignment merged.
   select *,
@@ -139,10 +180,14 @@ components as (
   join lateral (
     select *
     from primary_observations
-    -- Spectral files are timestamped at the hour; their corresponding
-    -- standard observation is the 56-minute report from that hour.
-    where ts between bs.ts + interval 45 minutes
-                 and bs.ts + interval 75 minutes
+    -- NDBC stamps each hourly spectrum on the hour, 4 minutes after the
+    -- standard observation it belongs to: the hh:00 spectrum is the
+    -- previous hour's :56 report. (Checked against Surfline's buoy data,
+    -- which has both half-hourly samples: NDBC's final 19:00 spectrum is
+    -- exactly Surfline's 18:56 one.) Before the :56 sample is in, NDBC
+    -- briefly serves the :26 one in that slot; see the merge below.
+    where ts between bs.ts - interval 15 minutes
+                 and bs.ts
     order by ts
     limit 1
   ) po on true
@@ -214,28 +259,53 @@ select
   end as surfline_kj
 from all_rows r
 asof left join component_kj k
-  on r.site = k.site and r.ts >= k.ts;
+  on r.site = k.site and r.ts >= k.ts
+-- A backfill only rewrites the requested range (the padding above was just
+-- context). Either mode only replaces a stored reading when it has spectra
+-- to work from: where the archive has a gap, or at the start of NDBC's
+-- window where the spectrum before it has already rolled off, the row
+-- already stored is the best there is. New readings always go in, so a
+-- stalled spectral feed doesn't hold back the standard observations.
+where (getvariable('mode') = 'update'
+       or r.ts between getvariable('since') and getvariable('until'))
+  and (r.ts - k.ts <= interval 3 hours
+       or (getvariable('mode') = 'update'
+           and not exists (select 1 from swell_partition p
+                           where p.site = r.site and p.ts = r.ts)));
 
--- swell_spectrum is append-only: it's the raw archive we can't re-fetch once
--- NDBC's ~45-day window rolls past it, so it should only ever grow, even
+-- swell_spectrum is the raw archive we can't re-fetch once NDBC's ~45-day
+-- window rolls past it, so it only ever grows: never delete from it, even
 -- though each run only recomputes/replaces the recent window in
--- swell_partition below. Insert whatever this run saw that isn't already
--- captured; never delete from it.
+-- swell_partition below.
+--
+-- It does take NDBC's revisions, though. NDBC fills each hourly slot with
+-- the :26 sample first and replaces it with the :56 sample half an hour
+-- later, so a run in between captures a provisional spectrum for the
+-- newest hour. Overwriting it with what NDBC serves now keeps every slot
+-- the :56 sample the pairing above expects. (Before this, the archive kept
+-- whichever it saw first: about 60% of September's hours were the
+-- provisional :26 sample. A run with NDBC's window still covering them
+-- corrects them.)
 merge into swell_spectrum as s
-using incoming_spectrum as ins
+using (
+  -- A backfill read these from swell_spectrum; nothing to add or revise.
+  select * from incoming_spectrum where getvariable('mode') = 'update'
+) as ins
 on (s.site = ins.site and s.ts = ins.ts and s.freq = ins.freq)
+when matched and (s.energy is distinct from ins.energy
+                  or s.direction is distinct from ins.direction
+                  or s.r1 is distinct from ins.r1) then
+  update set energy = ins.energy, direction = ins.direction, r1 = ins.r1
 when not matched then
   insert (site, ts, freq, energy, direction, r1)
   values (ins.site, ins.ts, ins.freq, ins.energy, ins.direction, ins.r1);
 
--- swell_partition, by contrast, is fully recomputed each run from whatever's
--- in incoming_swell: replace only the source's rolling realtime window, so
--- a formula/banding change actually recomputes rather than silently keeping
--- old values.
+-- swell_partition, by contrast, is recomputed each run: every reading in
+-- incoming_swell replaces all of its stored rows, so a formula/banding
+-- change actually recomputes rather than silently keeping old values.
 delete from swell_partition
 where site = getvariable('site')
-  and ts between (select min(ts) from incoming_swell)
-             and (select max(ts) from incoming_swell);
+  and ts in (select ts from incoming_swell);
 
 insert into swell_partition (
   site, ts, day, rank, period, direction, spread, height, energy, surfline_kj
@@ -244,6 +314,8 @@ select site, ts, day, rank, period, direction, spread, height, energy, surfline_
 from incoming_swell;
 
 drop table incoming_swell;
+drop table primary_observations;
 drop table incoming_spectrum;
+drop table fetched_spectrum;
 
 commit;
