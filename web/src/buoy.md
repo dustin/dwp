@@ -178,6 +178,12 @@ const compareRows = runSnapshots
     when: meta.ts,
     route: `${meta.start_beach} → ${meta.end_beach}`,
     distance_km: meta.distance_km,
+    duration_sec: meta.duration_sec,
+    paddle_ups: meta.paddle_up_count,
+    first_paddle_up_m: meta.distance_to_first_paddle_up,
+    // Heart rate while foiling.
+    min_hr: meta.min_foiling_hr,
+    avg_hr: meta.avg_foiling_hr,
     conditions: snapshot.primary ? primaryLine(snapshot.primary) : "",
     similarity: latestSpectrumReading.length > 0 ? spectrumSimilarity(latestSpectrumReading, snapshot.spectrum) : null,
   }));
@@ -191,14 +197,31 @@ const initialIds = (() => {
   return [params.get("a"), params.get("b")].filter(Boolean);
 })();
 const selectedRuns = view(Inputs.table(compareRows, {
-  columns: ["when", "route", "distance_km", "conditions", "similarity"],
-  header: {when: "Run", route: "Route", distance_km: "km", conditions: "Buoy at mid-run", similarity: viewTime ? "Match to view" : "Match to now"},
+  columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "conditions", "similarity"],
+  header: {
+    when: "Run",
+    route: "Route",
+    distance_km: "km",
+    duration_sec: "Time",
+    paddle_ups: "Paddle ups",
+    first_paddle_up_m: "1st PU km",
+    min_hr: "Min HR",
+    avg_hr: "Avg HR",
+    conditions: "Buoy at mid-run",
+    similarity: viewTime ? "Match to view" : "Match to now",
+  },
   format: {
     when: d => shortStamp(d),
     distance_km: d => d.toFixed(1),
+    duration_sec: d => `${Math.floor(d / 3600)}:${String(Math.floor((d % 3600) / 60)).padStart(2, "0")}`,
+    first_paddle_up_m: d => d == null ? "" : (d / 1000).toFixed(1),
+    min_hr: d => d == null ? "" : Math.round(d),
+    avg_hr: d => d == null ? "" : Math.round(d),
     similarity: d => d == null ? "" : `${Math.round(d * 100)}%`,
   },
-  width: {when: 140, route: 220, distance_km: 50, similarity: 90},
+  // Size columns to their contents; with this many it scrolls sideways on
+  // narrow screens rather than truncating headers.
+  layout: "auto",
   sort: initialIds.length ? "when" : "similarity",
   reverse: true,
   multiple: true,
@@ -207,6 +230,8 @@ const selectedRuns = view(Inputs.table(compareRows, {
   rows: 12,
 }));
 ```
+
+<div class="muted" style="font-size: 0.85em;">Time is run duration; 1st PU is the distance before the first paddle up; heart rates are while foiling.</div>
 
 ```js
 // Keep the view time, compare time and run selection in the URL so any of
