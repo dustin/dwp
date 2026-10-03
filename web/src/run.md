@@ -11,7 +11,7 @@ import {runsTableOptions} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
-import {renderSpectrumHeatmap, renderDirectionalSpectrogram, renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
+import {renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import _ from "npm:lodash";
@@ -48,12 +48,6 @@ const [runCsv, wind, swell, swellSpectrum] = await Promise.all([
 const swellPrimary = primarySwell(swell);
 const midRunSpectrumReading = readingNear(swellSpectrum, runMidpoint(runMeta));
 const midRunPartitions = partitionReading(midRunSpectrumReading);
-const runEnd = new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000);
-// Shade the run itself on the lead-in spectrograms.
-const runWindowMarks = [
-  Plot.rect([runMeta], {x1: () => runMeta.ts, x2: () => runEnd, y1: 0.04, y2: 0.35, fill: "none", stroke: "black", strokeWidth: 3}),
-  Plot.rect([runMeta], {x1: () => runMeta.ts, x2: () => runEnd, y1: 0.04, y2: 0.35, fill: "none", stroke: "white", strokeWidth: 2, strokeDasharray: "4,3"})
-];
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
@@ -280,7 +274,9 @@ wind && wind.length > 0
   : html`<p>No wind data found for this run.</p>`
 }</div>
 
-<div class="card">${
+<div>${
+  // Swell comes from the Pauwela buoy, which only describes the North Shore.
+  buoySite(runMeta) == null ? "" : html`<div class="card">${
 swellPrimary && swellPrimary.length > 0
   ? resize((width) => Plot.plot({
       title: "Swell",
@@ -310,6 +306,7 @@ swellPrimary && swellPrimary.length > 0
       ]
     }))
   : html`<p>No swell data found for this run.</p>`
+}</div>`
 }</div>
 
 <div>${
@@ -332,12 +329,12 @@ swellPrimary && swellPrimary.length > 0
     partitions: midRunPartitions
   }))}</div>
 </div>
-<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))}</div>
-<div class="card">${resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours; dashed box is the run)", marks: runWindowMarks }))}</div>
-<div class="card">${resize(renderDirectionalSpectrogram(swellSpectrum, { title: "Direction by Period (dashed box is the run)", marks: runWindowMarks }))}</div>`
+<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))}</div>`
 }</div>
 
-<div class="card">${
+<div>${
+  // Pauwela buoy partitions, North Shore only.
+  buoySite(runMeta) == null ? "" : html`<div class="card">${
 swell.length > 0
   ? html`<h2>Individual Swells</h2><div>${
       swell.map(({ts, values}) => {
@@ -354,6 +351,7 @@ swell.length > 0
       `})
     }</div>`
   : html`<p>No individual swell data found for this run.</p>`
+}</div>`
 }</div>
 
 

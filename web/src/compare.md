@@ -284,8 +284,10 @@ const swellymax = Math.max(
 
 </div>
 
-<div class="grid grid-cols-2">
-
+<div>${
+  // Swell height comes from the Pauwela buoy (North Shore only), and each
+  // chart overlays the other run's swell, so it needs data for both runs.
+  !(swell1?.length > 0 && swell2?.length > 0) ? "" : html`<div class="grid grid-cols-2">
 <div class="card">${
   swell1 && swell2 && swell1.length > 0 && swell2.length > 0
     ? resize((width) => {
@@ -300,7 +302,6 @@ const swellymax = Math.max(
       })
     : html`<p>No swell data found for this run.</p>`
 }</div>
-
 <div class="card">${
   swell1 && swell2 && swell1.length > 0 && swell2.length > 0
     ? resize((width) => {
@@ -315,8 +316,8 @@ const swellymax = Math.max(
       })
     : html`<p>No swell data found for this run.</p>`
 }</div>
-
-</div>
+</div>`
+}</div>
 
 ```js
 const buoySnapshots = (await Promise.all(buoyFetches))

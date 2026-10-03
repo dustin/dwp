@@ -1,7 +1,6 @@
 // CDIP-style spectrum plot (https://cdip.ucsd.edu/m/products/spectrum_plot/),
-// modernized: a per-reading energy-by-period histogram, plus a time x period
-// heatmap (a spectrogram) so a run's lead-in hours are visible too, not just
-// the single latest reading CDIP shows.
+// modernized: a per-reading energy-by-period histogram colored by direction,
+// plus overlays for comparing readings.
 //
 // Backed by swell_spectrum -- the raw, append-only per-frequency-bin archive
 // (see db/swell/schema.sql) -- rather than swell_partition's already-banded
@@ -9,12 +8,10 @@
 //
 // Every chart here draws frequency bins as rects between their real bin
 // edges on a linear frequency axis (NDBC bins aren't evenly spaced), labeled
-// in period since that's what surfers read. Plot.cell isn't usable for the
-// spectrogram: it needs band scales on both axes, and x here is time.
+// in period since that's what surfers read.
 
 import * as Plot from 'npm:@observablehq/plot';
 import * as d3 from 'npm:d3';
-import * as fmt from './formatters.js';
 import { withBinEdges } from './spectral-partitions.js';
 
 const COMPASS_16 = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
@@ -70,98 +67,6 @@ function binTitle(d) {
     `${periodOf(d.freq).toFixed(1)}s (${d.freq.toFixed(3)} Hz)\n` +
     `${d.energy.toFixed(2)} m²/Hz from ${formatDirection(d.direction)} (r1 ${(+d.r1).toFixed(2)})`
   );
-}
-
-// Typical spacing between readings, so each spectrogram column spans until
-// the next one (NDBC publishes spectra hourly, but gaps happen).
-function readingInterval(rows) {
-  const times = Array.from(new Set(rows.map(d => +d.ts))).sort(d3.ascending);
-  const gaps = d3.pairs(times, (a, b) => b - a);
-  return d3.median(gaps) ?? 3600 * 1000;
-}
-
-function spectrogramRows(rows) {
-  const interval = readingInterval(rows);
-  const byTs = d3.group(rows, d => +d.ts);
-  return Array.from(byTs, ([t, bins]) =>
-    withBinEdges(bins)
-      .filter(d => d.hi > FREQ_DOMAIN[0] && d.lo < FREQ_DOMAIN[1])
-      .map(d => ({ ...d, t1: new Date(t), t2: new Date(t + interval) }))
-  ).flat();
-}
-
-// Time x period heatmap: each column is one spectral reading, each row a
-// frequency bin, colored by energy density -- where in the period spectrum
-// energy sits, and how that shifts over the window. Long periods at the top,
-// swell-to-chop top-to-bottom like CDIP's own plots.
-export function renderSpectrumHeatmap(rows, { height = 300, title = 'Spectral Energy', marks = [] } = {}) {
-  return width => {
-    if (!rows || rows.length === 0) return null;
-    const data = spectrogramRows(rows);
-
-    return Plot.plot({
-      title,
-      width,
-      height,
-      marginLeft: 45,
-      x: { type: 'time', label: null },
-      y: { ...periodAxis(), reverse: true },
-      color: {
-        type: 'log',
-        domain: [0.01, Math.max(0.1, d3.max(data, d => d.energy))],
-        clamp: true,
-        scheme: 'inferno',
-        label: 'Energy density (m²/Hz)',
-        legend: true,
-      },
-      marks: [
-        Plot.rect(data, {
-          x1: 't1',
-          x2: 't2',
-          y1: 'lo',
-          y2: 'hi',
-          fill: 'energy',
-          title: d => `${fmt.timestamp(d.ts)}\n${binTitle(d)}`,
-        }),
-        ...marks,
-      ],
-    });
-  };
-}
-
-// The same spectrogram colored by the direction each bin's energy comes
-// from, with opacity scaled by energy so empty bins fade out. This is the
-// view that shows two systems at similar periods from different directions
-// (e.g. a NW groundswell sitting just above a NE trade swell).
-export function renderDirectionalSpectrogram(rows, { height = 300, title = 'Direction by Period', marks = [] } = {}) {
-  return width => {
-    if (!rows || rows.length === 0) return null;
-    const data = spectrogramRows(rows);
-    // sqrt so moderate bins stay visible next to the dominant peak.
-    const opacity = d3.scaleSqrt().domain([0, d3.quantile(data, 0.98, d => d.energy) || 1]).range([0, 1]).clamp(true);
-
-    return Plot.plot({
-      title,
-      width,
-      height,
-      marginLeft: 45,
-      x: { type: 'time', label: null },
-      y: { ...periodAxis(), reverse: true },
-      color: DIRECTION_COLOR,
-      marks: [
-        Plot.rect(data, {
-          x1: 't1',
-          x2: 't2',
-          y1: 'lo',
-          y2: 'hi',
-          fill: 'direction',
-          fillOpacity: d => opacity(d.energy),
-          title: d => `${fmt.timestamp(d.ts)}\n${binTitle(d)}`,
-        }),
-        ...marks,
-      ],
-    });
-  };
 }
 
 // Single-reading energy-by-period histogram -- the classic CDIP spectrum
