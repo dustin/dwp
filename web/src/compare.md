@@ -23,6 +23,8 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 import {primarySwell} from "./components/swell.js";
+import {fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
+import {buoyComparison} from "./components/buoy-snapshot.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 
@@ -42,6 +44,10 @@ const runMeta2 = runMetaMap[id2];
 
 const windFetches = [id1, id2].map(i => fetchWind(runMetaMap[i]).then(toRelative));
 const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(primarySwell).then(toRelative));
+// Buoy conditions at each run's midpoint (null where there's no buoy data).
+const buoyFetches = [runMeta1, runMeta2].map(m =>
+  hasBuoyData(m) ? fetchBuoySnapshot(runMidpoint(m), buoySite(m)) : Promise.resolve(null)
+);
 ```
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
@@ -311,6 +317,30 @@ const swellymax = Math.max(
 }</div>
 
 </div>
+
+## Buoy
+
+```js
+const buoySnapshots = (await Promise.all(buoyFetches))
+  .map((snapshot, i) => {
+    const meta = [runMeta1, runMeta2][i];
+    return snapshot && {
+      ...snapshot,
+      meta,
+      label: `${fmt.date(meta.ts)} ${meta.start_beach} \u2192 ${meta.end_beach}`,
+      color: ["hsl(140, 80%, 45%)", "hsl(30, 85%, 55%)"][i],
+    };
+  });
+```
+
+<div>${
+  buoySnapshots.every(s => s == null)
+    ? html`<p>No Pauwela buoy spectra for either run (North Shore runs since ${fmt.date(BUOY_DATA_START)} only).</p>`
+    : html`${buoySnapshots.some(s => s == null)
+        ? html`<p>Only one of these runs has Pauwela buoy spectra.</p>`
+        : html`<p>Spectral swell partitions from the Pauwela buoy at each run's midpoint. See also <a href="buoy.html?a=${id1}&b=${id2}#compare">this comparison on the buoy page</a>.</p>`
+      }${buoyComparison(buoySnapshots.filter(Boolean), {resize})}`
+}</div>
 
 ## Splits
 

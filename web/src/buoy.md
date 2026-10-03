@@ -17,25 +17,10 @@ Live conditions from the Pauwela buoy (NDBC 51205), off Maui's North Shore.
 ```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint} from "./components/data.js";
-import {renderSpectrumHeatmap, renderDirectionalSpectrogram, renderSpectrumHistogram, renderSpectrumComparison, renderDirectionComparison, readingNear, formatDirection, directionColor} from "./components/spectrum.js";
+import {renderSpectrumHeatmap, renderDirectionalSpectrogram, renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions, spectrumSimilarity} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
-```
-
-```js
-// A swell system (spectral partition or NDBC's overall reading), as one line.
-function swellLine(d) {
-  return html`<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;background:${directionColor(d.direction)};margin-right:0.35em;vertical-align:-0.05em"></span>${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)} <span class="muted">(${d.energy.toFixed(2)} kJ/m²)</span>`;
-}
-
-function primaryLine(d) {
-  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)} · ${d.surflineKJ.toFixed(0)} kJ`;
-}
-
-// The compass takes NDBC's overall reading (rank 1) plus the spectral partitions.
-function compassValues(snapshot, partitions) {
-  return [...(snapshot.primary ? [snapshot.primary] : []), ...partitions];
-}
+import {swellLine, primaryLine, compassValues, buoyComparison} from "./components/buoy-snapshot.js";
 ```
 
 ```js
@@ -203,26 +188,12 @@ const comparison =
         color: i === 0 ? "hsl(140, 80%, 45%)" : "hsl(30, 85%, 55%)",
         meta: r.meta,
       }));
-const comparisonSeries = comparison.map(s => ({label: s.label, color: s.color, rows: s.spectrum}));
-```
-
-```js
-function snapshotCard(s) {
-  const partitions = partitionReading(s.spectrum);
-  return html`<div class="card">
-    <h2 style="color: ${s.color}; font-weight: 600;">${s.meta ? html`<a style="color: inherit" href="run.html?id=${s.meta.id}">${s.label}</a>` : s.label}</h2>
-    <div class="muted">${s.meta ? `Mid-run ${fmt.timestamp(runMidpoint(s.meta))}` : `As of ${fmt.timestamp(s.spectrumTs)}`}</div>
-    <div style="margin-top: 0.5em;"><b>${s.primary ? primaryLine(s.primary) : "No NDBC summary"}</b></div>
-    <ul class="swell-list">${partitions.map(d => html`<li>${swellLine(d)}</li>`)}</ul>
-    ${resize(renderPartitionCompass(compassValues(s, partitions), {size: 300, title: ""}))}
-  </div>`;
-}
 ```
 
 <div>${
   comparison.length === 0
     ? html`<p class="muted">Select a run above to compare it with now.</p>`
-    : html`<div class="grid grid-cols-2">${comparison.map(snapshotCard)}</div>
-      <div class="card">${resize(renderSpectrumComparison(comparisonSeries, {title: "Spectral Energy"}))}</div>
-      <div class="card">${resize(renderDirectionComparison(comparisonSeries, {title: "Direction by Period (dot size is energy)"}))}</div>`
+    : html`${picked.length === 2
+        ? html`<p><a href="compare.html?id1=${picked[0].id}&id2=${picked[1].id}">Compare these two runs in full</a> (tracks, speed, wind and buoy).</p>`
+        : ""}${buoyComparison(comparison, {resize})}`
 }</div>
