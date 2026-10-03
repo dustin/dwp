@@ -71,6 +71,8 @@ where line not like '#%' and trim(line) <> '';
 
 begin;
 
+call lake.set_commit_message('dustin', 'updating swell spectral analysis');
+
 -- Raw per-bin spectral readings, fetched once and kept around so both
 -- swell_spectrum (below) and the banding logic (in incoming_swell) read the
 -- same fetch instead of hitting NDBC twice. In backfill mode they come from
