@@ -197,7 +197,7 @@ const initialIds = (() => {
   const params = new URLSearchParams(location.search);
   return [params.get("a"), params.get("b")].filter(Boolean);
 })();
-const selectedRuns = view(Inputs.table(compareRows, {
+const runTable = Inputs.table(compareRows, {
   columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "foil", "conditions", "similarity"],
   header: {
     when: "Run",
@@ -230,14 +230,22 @@ const selectedRuns = view(Inputs.table(compareRows, {
   required: false,
   value: initialIds.map(id => compareRows.find(d => d.id === id)).filter(Boolean),
   rows: 12,
-}));
+});
+const selectedRuns = view(runTable);
+```
+
+```js
+// Whether the URL has been brought in line with the page yet. The first
+// sync (on load) only tidies the URL; after that, changes add history
+// entries. This cell has no inputs, so it runs once.
+const urlSync = {loaded: false};
 ```
 
 ```js
 // Keep the view time, compare time and run selection in the URL so any of
-// it can be linked to. Changing a time adds a history entry, so Back steps
-// back through the times viewed (see the popstate handler below); ticking
-// runs in the table just updates the current entry.
+// it can be linked to. Each change adds a history entry, so Back steps back
+// through the times viewed and runs picked (see the popstate handlers
+// below).
 {
   const current = new URLSearchParams(location.search);
   const params = new URLSearchParams(location.search);
@@ -251,11 +259,11 @@ const selectedRuns = view(Inputs.table(compareRows, {
   // times readable (t=2026-10-02T18:56).
   const qs = params.toString().replace(/%3A/gi, ":");
   const url = `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`;
-  const timeChanged = ["t", "c"].some(k => (current.get(k) ?? "") !== (params.get(k) ?? ""));
   if (url !== `${location.pathname}${location.search}${location.hash}`) {
-    if (timeChanged) history.pushState(null, "", url);
+    if (urlSync.loaded) history.pushState(null, "", url);
     else history.replaceState(null, "", url);
   }
+  urlSync.loaded = true;
 }
 ```
 
@@ -268,6 +276,25 @@ const selectedRuns = view(Inputs.table(compareRows, {
     const params = new URLSearchParams(location.search);
     setViewTime(parseHstParam(params.get("t")));
     setCompareTime(parseHstParam(params.get("c")));
+  };
+  addEventListener("popstate", onPop);
+  invalidation.then(() => removeEventListener("popstate", onPop));
+}
+```
+
+```js
+// Back/Forward for the run selection: tick the runs the URL now has. The
+// table only changes when the user picks, so set it and announce it as an
+// input; the URL already matches, so nothing new is pushed. (When a time
+// changed too, the table is rebuilt from the URL anyway.)
+{
+  const onPop = () => {
+    const params = new URLSearchParams(location.search);
+    const ids = [params.get("a"), params.get("b")].filter(Boolean);
+    const current = runTable.value.map(d => d.id);
+    if (ids.length === current.length && ids.every(id => current.includes(id))) return;
+    runTable.value = ids.map(id => compareRows.find(d => d.id === id)).filter(Boolean);
+    runTable.dispatchEvent(new Event("input", {bubbles: true}));
   };
   addEventListener("popstate", onPop);
   invalidation.then(() => removeEventListener("popstate", onPop));
