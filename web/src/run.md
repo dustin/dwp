@@ -17,7 +17,7 @@ import {renderPartitionBubbles, renderPartitionCompass} from "./components/parti
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -315,7 +315,7 @@ swellPrimary && swellPrimary.length > 0
   swellSpectrum.length === 0
     ? html`<p>No Pauwela buoy spectra for this run (captured since ${fmt.date(BUOY_DATA_START)}).</p>`
     : html`
-<p>Compare the buoy during this run <a href="buoy.html?a=${runMeta.id}#compare">with now or with another run</a>.</p>
+<p>Buoy: <a href="buoy.html?t=${toHstParam(runMeta.ts)}">full report at the start of this run</a> · <a href="buoy.html?a=${runMeta.id}#compare">compare with now or another run</a>.</p>
 <div class="grid grid-cols-2">
   <div class="card">${
   midRunPartitions.length > 0
