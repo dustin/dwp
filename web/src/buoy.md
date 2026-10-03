@@ -147,7 +147,7 @@ ${viewTime ? `The ${lookbackHours} hours before ${shortStamp(viewTime)}` : `The 
 
 ## Compare
 
-Compare ${viewTime ? "the view time" : "now"} with another time, or with North Shore runs, ranked below by how closely the buoy spectrum at mid-run matches ${viewTime ? "the view time" : "now"}: the same energy at the same periods from the same directions. Pick up to two things to compare; with only one, it's compared with ${viewTime ? "the view time" : "now"}.
+Compare ${viewTime ? "the view time" : "now"} with another time or with runs (up to two at once).
 
 ```js
 {
@@ -213,7 +213,7 @@ const selectedRuns = view(Inputs.table(compareRows, {
     similarity: viewTime ? "Match to view" : "Match to now",
   },
   format: {
-    when: d => shortStamp(d),
+    when: (d, i, data) => html`<a href="run.html?id=${data[i].id}">${shortStamp(d)}</a>`,
     distance_km: d => d.toFixed(1),
     duration_sec: d => `${Math.floor(d / 3600)}:${String(Math.floor((d % 3600) / 60)).padStart(2, "0")}`,
     first_paddle_up_m: d => d == null ? "" : d.toFixed(0),
@@ -232,8 +232,6 @@ const selectedRuns = view(Inputs.table(compareRows, {
   rows: 12,
 }));
 ```
-
-<div class="muted" style="font-size: 0.85em;">Time is run duration; 1st PU is the distance before the first paddle up; heart rates are while foiling.</div>
 
 ```js
 // Keep the view time, compare time and run selection in the URL so any of
@@ -296,8 +294,8 @@ const droppedRun = timeItem.length > 0 && picked.length === 2;
 
 <div>${
   comparison.length === 0
-    ? html`<p class="muted">${compareTime && !timeItem.length ? "No buoy spectra near that time. " : ""}Pick a time or select a run above to compare.</p>`
+    ? html`<p class="muted">${compareTime && !timeItem.length ? "No buoy spectra near that time." : ""}</p>`
     : html`${picked.length === 2 && !timeItem.length
         ? html`<p><a href="compare.html?id1=${picked[0].id}&id2=${picked[1].id}">Compare these two runs in full</a> (tracks, speed, wind and buoy).</p>`
-        : ""}${droppedRun ? html`<p class="muted">Comparing the time with the earlier run; clear the time to compare the two runs.</p>` : ""}${buoyComparison(comparison, {resize})}`
+        : ""}${droppedRun ? html`<p class="muted">Showing the time and the earlier run.</p>` : ""}${buoyComparison(comparison, {resize})}`
 }</div>

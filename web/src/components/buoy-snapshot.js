@@ -63,7 +63,7 @@ export function buoyComparison(snapshots, { resize }) {
   return html`<div>
     ${match == null
       ? ''
-      : html`<p>The buoy spectra are a <b>${Math.round(match * 100)}%</b> match: the same energy at the same periods from the same directions.</p>`}
+      : html`<p>Spectral match: <b>${Math.round(match * 100)}%</b></p>`}
     <div class="grid grid-cols-2">${snapshots.map(s => snapshotCard(s, { resize }))}</div>
     ${series.length
       ? html`<div class="card">${resize(renderSpectrumComparison(series, { title: 'Spectral Energy' }))}</div>
