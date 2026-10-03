@@ -217,6 +217,167 @@ export function renderDirectionComparison(series, { height = 240, title = 'Direc
   };
 }
 
+// Waterfall: one spectrum per reading, newest at the front on the real
+// period axis, older ones stepped back up and to the right like a 3D
+// spectrogram seen from an angle. Each spectrum is filled with the card's
+// background so newer ones hide the parts of older ones behind them, and
+// stroked segment by segment in its bins' direction colors. Energy is on a
+// square-root scale so a big groundswell peak doesn't flatten everything
+// else. Long windows are thinned to at most `maxReadings` rows.
+export function renderSpectrumWaterfall(
+  rows,
+  { height = 420, title = 'Spectral Energy Over Time', maxReadings = 24 } = {}
+) {
+  return width => {
+    if (!rows || rows.length === 0) return null;
+    const byTs = d3.sort(d3.groups(rows, d => +d.ts), d => d[0]);
+    const step = Math.ceil(byTs.length / maxReadings);
+    // Thin from the newest end so the front row is always the latest reading.
+    const readings = byTs
+      .filter((_, i) => (byTs.length - 1 - i) % step === 0)
+      .map(([t, bins]) => ({
+        ts: new Date(t),
+        bins: d3.sort(bins.filter(b => b.freq >= FREQ_DOMAIN[0] && b.freq <= FREQ_DOMAIN[1]), b => b.freq),
+      }));
+    const n = readings.length;
+
+    const margin = { top: 28, right: 64, bottom: 36, left: 46 };
+    const plotW = width - margin.left - margin.right;
+    const plotH = height - margin.top - margin.bottom;
+    // How far the oldest row sits behind the front one.
+    const depthX = n > 1 ? plotW * 0.22 : 0;
+    const depthY = n > 1 ? plotH * 0.55 : 0;
+    const frontW = plotW - depthX;
+    const ampH = plotH - depthY * 0.75;
+    const eMax = d3.max(rows, d => d.energy) || 1;
+
+    const x = d3.scaleLinear().domain(FREQ_DOMAIN).range([0, frontW]);
+    const amp = d3.scaleSqrt().domain([0, eMax]).range([0, ampH]);
+    // depth 0 = newest (front), n - 1 = oldest (back)
+    const offX = depth => (n > 1 ? (depth / (n - 1)) * depthX : 0);
+    const offY = depth => (n > 1 ? (depth / (n - 1)) * depthY : 0);
+    const baseY = depth => margin.top + plotH - offY(depth);
+    const px = (f, depth) => margin.left + x(f) + offX(depth);
+    const timeFmt = d3.timeFormat('%-m/%-d %H:%M');
+
+    const svg = d3
+      .create('svg')
+      .attr('width', width)
+      .attr('height', height)
+      .attr('viewBox', [0, 0, width, height])
+      .attr('style', 'max-width: 100%; height: auto; font: 10px sans-serif; overflow: visible;');
+
+    svg
+      .append('text')
+      .attr('x', 0)
+      .attr('y', 12)
+      .attr('fill', 'currentColor')
+      .attr('style', 'font-size: 13px;')
+      .text(title);
+
+    // Back to front, so each newer row covers the older ones behind it.
+    readings.forEach((r, i) => {
+      const depth = n - 1 - i;
+      const pts = r.bins.map(b => [px(b.freq, depth), baseY(depth) - amp(b.energy), b]);
+      if (pts.length < 2) return;
+      const g = svg.append('g');
+      g.append('title').text(timeFmt(r.ts));
+      const y0 = baseY(depth);
+      g.append('path')
+        .attr('d', d3.line()([[pts[0][0], y0], ...pts.map(p => [p[0], p[1]]), [pts[pts.length - 1][0], y0]]))
+        .attr('fill', 'var(--theme-background-alt, var(--theme-background))')
+        .attr('stroke', 'none');
+      g.append('line')
+        .attr('x1', px(FREQ_DOMAIN[0], depth))
+        .attr('x2', px(FREQ_DOMAIN[1], depth))
+        .attr('y1', y0)
+        .attr('y2', y0)
+        .attr('stroke', 'currentColor')
+        .attr('stroke-opacity', 0.12);
+      // Older rows a little lighter; the newest one bold.
+      const opacity = depth === 0 ? 1 : 0.85 - 0.45 * (depth / Math.max(1, n - 1));
+      const strokeWidth = depth === 0 ? 2.5 : 1.3;
+      d3.pairs(pts).forEach(([a, b]) => {
+        // Direction is noise where there's next to no energy, so fade
+        // near-empty bins rather than flashing random colors.
+        const e = Math.max(a[2].energy, b[2].energy);
+        const presence = Math.min(1, Math.max(0.15, 3 * Math.sqrt(e / eMax)));
+        g.append('line')
+          .attr('x1', a[0])
+          .attr('y1', a[1])
+          .attr('x2', b[0])
+          .attr('y2', b[1])
+          .attr('stroke', presence < 0.5 ? 'currentColor' : directionColor(a[2].direction))
+          .attr('stroke-opacity', opacity * (presence < 0.5 ? 0.35 : presence))
+          .attr('stroke-width', strokeWidth)
+          .attr('stroke-linecap', 'round');
+      });
+      // Time labels down the right-hand edge: the front row, the back row,
+      // and every few in between.
+      const every = Math.max(1, Math.round(n / 6));
+      if (depth === 0 || depth === n - 1 || depth % every === 0) {
+        svg
+          .append('text')
+          .attr('x', px(FREQ_DOMAIN[1], depth) + 6)
+          .attr('y', y0)
+          .attr('dy', '0.32em')
+          .attr('fill', 'currentColor')
+          .attr('fill-opacity', depth === 0 ? 1 : 0.6)
+          .attr('font-weight', depth === 0 ? 'bold' : null)
+          .text(timeFmt(r.ts));
+      }
+    });
+
+    // Period axis along the front row.
+    const axisY = baseY(0) + 4;
+    const ticks = PERIOD_TICKS.map(p => 1 / p).filter(f => f >= FREQ_DOMAIN[0] && f <= FREQ_DOMAIN[1]);
+    const ax = svg.append('g').attr('fill', 'currentColor');
+    ticks.forEach(f => {
+      ax.append('line')
+        .attr('x1', px(f, 0))
+        .attr('x2', px(f, 0))
+        .attr('y1', axisY)
+        .attr('y2', axisY + 5)
+        .attr('stroke', 'currentColor');
+      ax.append('text')
+        .attr('x', px(f, 0))
+        .attr('y', axisY + 16)
+        .attr('text-anchor', 'middle')
+        .text(Math.round(1 / f));
+    });
+    ax.append('text')
+      .attr('x', margin.left + frontW)
+      .attr('y', axisY + 30)
+      .attr('text-anchor', 'end')
+      .text('Period (s) \u2192');
+
+    // Energy axis at the front row's left edge.
+    const ey = svg.append('g').attr('fill', 'currentColor');
+    amp.ticks(4).filter(e => e > 0).forEach(e => {
+      const y = baseY(0) - amp(e);
+      ey.append('line')
+        .attr('x1', margin.left - 5)
+        .attr('x2', margin.left)
+        .attr('y1', y)
+        .attr('y2', y)
+        .attr('stroke', 'currentColor');
+      ey.append('text')
+        .attr('x', margin.left - 8)
+        .attr('y', y)
+        .attr('dy', '0.32em')
+        .attr('text-anchor', 'end')
+        .text(e);
+    });
+    ey.append('text')
+      .attr('x', margin.left - 8)
+      .attr('y', baseY(0) - ampH - 10)
+      .attr('text-anchor', 'start')
+      .text('\u2191 m\u00b2/Hz (\u221a scale)');
+
+    return svg.node();
+  };
+}
+
 // The reading closest to `ts` (defaults to the latest reading in `rows`),
 // returned as the flat array of per-frequency-bin rows for just that time --
 // what renderSpectrumHistogram expects.

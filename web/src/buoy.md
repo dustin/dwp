@@ -17,7 +17,7 @@ Live conditions from the Pauwela buoy (NDBC 51205), off Maui's North Shore.
 ```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint} from "./components/data.js";
-import {renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
+import {renderSpectrumHistogram, renderSpectrumWaterfall, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions, spectrumSimilarity} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import {swellLine, primaryLine, compassValues, buoyComparison} from "./components/buoy-snapshot.js";
@@ -95,6 +95,14 @@ Each distinct swell system over time: size is height, vertical position is perio
 <div class="card">${
   swellSpectrum.length > 0
     ? resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { height: 380 }))
+    : html`<p>No spectral data in this window.</p>`
+}</div>
+
+<div class="card">${
+  swellSpectrum.length > 0
+    ? resize(renderSpectrumWaterfall(swellSpectrum, {
+        title: `Spectral Energy Over Time \u2014 newest in front, colored by direction`
+      }))
     : html`<p>No spectral data in this window.</p>`
 }</div>
 
