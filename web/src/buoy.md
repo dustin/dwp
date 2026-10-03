@@ -18,7 +18,7 @@ Conditions from the Pauwela buoy (NDBC 51205), off Maui's North Shore: the lates
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, parseHstParam} from "./components/data.js";
+import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 import {renderSpectrumHistogram, renderSpectrumWaterfall, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions, spectrumSimilarity} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
@@ -79,37 +79,41 @@ const [swell, swellSpectrum] = await Promise.all([
 const latest = swell.findLast(d => d.values.some(v => v.rank === 1)) ?? null;
 const latestSpectrumReading = readingNear(swellSpectrum);
 const latestPartitions = partitionReading(latestSpectrumReading);
-const viewLabel = viewTime ? shortStamp(viewTime) : "Now";
+const viewLabel = viewTime ? shortStamp(viewTime) : "Latest";
+// NDBC stamps spectra with an hourly slot; show when they were measured.
+const knownReports = reportTimes(swell);
+const sampleTime = ts => spectrumSampleTime(ts, knownReports);
 const now = {
   label: viewLabel,
   primary: latest?.values.find(v => v.rank === 1) ?? null,
   primaryTs: latest?.ts ?? null,
   spectrum: latestSpectrumReading,
   spectrumTs: latestSpectrumReading[0]?.ts ?? null,
+  sampleTs: latestSpectrumReading[0] ? sampleTime(latestSpectrumReading[0].ts) : null,
 };
 ```
 
-## Conditions ${viewTime ? `at ${shortStamp(viewTime)}` : "now"}
+## Conditions ${viewTime ? `at ${shortStamp(viewTime)}` : "(latest)"}
 
 <div class="grid grid-cols-2">
   <div class="card">
     <h2>Overall Sea State</h2>
     <span class="big">${now.primary ? primaryLine(now.primary) : "No data for this time"}</span>
     <div class="muted" style="margin-top: 0.25em;">
-      ${now.primaryTs ? `NDBC summary as of ${fmt.timestamp(now.primaryTs)}` : ""}
+      ${now.primaryTs ? `NDBC's summary of the ${fmt.minuteStamp(now.primaryTs)} reading` : ""}
     </div>
     <h2 style="margin-top: 1em;">Swell Systems</h2>
     ${
       latestPartitions.length > 0
         ? html`<ul class="swell-list">${latestPartitions.map(d => html`<li>${swellLine(d)}</li>`)}</ul>
-          <div class="muted" style="margin-top: 0.5em; font-size: 0.85em;">Split out of the ${fmt.time(now.spectrumTs)} spectrum by direction and period.</div>`
+          <div class="muted" style="margin-top: 0.5em; font-size: 0.85em;">Split out of the spectrum measured at ${fmt.clock(now.sampleTs)}, by direction and period.</div>`
         : html`<p>No spectral data for this time.</p>`
     }
   </div>
   <div class="card">${
     now.primary || latestPartitions.length > 0
       ? resize(renderPartitionCompass(compassValues(now, latestPartitions), {
-          title: `Swell Direction — ${fmt.time(now.spectrumTs ?? now.primaryTs)}`
+          title: `Swell Direction — ${fmt.clock(now.sampleTs ?? now.primaryTs)}`
         }))
       : html`<p>No data for this time.</p>`
   }
@@ -120,7 +124,7 @@ const now = {
 <div class="card">${
   latestSpectrumReading.length > 0
     ? resize(renderSpectrumHistogram(latestSpectrumReading, {
-        title: `Spectral Energy — ${fmt.timestamp(now.spectrumTs)}`,
+        title: `Spectral Energy — measured ${fmt.minuteStamp(now.sampleTs)}`,
         partitions: latestPartitions
       }))
     : html`<p>No spectral data in this window.</p>`
@@ -130,7 +134,8 @@ const now = {
   swellSpectrum.length > 0
     ? resize(renderSpectrumWaterfall(swellSpectrum, {
         title: `Spectral Energy Over Time`,
-        onSelect: setViewTime
+        onSelect: setViewTime,
+        sampleTime
       }))
     : html`<p>No spectral data in this window.</p>`
 }</div>
@@ -147,7 +152,7 @@ ${viewTime ? `The ${lookbackHours} hours before ${shortStamp(viewTime)}` : `The 
 
 ## Compare
 
-Compare ${viewTime ? "the view time" : "now"} with another time or with runs (up to two at once).
+Compare ${viewTime ? "the view time" : "the latest readings"} with another time or with runs (up to two at once).
 
 ```js
 {
@@ -210,7 +215,7 @@ const runTable = Inputs.table(compareRows, {
     min_hr: "Min HR",
     avg_hr: "Avg HR",
     conditions: "Buoy at mid-run",
-    similarity: viewTime ? "Match to view" : "Match to now",
+    similarity: viewTime ? "Match to view" : "Match to latest",
   },
   format: {
     when: (d, i, data) => html`<a href="run.html?id=${data[i].id}">${shortStamp(d)}</a>`,

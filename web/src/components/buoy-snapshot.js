@@ -44,7 +44,9 @@ export function snapshotCard(s, { resize }) {
       s.meta ? html`<a style="color: inherit" href="run.html?id=${s.meta.id}">${s.label}</a>` : s.label
     }</h2>
     <div style="color: var(--theme-foreground-muted)">${
-      s.meta ? `Mid-run ${fmt.timestamp(runMidpoint(s.meta))}` : `As of ${fmt.timestamp(s.spectrumTs)}`
+      s.meta
+        ? `Mid-run ${fmt.minuteStamp(runMidpoint(s.meta))}`
+        : `Spectrum measured ${fmt.minuteStamp(s.sampleTs ?? s.spectrumTs)}`
     }</div>
     <div style="margin-top: 0.5em;"><b>${s.primary ? primaryLine(s.primary) : 'No NDBC summary'}</b></div>
     <ul style="${listStyle}">${partitions.map(d => html`<li style="margin: 0.15em 0">${swellLine(d)}</li>`)}</ul>

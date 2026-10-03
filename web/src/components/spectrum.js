@@ -227,10 +227,12 @@ export function renderDirectionComparison(series, { height = 240, title = 'Direc
 // else. Longer windows are thinned to at most `maxReadings` rows. With
 // `onSelect`, the rows behind the front one are clickable, calling
 // onSelect(ts) with that reading's time (to bring it to the front).
+// `sampleTime` maps NDBC's hourly slot time to when the spectrum was
+// measured, for the labels.
 export function renderSpectrumWaterfall(
   rows,
   // 25: a 24-hour window holds 25 hourly readings, counting both ends.
-  { height = 420, title = 'Spectral Energy Over Time', maxReadings = 25, onSelect } = {}
+  { height = 420, title = 'Spectral Energy Over Time', maxReadings = 25, onSelect, sampleTime = ts => ts } = {}
 ) {
   return width => {
     if (!rows || rows.length === 0) return null;
@@ -286,7 +288,7 @@ export function renderSpectrumWaterfall(
       if (pts.length < 2) return;
       const g = svg.append('g');
       const selectable = onSelect && depth > 0;
-      g.append('title').text(timeFmt(r.ts) + (selectable ? ' \u2014 click to view this time' : ''));
+      g.append('title').text(timeFmt(sampleTime(r.ts)) + (selectable ? ' \u2014 click to view this time' : ''));
       const y0 = baseY(depth);
       g.append('path')
         .attr('d', d3.line()([[pts[0][0], y0], ...pts.map(p => [p[0], p[1]]), [pts[pts.length - 1][0], y0]]))
@@ -347,7 +349,7 @@ export function renderSpectrumWaterfall(
           .attr('fill', 'currentColor')
           .attr('fill-opacity', depth === 0 ? 1 : 0.6)
           .attr('font-weight', depth === 0 ? 'bold' : null)
-          .text(timeFmt(r.ts));
+          .text(timeFmt(sampleTime(r.ts)));
       }
     });
 

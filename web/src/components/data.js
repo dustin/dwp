@@ -296,6 +296,24 @@ export function runMidpoint(meta) {
   return new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
 }
 
+// When a spectrum was actually measured. NDBC stamps each hourly spectrum
+// on the hour, 4 minutes after the :56 report whose sample it is -- but
+// until that report is out, the slot briefly holds the :26 sample instead
+// (see the pairing notes in db/swell/update.sql). `reportTimes` is the set
+// of standard-report times (ms) known around it: no :56 report yet but a
+// :26 one means the slot still holds the :26 sample.
+export function spectrumSampleTime(slotTs, reportTimes) {
+  const t = +slotTs;
+  const final = t - 4 * 60 * 1000;
+  const provisional = t - 34 * 60 * 1000;
+  return new Date(!reportTimes.has(final) && reportTimes.has(provisional) ? provisional : final);
+}
+
+// Standard-report times (ms) in grouped swell_partition readings.
+export function reportTimes(swell) {
+  return new Set(swell.filter(d => d.values.some(v => v.rank === 1)).map(d => +d.ts));
+}
+
 // Buoy conditions closest to a single moment: the nearest spectral reading
 // (flat per-bin rows) and the nearest swell_partition reading (whose rank 1
 // row is NDBC's overall sea state). Readings are hourly-ish, so look a few
@@ -313,6 +331,8 @@ export async function fetchBuoySnapshot(ts, site = 'pauwela', { windowHours = 3 
   return {
     ts,
     spectrumTs: nearestSpectrumTs == null ? null : new Date(nearestSpectrumTs),
+    // When that spectrum was measured (spectrumTs is NDBC's hourly slot).
+    sampleTs: nearestSpectrumTs == null ? null : spectrumSampleTime(nearestSpectrumTs, reportTimes(partitions)),
     spectrum: spectrum.filter(d => +d.ts === nearestSpectrumTs),
     primary: reading?.values.find(v => v.rank === 1) ?? null,
     primaryTs: reading?.ts ?? null,

@@ -17,7 +17,7 @@ import {renderPartitionBubbles, renderPartitionCompass} from "./components/parti
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -320,12 +320,12 @@ swellPrimary && swellPrimary.length > 0
   <div class="card">${
   midRunPartitions.length > 0
     ? resize(renderPartitionCompass(midRunPartitions, {
-        title: `Swell Direction — ${fmt.time(midRunSpectrumReading[0].ts)}`
+        title: `Swell Direction — ${fmt.clock(spectrumSampleTime(midRunSpectrumReading[0].ts, reportTimes(swell)))}`
       }))
     : ""
   }</div>
   <div class="card">${resize(renderSpectrumHistogram(midRunSpectrumReading, {
-    title: `Spectral Energy — ${fmt.time(midRunSpectrumReading[0].ts)}`,
+    title: `Spectral Energy — ${fmt.clock(spectrumSampleTime(midRunSpectrumReading[0].ts, reportTimes(swell)))}`,
     partitions: midRunPartitions
   }))}</div>
 </div>
