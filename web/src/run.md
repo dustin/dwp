@@ -11,12 +11,13 @@ import {runsTableOptions} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
-import {renderSpectrumHeatmap, renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
+import {renderSpectrumHeatmap, renderDirectionalSpectrogram, renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
+import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, hasBuoyData, runMidpoint} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -45,7 +46,14 @@ const [runCsv, wind, swell, swellSpectrum] = await Promise.all([
   fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta), fetchSwellSpectrum(runMeta)
 ]);
 const swellPrimary = primarySwell(swell);
-const latestSpectrumReading = readingNear(swellSpectrum);
+const midRunSpectrumReading = readingNear(swellSpectrum, runMidpoint(runMeta));
+const midRunPartitions = partitionReading(midRunSpectrumReading);
+const runEnd = new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000);
+// Shade the run itself on the lead-in spectrograms.
+const runWindowMarks = [
+  Plot.rect([runMeta], {x1: () => runMeta.ts, x2: () => runEnd, y1: 0.04, y2: 0.35, fill: "none", stroke: "black", strokeWidth: 3}),
+  Plot.rect([runMeta], {x1: () => runMeta.ts, x2: () => runEnd, y1: 0.04, y2: 0.35, fill: "none", stroke: "white", strokeWidth: 2, strokeDasharray: "4,3"})
+];
 
 const fastestSegment = findFastest1kSegment(runCsv);
 
@@ -304,16 +312,21 @@ swellPrimary && swellPrimary.length > 0
   : html`<p>No swell data found for this run.</p>`
 }</div>
 
+${hasBuoyData(runMeta) ? html`<p>Compare the buoy during this run <a href="buoy.html?a=${runMeta.id}#compare">with now or with another run</a>.</p>` : ""}
+
 <div class="grid grid-cols-2">
   <div class="card">${
-  swell.length > 0
-    ? resize(renderPartitionBubbles(swell, { title: "Wave Partitions" }))
-    : html`<p>No swell partition data found for this run.</p>`
+  midRunPartitions.length > 0
+    ? resize(renderPartitionCompass(midRunPartitions, {
+        title: `Swell Direction — ${fmt.time(midRunSpectrumReading[0].ts)}`
+      }))
+    : html`<p>No spectral data found for this run.</p>`
   }</div>
   <div class="card">${
-  latestSpectrumReading.length > 0
-    ? resize(renderSpectrumHistogram(latestSpectrumReading, {
-        title: `Spectral Energy — ${fmt.time(latestSpectrumReading[0].ts)}`
+  midRunSpectrumReading.length > 0
+    ? resize(renderSpectrumHistogram(midRunSpectrumReading, {
+        title: `Spectral Energy — ${fmt.time(midRunSpectrumReading[0].ts)}`,
+        partitions: midRunPartitions
       }))
     : html`<p>No spectral data found for this run.</p>`
   }</div>
@@ -321,7 +334,19 @@ swellPrimary && swellPrimary.length > 0
 
 <div class="card">${
 swellSpectrum.length > 0
-  ? resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours)" }))
+  ? resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))
+  : html`<p>No spectral data found for this run.</p>`
+}</div>
+
+<div class="card">${
+swellSpectrum.length > 0
+  ? resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours; dashed box is the run)", marks: runWindowMarks }))
+  : html`<p>No spectral data found for this run.</p>`
+}</div>
+
+<div class="card">${
+swellSpectrum.length > 0
+  ? resize(renderDirectionalSpectrogram(swellSpectrum, { title: "Direction by Period (dashed box is the run)", marks: runWindowMarks }))
   : html`<p>No spectral data found for this run.</p>`
 }</div>
 

@@ -179,22 +179,36 @@ export async function fetchSwell(meta) {
     .then(allRows => inRange(meta, allRows))
 }
 
-// Every calendar day (formatted the same way fmt.date partitions the
-// uploaded data) that [start, end] touches, inclusive.
+// The buoy uploads are partitioned by Hawaii calendar day (see
+// db/export-conditions.sql), so enumerate days in HST regardless of the
+// viewer's own time zone. Hawaii has no DST, so a fixed offset is exact.
+const HST_OFFSET_MS = 10 * 3600 * 1000;
+
+function hstDay(ts) {
+  return new Date(ts.getTime() - HST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+// Every HST calendar day [start, end] touches, inclusive.
 function enumerateDays(start, end) {
   const days = [];
-  let d = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate());
-  while (d <= last) {
-    days.push(fmt.date(d));
-    d = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
+  const dayMs = 24 * 3600 * 1000;
+  for (let t = start.getTime(); hstDay(new Date(t)) <= hstDay(end); t += dayMs) {
+    days.push(hstDay(new Date(t)));
   }
   return days;
 }
 
+// Memoized per URL: comparison views ask for the same days repeatedly (many
+// runs share a day, and every run snapshot spans a day boundary or two).
+// Callers must not mutate the returned rows.
+const dayCsvCache = new Map();
+
 async function fetchCsvForDay(table, site, day, rowMapper) {
   const url = `https://${DATAHOST}/${table}/site%3D${site}/day%3D${day}/data.csv`;
-  return d3.csv(url, rowMapper).catch(err => []);
+  if (!dayCsvCache.has(url)) {
+    dayCsvCache.set(url, d3.csv(url, rowMapper).catch(err => []));
+  }
+  return dayCsvCache.get(url);
 }
 
 function parseSwellSpectrumRow(row) {
@@ -251,4 +265,43 @@ export async function fetchRecentSwellPartition(hours = 24, site = 'pauwela') {
   const end = new Date();
   const start = new Date(end.getTime() - hours * 3600 * 1000);
   return fetchSwellPartitionWindow(site, start, end);
+}
+
+// Spectral + partition capture at Pauwela only goes back this far; runs
+// before it have no buoy data to compare.
+export const BUOY_DATA_START = new Date('2026-07-22T00:00:00-10:00');
+
+export function buoySite(meta) {
+  return meta?.region == 'Maui North Shore' ? 'pauwela' : null;
+}
+
+export function hasBuoyData(meta) {
+  return buoySite(meta) != null && meta.ts >= BUOY_DATA_START;
+}
+
+export function runMidpoint(meta) {
+  return new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
+}
+
+// Buoy conditions closest to a single moment: the nearest spectral reading
+// (flat per-bin rows) and the nearest swell_partition reading (whose rank 1
+// row is NDBC's overall sea state). Readings are hourly-ish, so look a few
+// hours either side to tolerate gaps. Returns null if there's nothing.
+export async function fetchBuoySnapshot(ts, site = 'pauwela', { windowHours = 3 } = {}) {
+  const start = new Date(ts.getTime() - windowHours * 3600 * 1000);
+  const end = new Date(ts.getTime() + windowHours * 3600 * 1000);
+  const [spectrum, partitions] = await Promise.all([
+    fetchSwellSpectrumWindow(site, start, end),
+    fetchSwellPartitionWindow(site, start, end),
+  ]);
+  if (spectrum.length === 0 && partitions.length === 0) return null;
+  const nearestSpectrumTs = d3.least(Array.from(new Set(spectrum.map(d => +d.ts))), t => Math.abs(t - ts));
+  const reading = d3.least(partitions.filter(d => d.values.some(v => v.rank === 1)), d => Math.abs(d.ts - ts));
+  return {
+    ts,
+    spectrumTs: nearestSpectrumTs == null ? null : new Date(nearestSpectrumTs),
+    spectrum: spectrum.filter(d => +d.ts === nearestSpectrumTs),
+    primary: reading?.values.find(v => v.rank === 1) ?? null,
+    primaryTs: reading?.ts ?? null,
+  };
 }
