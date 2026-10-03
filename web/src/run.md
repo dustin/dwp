@@ -17,7 +17,7 @@ import {renderPartitionBubbles, renderPartitionCompass} from "./components/parti
 import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, hasBuoyData, runMidpoint} from "./components/data.js";
+import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -312,42 +312,29 @@ swellPrimary && swellPrimary.length > 0
   : html`<p>No swell data found for this run.</p>`
 }</div>
 
-${hasBuoyData(runMeta) ? html`<p>Compare the buoy during this run <a href="buoy.html?a=${runMeta.id}#compare">with now or with another run</a>.</p>` : ""}
-
+<div>${
+  // The Pauwela buoy only describes North Shore conditions.
+  buoySite(runMeta) == null ? "" :
+  swellSpectrum.length === 0
+    ? html`<p>No Pauwela buoy spectra for this run (captured since ${fmt.date(BUOY_DATA_START)}).</p>`
+    : html`
+<p>Compare the buoy during this run <a href="buoy.html?a=${runMeta.id}#compare">with now or with another run</a>.</p>
 <div class="grid grid-cols-2">
   <div class="card">${
   midRunPartitions.length > 0
     ? resize(renderPartitionCompass(midRunPartitions, {
         title: `Swell Direction — ${fmt.time(midRunSpectrumReading[0].ts)}`
       }))
-    : html`<p>No spectral data found for this run.</p>`
+    : ""
   }</div>
-  <div class="card">${
-  midRunSpectrumReading.length > 0
-    ? resize(renderSpectrumHistogram(midRunSpectrumReading, {
-        title: `Spectral Energy — ${fmt.time(midRunSpectrumReading[0].ts)}`,
-        partitions: midRunPartitions
-      }))
-    : html`<p>No spectral data found for this run.</p>`
-  }</div>
+  <div class="card">${resize(renderSpectrumHistogram(midRunSpectrumReading, {
+    title: `Spectral Energy — ${fmt.time(midRunSpectrumReading[0].ts)}`,
+    partitions: midRunPartitions
+  }))}</div>
 </div>
-
-<div class="card">${
-swellSpectrum.length > 0
-  ? resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))
-  : html`<p>No spectral data found for this run.</p>`
-}</div>
-
-<div class="card">${
-swellSpectrum.length > 0
-  ? resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours; dashed box is the run)", marks: runWindowMarks }))
-  : html`<p>No spectral data found for this run.</p>`
-}</div>
-
-<div class="card">${
-swellSpectrum.length > 0
-  ? resize(renderDirectionalSpectrogram(swellSpectrum, { title: "Direction by Period (dashed box is the run)", marks: runWindowMarks }))
-  : html`<p>No spectral data found for this run.</p>`
+<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { title: "Wave Partitions (including lead-in hours)" }))}</div>
+<div class="card">${resize(renderSpectrumHeatmap(swellSpectrum, { title: "Spectrogram (including lead-in hours; dashed box is the run)", marks: runWindowMarks }))}</div>
+<div class="card">${resize(renderDirectionalSpectrogram(swellSpectrum, { title: "Direction by Period (dashed box is the run)", marks: runWindowMarks }))}</div>`
 }</div>
 
 <div class="card">${

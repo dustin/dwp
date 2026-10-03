@@ -318,8 +318,6 @@ const swellymax = Math.max(
 
 </div>
 
-## Buoy
-
 ```js
 const buoySnapshots = (await Promise.all(buoyFetches))
   .map((snapshot, i) => {
@@ -334,12 +332,16 @@ const buoySnapshots = (await Promise.all(buoyFetches))
 ```
 
 <div>${
-  buoySnapshots.every(s => s == null)
-    ? html`<p>No Pauwela buoy spectra for either run (North Shore runs since ${fmt.date(BUOY_DATA_START)} only).</p>`
-    : html`${buoySnapshots.some(s => s == null)
-        ? html`<p>Only one of these runs has Pauwela buoy spectra.</p>`
-        : html`<p>Spectral swell partitions from the Pauwela buoy at each run's midpoint. See also <a href="buoy.html?a=${id1}&b=${id2}#compare">this comparison on the buoy page</a>.</p>`
-      }${buoyComparison(buoySnapshots.filter(Boolean), {resize})}`
+  // The Pauwela buoy only describes North Shore conditions, so the whole
+  // section is skipped unless at least one run is on the North Shore.
+  [runMeta1, runMeta2].every(m => buoySite(m) == null) ? "" : html`
+<h2 id="buoy">Buoy</h2>
+${buoySnapshots.every(s => s == null)
+  ? html`<p>No Pauwela buoy spectra for these runs (captured since ${fmt.date(BUOY_DATA_START)}).</p>`
+  : html`${buoySnapshots.some(s => s == null)
+      ? html`<p>Only one of these runs has Pauwela buoy spectra.</p>`
+      : html`<p>Spectral swell partitions from the Pauwela buoy at each run's midpoint. See also <a href="buoy.html?a=${id1}&b=${id2}#compare">this comparison on the buoy page</a>.</p>`
+    }${buoyComparison(buoySnapshots.filter(Boolean), {resize})}`}`
 }</div>
 
 ## Splits
