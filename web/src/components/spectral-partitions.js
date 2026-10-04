@@ -189,6 +189,23 @@ export function partitionReading(rows, { ts = rows[0]?.ts } = {}) {
     }));
 }
 
+// One swell's share of the Surfline-style kJ figure (see swell-energy.js):
+// rho*g^2*m0*T^2/pi, from a partition's energy (rho*g*m0, kJ/m²) and peak
+// period.
+export const swellKJ = d => (d.energy * G * d.period ** 2) / Math.PI;
+
+// Each swell's kJ as its share of a reading's stored total (rank 1
+// surfline_kj), so the pieces add up to the figure shown for the reading.
+// The stored total sums fixed period bands rather than these partitions, so
+// the raw figures can run ~10-15% over or under it. Without a total, the
+// raw figures.
+export function swellKJShares(swells, total) {
+  const raw = swells.map(swellKJ);
+  const sum = raw.reduce((s, k) => s + k, 0);
+  const scale = total != null && sum > 0 ? total / sum : 1;
+  return raw.map(k => k * scale);
+}
+
 // Groups flat swell_spectrum rows by reading time.
 export function groupReadings(rows) {
   const byTs = new Map();

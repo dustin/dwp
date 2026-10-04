@@ -90,7 +90,7 @@ export function renderPartitionBubbles(
           fillOpacity: d => (leadIn(d) ? 0.3 : 0.85),
           strokeOpacity: d => (leadIn(d) ? 0.4 : 1),
           title: d =>
-            `${leadIn(d) ? 'Before the run\n' : ''}${fmt.timestamp(d.ts)}\n${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)}\n${d.energy.toFixed(2)} kJ/m²`,
+            `${leadIn(d) ? 'Before the run\n' : ''}${fmt.timestamp(d.ts)}\n${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)}`,
         }),
         // Arrow shows where each wave system is heading (direction + 180),
         // matching the arrow convention used for wind/swell elsewhere in

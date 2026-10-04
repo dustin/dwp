@@ -14,12 +14,14 @@ import {
   formatDirection,
   directionColor,
 } from './spectrum.js';
-import { partitionReading, spectrumSimilarity } from './spectral-partitions.js';
+import { partitionReading, spectrumSimilarity, swellKJShares } from './spectral-partitions.js';
+import { renderEnergyComparison, wavePower } from './swell-energy.js';
 import { renderPartitionCompass } from './partitions.js';
 
 // A swell system (spectral partition), as one line with a direction swatch.
-export function swellLine(d) {
-  return html`<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;background:${directionColor(d.direction)};margin-right:0.35em;vertical-align:-0.05em"></span>${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)} <span style="color: var(--theme-foreground-muted)">(${d.energy.toFixed(2)} kJ/m²)</span>`;
+// `kj` is its share of the reading's kJ (swellKJShares).
+export function swellLine(d, kj) {
+  return html`<span style="display:inline-block;width:0.8em;height:0.8em;border-radius:50%;background:${directionColor(d.direction)};margin-right:0.35em;vertical-align:-0.05em"></span>${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)} ${kj == null ? '' : html`<span style="color: var(--theme-foreground-muted)">(${Math.round(kj)} kJ)</span>`}`;
 }
 
 // NDBC's overall sea state reading (swell_partition rank 1).
@@ -39,6 +41,7 @@ const listStyle = 'margin: 0.25em 0 0 1.1em; padding: 0;';
 // snapshot plus {label, color, meta?}.
 export function snapshotCard(s, { resize }) {
   const partitions = partitionReading(s.spectrum);
+  const kj = swellKJShares(partitions, s.primary?.surflineKJ);
   return html`<div class="card">
     <h2 style="color: ${s.color}; font-weight: 600;">${
       s.meta ? html`<a style="color: inherit" href="run.html?id=${s.meta.id}">${s.label}</a>` : s.label
@@ -49,14 +52,17 @@ export function snapshotCard(s, { resize }) {
         : `Spectrum measured ${fmt.minuteStamp(s.sampleTs ?? s.spectrumTs)}`
     }</div>
     <div style="margin-top: 0.5em;"><b>${s.primary ? primaryLine(s.primary) : 'No NDBC summary'}</b></div>
-    <ul style="${listStyle}">${partitions.map(d => html`<li style="margin: 0.15em 0">${swellLine(d)}</li>`)}</ul>
+    ${s.spectrum?.length ? html`<div>Wave power ${wavePower(s.spectrum).toFixed(1)} kW/m</div>` : ''}
+    <ul style="${listStyle}">${partitions.map((d, i) => html`<li style="margin: 0.15em 0">${swellLine(d, kj[i])}</li>`)}</ul>
     ${resize(renderPartitionCompass(compassValues(s, partitions), { size: 300, title: '' }))}
   </div>`;
 }
 
 // Side-by-side cards plus overlaid spectra and direction-by-period for two
 // (or more) snapshots. Snapshots without spectral data still get a card.
-export function buoyComparison(snapshots, { resize }) {
+// `runKJ` (mid-run kJ of logged runs) adds a "your runs" band to the energy
+// chart.
+export function buoyComparison(snapshots, { resize, runKJ = [] }) {
   const series = snapshots
     .filter(s => s.spectrum?.length > 0)
     .map(s => ({ label: s.label, color: s.color, rows: s.spectrum }));
@@ -73,5 +79,6 @@ export function buoyComparison(snapshots, { resize }) {
           renderDirectionComparison(series, { title: 'Direction by Period (dot size is energy)' })
         )}</div>`
       : ''}
+    <div class="card">${resize(renderEnergyComparison(snapshots, { runKJ }))}</div>
   </div>`;
 }

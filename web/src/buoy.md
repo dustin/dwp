@@ -20,7 +20,7 @@ Conditions from the Pauwela buoy (NDBC 51205), off Maui's North Shore: the lates
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 import {renderSpectrumHistogram, renderSpectrumWaterfall, readingNear} from "./components/spectrum.js";
-import {partitionReading, spectralPartitions, spectrumSimilarity} from "./components/spectral-partitions.js";
+import {partitionReading, spectralPartitions, spectrumSimilarity, swellKJShares} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import {swellLine, primaryLine, compassValues, buoyComparison} from "./components/buoy-snapshot.js";
 import {timePicker} from "./components/time-picker.js";
@@ -92,6 +92,7 @@ const now = {
   spectrumTs: latestSpectrumReading[0]?.ts ?? null,
   sampleTs: latestSpectrumReading[0] ? sampleTime(latestSpectrumReading[0].ts) : null,
 };
+const latestKJ = swellKJShares(latestPartitions, now.primary?.surflineKJ);
 ```
 
 ## Conditions ${viewTime ? `at ${shortStamp(viewTime)}` : "(latest)"}
@@ -107,7 +108,7 @@ const now = {
     <h2 style="margin-top: 1em;">Swell Systems</h2>
     ${
       latestPartitions.length > 0
-        ? html`<ul class="swell-list">${latestPartitions.map(d => html`<li>${swellLine(d)}</li>`)}</ul>
+        ? html`<ul class="swell-list">${latestPartitions.map((d, i) => html`<li>${swellLine(d, latestKJ[i])}</li>`)}</ul>
           <div class="muted" style="margin-top: 0.5em; font-size: 0.85em;">Split out of the spectrum measured at ${fmt.clock(now.sampleTs)}, by direction and period.</div>`
         : html`<p>No spectral data for this time.</p>`
     }
@@ -203,6 +204,7 @@ const compareRows = runSnapshots
     min_hr: meta.min_foiling_hr,
     avg_hr: meta.avg_foiling_hr,
     conditions: snapshot.primary ? primaryLine(snapshot.primary) : "",
+    kj: snapshot.primary?.surflineKJ ?? null,
     similarity: latestSpectrumReading.length > 0 ? spectrumSimilarity(latestSpectrumReading, snapshot.spectrum) : null,
   }));
 ```
@@ -215,7 +217,7 @@ const initialIds = (() => {
   return [params.get("a"), params.get("b")].filter(Boolean);
 })();
 const runTable = Inputs.table(compareRows, {
-  columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "foil", "conditions", "similarity"],
+  columns: ["when", "route", "distance_km", "duration_sec", "paddle_ups", "first_paddle_up_m", "min_hr", "avg_hr", "foil", "kj", "conditions", "similarity"],
   header: {
     when: "Run",
     route: "Route",
@@ -226,6 +228,7 @@ const runTable = Inputs.table(compareRows, {
     first_paddle_up_m: "1st PU (m)",
     min_hr: "Min HR",
     avg_hr: "Avg HR",
+    kj: "kJ",
     conditions: "Buoy at mid-run",
     similarity: viewTime ? "Match to view" : "Match to latest",
   },
@@ -236,6 +239,7 @@ const runTable = Inputs.table(compareRows, {
     first_paddle_up_m: d => d == null ? "" : d.toFixed(0),
     min_hr: d => d == null ? "" : Math.round(d),
     avg_hr: d => d == null ? "" : Math.round(d),
+    kj: d => d == null ? "" : Math.round(d),
     similarity: d => d == null ? "" : `${Math.round(d * 100)}%`,
   },
   // Size columns to their contents; with this many it scrolls sideways on
@@ -355,5 +359,5 @@ const droppedRun = timeItem.length > 0 && picked.length === 2;
     ? html`<p class="muted">${compareTime && !timeItem.length ? "No buoy spectra near that time." : ""}</p>`
     : html`${picked.length === 2 && !timeItem.length
         ? html`<p><a href="compare.html?id1=${picked[0].id}&id2=${picked[1].id}">Compare these two runs in full</a> (tracks, speed, wind and buoy).</p>`
-        : ""}${droppedRun ? html`<p class="muted">Showing the time and the first run picked.</p>` : ""}${buoyComparison(comparison, {resize})}`
+        : ""}${droppedRun ? html`<p class="muted">Showing the time and the first run picked.</p>` : ""}${buoyComparison(comparison, {resize, runKJ: runSnapshots.map(d => d.snapshot?.primary?.surflineKJ)})}`
 }</div>
