@@ -240,6 +240,20 @@ const selectedRuns = view(runTable);
 ```
 
 ```js
+// The picked runs in the order they were picked: the URL's a/b order for
+// runs already there, newly ticked ones after. The order decides which run
+// is first (green) here and on compare.html, so links between the two
+// pages keep each run's color. (The table itself only reports its
+// selection in table order.)
+const pickedIds = (() => {
+  const params = new URLSearchParams(location.search);
+  const before = [params.get("a"), params.get("b")].filter(Boolean);
+  const now = selectedRuns.map(d => d.id);
+  return [...before.filter(id => now.includes(id)), ...now.filter(id => !before.includes(id))].slice(0, 2);
+})();
+```
+
+```js
 // Whether the URL has been brought in line with the page yet. The first
 // sync (on load) only tidies the URL; after that, changes add history
 // entries. This cell has no inputs, so it runs once.
@@ -257,7 +271,7 @@ const urlSync = {loaded: false};
   for (const k of ["t", "c", "a", "b"]) params.delete(k);
   if (viewTime) params.set("t", toHstParam(viewTime));
   if (compareTime) params.set("c", toHstParam(compareTime));
-  const ids = selectedRuns.map(d => d.id).slice(0, 2);
+  const ids = pickedIds;
   if (ids[0]) params.set("a", ids[0]);
   if (ids[1]) params.set("b", ids[1]);
   // Colons are fine in a query string; leaving them unescaped keeps the
@@ -308,7 +322,7 @@ const urlSync = {loaded: false};
 
 ```js
 const runLabel = r => `${fmt.date(r.meta.ts)} ${r.meta.start_beach} → ${r.meta.end_beach}`;
-const picked = selectedRuns.slice(0, 2).sort((a, b) => a.when - b.when);
+const picked = pickedIds.map(id => selectedRuns.find(d => d.id === id));
 const timeItem = compareSnapshot?.spectrum.length > 0
   ? [{...compareSnapshot, label: shortStamp(compareTime), color: COLORS.time}]
   : [];
@@ -329,5 +343,5 @@ const droppedRun = timeItem.length > 0 && picked.length === 2;
     ? html`<p class="muted">${compareTime && !timeItem.length ? "No buoy spectra near that time." : ""}</p>`
     : html`${picked.length === 2 && !timeItem.length
         ? html`<p><a href="compare.html?id1=${picked[0].id}&id2=${picked[1].id}">Compare these two runs in full</a> (tracks, speed, wind and buoy).</p>`
-        : ""}${droppedRun ? html`<p class="muted">Showing the time and the earlier run.</p>` : ""}${buoyComparison(comparison, {resize})}`
+        : ""}${droppedRun ? html`<p class="muted">Showing the time and the first run picked.</p>` : ""}${buoyComparison(comparison, {resize})}`
 }</div>

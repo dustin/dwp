@@ -52,6 +52,16 @@ const buoyFetches = [runMeta1, runMeta2].map(m =>
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
+${Object.assign(html`<button title="Swap which run is first (and which color each gets)">⇄ Swap</button>`, {
+  // A new page load with id1/id2 exchanged; Back undoes it.
+  onclick: () => {
+    const params = new URLSearchParams(location.search);
+    params.set("id1", id2);
+    params.set("id2", id1);
+    location.assign(`${location.pathname}?${params}${location.hash}`);
+  }
+})}
+
 ```js
 const [runCsv1, runCsv2] = await Promise.all(csvFetches);
 
