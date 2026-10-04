@@ -146,7 +146,8 @@ function parseSwellPartitionRow(row) {
     spread: +row.spread,
     height: +row.height * 3.2808399,
     energy: +row.energy,
-    surflineKJ: +row.surfline_kj
+    // Empty when there was no spectrum within 3 hours (see update.sql).
+    surflineKJ: row.surfline_kj === '' || row.surfline_kj == null ? null : +row.surfline_kj
   };
 }
 

@@ -16,7 +16,7 @@ export function summarizeSwellPartition(values) {
 }
 
 export function formatPrimaryLine(d) {
-  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}° · ${d.surflineKJ.toFixed(0)} kJ`;
+  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s ${Math.round(d.direction)}°${d.surflineKJ == null ? '' : ` · ${d.surflineKJ.toFixed(0)} kJ`}`;
 }
 
 export function formatComponentLine(d) {

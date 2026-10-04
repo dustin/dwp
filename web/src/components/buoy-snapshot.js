@@ -24,7 +24,7 @@ export function swellLine(d) {
 
 // NDBC's overall sea state reading (swell_partition rank 1).
 export function primaryLine(d) {
-  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)} · ${d.surflineKJ.toFixed(0)} kJ`;
+  return `${d.height.toFixed(1)}' @ ${d.period.toFixed(1)}s from ${formatDirection(d.direction)}${d.surflineKJ == null ? '' : ` · ${d.surflineKJ.toFixed(0)} kJ`}`;
 }
 
 // The compass takes NDBC's overall reading (rank 1) plus the spectral partitions.

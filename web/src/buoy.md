@@ -24,6 +24,7 @@ import {partitionReading, spectralPartitions, spectrumSimilarity} from "./compon
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import {swellLine, primaryLine, compassValues, buoyComparison} from "./components/buoy-snapshot.js";
 import {timePicker} from "./components/time-picker.js";
+import {renderSwellEnergy, wavePower} from "./components/swell-energy.js";
 
 const COLORS = {view: "#3b82f6", time: "hsl(280, 70%, 60%)", runA: "hsl(140, 80%, 45%)", runB: "hsl(30, 85%, 55%)"};
 const shortStamp = fmt.minuteStamp;
@@ -102,6 +103,7 @@ const now = {
     <div class="muted" style="margin-top: 0.25em;">
       ${now.primaryTs ? `NDBC's summary of the ${fmt.minuteStamp(now.primaryTs)} reading` : ""}
     </div>
+    ${latestSpectrumReading.length > 0 ? html`<div style="margin-top: 0.25em;">Wave power ${wavePower(latestSpectrumReading).toFixed(1)} kW/m <span class="muted">(energy flux per meter of wave crest)</span></div>` : ""}
     <h2 style="margin-top: 1em;">Swell Systems</h2>
     ${
       latestPartitions.length > 0
@@ -149,6 +151,16 @@ ${viewTime ? `The ${lookbackHours} hours before ${shortStamp(viewTime)}` : `The 
     ? resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), { height: 380 }))
     : html`<p>No spectral data in this window.</p>`
 }</div>
+
+<div class="card">${
+  swellSpectrum.length > 0 || swell.length > 0
+    ? resize(renderSwellEnergy(spectralPartitions(swellSpectrum), swell, {
+        runKJ: runSnapshots.map(d => d.snapshot?.primary?.surflineKJ)
+      }))
+    : html`<p>No energy readings in this window.</p>`
+}
+<div class="muted" style="font-size: 0.85em;">Surfline-style kJ: height² × period², so long-period swell counts for a lot more. The line is the total; the bars split it by swell, colored by direction. The shaded band is what you've usually been out in (mid-run, middle half of your North Shore runs).</div>
+</div>
 
 ## Compare
 
