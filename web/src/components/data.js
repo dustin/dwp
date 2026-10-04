@@ -249,8 +249,10 @@ export async function fetchSwellPartitionWindow(site, start, end) {
 // conditions building into the run, not just the run's own duration.
 export async function fetchSwellSpectrum(meta, lookbackHours = 6) {
   if (meta.region != 'Maui North Shore') return [];
-  const start = new Date(meta.ts.getTime() - lookbackHours * 3600 * 1000);
+  // Nothing archived before BUOY_DATA_START, so don't ask for those days.
+  const start = new Date(Math.max(meta.ts.getTime() - lookbackHours * 3600 * 1000, +BUOY_DATA_START));
   const end = new Date(meta.ts.getTime() + meta.duration_sec * 1000);
+  if (end < start) return [];
   return fetchSwellSpectrumWindow('pauwela', start, end);
 }
 
