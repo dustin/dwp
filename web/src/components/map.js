@@ -153,7 +153,7 @@ export function renderCrashes(width, data) {
 // data.js) are drawn in gray: there's no speed to color them by.
 export const APPROXIMATE_COLOR = '#999';
 
-function speedColor(speeds) {
+export function speedColor(speeds) {
   const maxSpeed = d3.max(speeds);
 
   const colorScale = d3

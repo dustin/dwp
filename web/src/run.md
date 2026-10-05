@@ -44,6 +44,7 @@ const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
 <div>
     ${fmt.date(runMeta.ts)} at ${fmt.time(runMeta.ts)}
     on the ${runMeta.foil}
+    · ${html`<a href="track.html?id=${runMeta.id}">Open map</a>`}
 </div>
 
 <div>${noTrack ? html`<p style="color: var(--theme-foreground-muted)"><b>No GPS track for this run.</b> Entered by hand from the watch summary; the gray line on the map is an approximate route between the beaches, and stats that need the track are left blank.</p>` : ""}</div>
