@@ -5,6 +5,18 @@ import * as fmt from './formatters.js';
 import _ from 'npm:lodash';
 import { MAPBOX_TOKEN } from '../token.js';
 import {FOIL_THRESHOLD_KPH} from './color.js';
+import {
+  mapboxgl,
+  mapStyle,
+  setAccessToken,
+  trackFeatures,
+  endFeatures,
+  addTrackLayers,
+  whenStyleReady,
+  pointBounds,
+  mapTransform,
+  pointIndex,
+} from './gl-map.js';
 
 function addAttribution(svg, width, height) {
   svg
@@ -296,18 +308,83 @@ export function findFastest1kSegment(data) {
   return bestSegment;
 }
 
+// Half as tall as it is wide, as it always was, but tall enough to use on
+// a phone and no taller than most of the screen on a wide monitor.
+function mapHeight(width) {
+  const maxHeight = Math.max(320, window.innerHeight * 0.75);
+  return Math.round(Math.min(Math.max(width * 0.5, Math.min(width, 360)), maxHeight));
+}
+
+const coarsePointer = () => window.matchMedia?.('(pointer: coarse)').matches ?? false;
+
+function pointTooltip(d, firstTs) {
+  return d.approximate
+    ? ['Approximate route: no GPS track', `for this run (${fmt.date(d.ts)}).`, `Odometer: ${fmt.distanceM(d.odometer)}`]
+    : [
+        `Date: ${fmt.date(d.ts)}`,
+        `Time: ${fmt.time(d.ts)}`,
+        `Time so far: ${fmt.timeDiff(firstTs, d.ts)}`,
+        `Distance So Far: ${(d.distance / 1000).toFixed(2)} km`,
+        `Odometer: ${fmt.distanceM(d.odometer)}`,
+        `Speed: ${d.speed ? d.speed.toFixed(1) : 'N/A'} kph`,
+        `Heart Rate: ${d.hr ? d.hr : 'unknown'} bpm`,
+        `Nearest Land: ${d.distance_to_land ? (d.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
+      ];
+}
+
+// One or more runs on a Mapbox GL map: each track as speed-colored lines
+// (gray and dashed for an approximate route), with start/end dots. On top
+// sits an SVG overlay, positioned to match the map, for the callouts, the
+// fastest-1km lines and whatever `opts.additionalMarks` draws (wind rose,
+// buoy marker). Hovering near the track, or tapping it, shows that point's
+// details.
+//
+// `opts.additionalMarks({d3, svg, width, height})` gets the overlay and may
+// return `{updateOnZoom({transform, width, height})}`, called whenever the
+// map moves, with the view as a d3-zoom transform (see mapTransform).
 export function renderRun(width, datas, callouts = [], opts = { fastestSegments: null }) {
   const colorizers = (opts.colorizers || datas.map(data => speedColor(data.map(d => d.speed)))).map((c, i) =>
     datas[i][0]?.approximate ? () => APPROXIMATE_COLOR : c
   );
-  const height = width * 0.5;
-  const svg = d3.create('svg').attr('viewBox', [0, 0, width, height]);
-
+  const height = mapHeight(width);
   const fastestSegments = (opts.fastestSegments || []).filter(Boolean);
+  const allPoints = datas.flat();
+
+  const root = d3
+    .create('div')
+    .attr('class', 'run-map')
+    .style('position', 'relative')
+    .style('width', '100%')
+    .style('height', `${height}px`)
+    .style('overflow', 'hidden')
+    .style('background', '#111');
+  const mapEl = root.append('div').style('position', 'absolute').style('inset', 0).node();
+  const svg = root
+    .append('svg')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('viewBox', [0, 0, width, height])
+    .style('position', 'absolute')
+    .style('inset', 0)
+    .style('pointer-events', 'none');
+  const tooltip = root
+    .append('div')
+    .attr('class', 'data-point-tooltip')
+    .style('position', 'absolute')
+    .style('display', 'none')
+    .style('background', 'rgba(0, 0, 0, 0.9)')
+    .style('color', 'white')
+    .style('padding', '8px 12px')
+    .style('border-radius', '4px')
+    .style('font-size', '12px')
+    .style('line-height', 1.4)
+    .style('pointer-events', 'none')
+    .style('z-index', 2)
+    .style('max-width', '200px');
 
   // Add defs for arrowhead marker
-  const defs = svg.append('defs');
-  defs
+  svg
+    .append('defs')
     .append('marker')
     .attr('id', 'arrowhead')
     .attr('viewBox', '0 0 10 10')
@@ -320,28 +397,8 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
     .attr('d', 'M1,0 L1,6 L10,3 z')
     .attr('fill', '#333');
 
-  const projection = d3
-    .geoMercator()
-    .scale(1 / (2 * Math.PI))
-    .translate([0, 0]);
-  const tile = d3t
-    .tile()
-    .extent([
-      [0, 0],
-      [width, height],
-    ])
-    .tileSize(512);
-  const zoom = d3
-    .zoom()
-    .scaleExtent([1 << 10, 1 << 24])
-    .extent([
-      [0, 0],
-      [width, height],
-    ])
-    .on('zoom', ({ transform }) => zoomed(transform));
-  let image = svg.append('g').attr('pointer-events', 'none').selectAll('image');
   const runG = svg.append('g');
-  let dots = runG.selectAll('.run-dot');
+  const cursorG = svg.append('g');
 
   // Add callout groups
   const calloutsG = svg.append('g').attr('class', 'callouts');
@@ -352,97 +409,80 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
     additional = opts.additionalMarks({ d3, svg, width, height });
   }
 
-  svg.call(zoom).call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2));
+  // The point under the mouse, and the one last tapped or clicked; the
+  // hovered one wins while there is one.
+  let hovered = null;
+  let pinned = null;
 
-  const fc = {
-    type: 'FeatureCollection',
-    features: datas.flatMap(data =>
-      data.map(d => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: [+d.lon, +d.lat] },
-      }))
-    ),
-  };
+  function drawCursor(projection) {
+    const hit = hovered ?? pinned;
+    const p = hit && projection([+hit.point.lon, +hit.point.lat]);
+    const visible = p && p[0] >= 0 && p[0] <= width && p[1] >= 0 && p[1] <= height;
+    cursorG.selectAll('*').remove();
+    if (!visible) {
+      tooltip.style('display', 'none');
+      return;
+    }
+    const d = hit.point;
 
-  const proj0 = d3.geoMercator();
-  const pad = 24;
-  proj0.fitExtent(
-    [
-      [pad, pad],
-      [width - pad, height - pad],
-    ],
-    fc
-  );
-  const k = proj0.scale() * 2 * Math.PI;
-  const [tx, ty] = proj0.translate();
-  svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(k));
+    // Draw line to nearest land if coordinates are available
+    if (d.nearest_land_lat && d.nearest_land_lon) {
+      const landPoint = projection([+d.nearest_land_lon, +d.nearest_land_lat]);
+      if (landPoint) {
+        cursorG
+          .append('line')
+          .attr('class', 'nearest-land-line')
+          .attr('x1', p[0])
+          .attr('y1', p[1])
+          .attr('x2', landPoint[0])
+          .attr('y2', landPoint[1])
+          .attr('stroke', '#ff6b6b')
+          .attr('stroke-width', 2)
+          .attr('stroke-dasharray', '5,5')
+          .attr('opacity', 0.8);
+        cursorG
+          .append('circle')
+          .attr('class', 'nearest-land-point')
+          .attr('cx', landPoint[0])
+          .attr('cy', landPoint[1])
+          .attr('r', 4)
+          .attr('fill', '#ff6b6b')
+          .attr('stroke', 'white')
+          .attr('stroke-width', 1)
+          .attr('opacity', 0.9);
+      }
+    }
+    cursorG
+      .append('circle')
+      .attr('class', 'track-cursor')
+      .attr('cx', p[0])
+      .attr('cy', p[1])
+      .attr('r', 7)
+      .attr('fill', colorizers[hit.dataset](d.speed))
+      .attr('stroke', 'white')
+      .attr('stroke-width', 2.5);
 
-  function zoomed(transform) {
-    // Update tiles
-    const tiles = tile(transform);
-    image = image
-      .data(tiles, d => d)
-      .join('image')
-      .attr('xlink:href', d => tileURL(...d))
-      .attr('x', ([x]) => (x + tiles.translate[0]) * tiles.scale)
-      .attr('y', ([, y]) => (y + tiles.translate[1]) * tiles.scale)
-      .attr('width', tiles.scale)
-      .attr('height', tiles.scale);
+    tooltip.style('display', null).html(pointTooltip(d, datas[hit.dataset][0].ts).join('<br>'));
+    const tw = tooltip.node().offsetWidth;
+    const th = tooltip.node().offsetHeight;
+    const left = Math.max(6, Math.min(width - tw - 6, p[0] - tw / 2));
+    let top = p[1] - th - 14;
+    if (top < 6) top = p[1] + 14; // Show below point instead
+    tooltip.style('left', `${left}px`).style('top', `${top}px`);
+  }
 
-    // Update projection
-    projection.scale(transform.k / (2 * Math.PI)).translate([transform.x, transform.y]);
-
-    // Calculate dot radius based on zoom level
+  function redraw(transform) {
+    const projection = d3
+      .geoMercator()
+      .scale(transform.k / (2 * Math.PI))
+      .translate([transform.x, transform.y]);
     const zoomLevel = Math.log2(transform.k);
-    const dotRadius = Math.max(2, 4 * Math.pow(0.9, zoomLevel - 12));
-
-    // Project data points with original index info
-    const projectedData = datas
-      .flatMap((data, i) =>
-        data.map((d, idx) => {
-          const p = projection([+d.lon, +d.lat]);
-          return p && p[0] >= -50 && p[0] <= width + 50 && p[1] >= -50 && p[1] <= height + 50
-            ? { x: p[0], y: p[1], data: d, dataset: i, indexInDataset: idx }
-            : null;
-        })
-      )
-      .filter(d => d !== null);
-
-    // Render dots
-    dots = dots
-      .data(projectedData, d => `${d.data.lon}-${d.data.lat}`)
-      .join(
-        enter =>
-          enter
-            .append('circle')
-            .attr('class', 'run-dot')
-            .attr('fill', d => {
-              return colorizers[d.dataset](d.data.speed);
-            })
-            .attr('stroke', d => {
-              return colorizers[d.dataset](d.data.speed);
-            })
-            .attr('stroke-width', 0)
-            .attr('opacity', 0.9)
-            .style('cursor', 'pointer'),
-        update => update,
-        exit => exit.remove()
-      )
-      .attr('cx', d => d.x)
-      .attr('cy', d => d.y)
-      .attr('r', dotRadius);
 
     runG.selectAll('.fastest-segment-line').remove();
 
     fastestSegments.forEach(fastestSegment => {
-      const startProjected = projection([
-        +fastestSegment.startReading.lon,
-        +fastestSegment.startReading.lat,
-      ]);
-      const endProjected = projection([
-        +fastestSegment.endReading.lon,
-        +fastestSegment.endReading.lat,
-      ]);
+      const startProjected = projection([+fastestSegment.startReading.lon, +fastestSegment.startReading.lat]);
+      const endProjected = projection([+fastestSegment.endReading.lon, +fastestSegment.endReading.lat]);
 
       if (
         startProjected &&
@@ -466,122 +506,11 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
           .attr('stroke', '#ff00ff')
           .attr('stroke-width', 3)
           .attr('stroke-dasharray', '5,5')
-          .attr('opacity', 0.8)
-          .style('pointer-events', 'none');
+          .attr('opacity', 0.8);
       }
     });
 
-    // Add hover behavior to data points
-    dots
-      .on('mouseenter', function (event, d) {
-        // Create tooltip
-        const tooltip = d3
-          .select('body')
-          .append('div')
-          .attr('class', 'data-point-tooltip')
-          .style('position', 'absolute')
-          .style('background', 'rgba(0, 0, 0, 0.9)')
-          .style('color', 'white')
-          .style('padding', '8px 12px')
-          .style('border-radius', '4px')
-          .style('font-size', '12px')
-          .style('pointer-events', 'none')
-          .style('z-index', '1000')
-          .style('max-width', '200px');
-
-        // Format tooltip content
-        const content = d.data.approximate
-          ? [
-              'Approximate route: no GPS track',
-              `for this run (${fmt.date(d.data.ts)}).`,
-              `Odometer: ${fmt.distanceM(d.data.odometer)}`,
-            ]
-          : [
-              `Date: ${fmt.date(d.data.ts)}`,
-              `Time: ${fmt.time(d.data.ts)}`,
-              `Time so far: ${fmt.timeDiff(datas[d.dataset][0].ts, d.data.ts)}`,
-              `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
-              `Odometer: ${fmt.distanceM(d.data.odometer)}`,
-              `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
-              `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
-              `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
-            ];
-
-        tooltip.html(content.join('<br>'));
-
-        // Position tooltip
-        const rect = this.getBoundingClientRect();
-        const tooltipNode = tooltip.node();
-        const tooltipRect = tooltipNode.getBoundingClientRect();
-
-        let left = rect.left + window.pageXOffset + rect.width / 2 - tooltipRect.width / 2;
-        let top = rect.top + window.pageYOffset - tooltipRect.height - 10;
-
-        // Keep tooltip on screen
-        if (left < 10) left = 10;
-        if (left + tooltipRect.width > window.innerWidth - 10) {
-          left = window.innerWidth - tooltipRect.width - 10;
-        }
-        if (top < 10) {
-          top = rect.bottom + window.pageYOffset + 10; // Show below point instead
-        }
-
-        tooltip.style('left', left + 'px').style('top', top + 'px');
-
-        // Highlight data point
-        d3.select(this).attr('stroke-width', 2).attr('opacity', 1);
-
-        // Draw line to nearest land if coordinates are available
-        if (d.data.nearest_land_lat && d.data.nearest_land_lon) {
-          const landPoint = projection([+d.data.nearest_land_lon, +d.data.nearest_land_lat]);
-
-          if (
-            landPoint &&
-            landPoint[0] >= -100 &&
-            landPoint[0] <= width + 100 &&
-            landPoint[1] >= -100 &&
-            landPoint[1] <= height + 100
-          ) {
-            // Add line to nearest land
-            runG
-              .append('line')
-              .attr('class', 'nearest-land-line')
-              .attr('x1', d.x)
-              .attr('y1', d.y)
-              .attr('x2', landPoint[0])
-              .attr('y2', landPoint[1])
-              .attr('stroke', '#ff6b6b')
-              .attr('stroke-width', 2)
-              .attr('stroke-dasharray', '5,5')
-              .attr('opacity', 0.8)
-              .style('pointer-events', 'none');
-
-            // Add small circle at land point
-            runG
-              .append('circle')
-              .attr('class', 'nearest-land-point')
-              .attr('cx', landPoint[0])
-              .attr('cy', landPoint[1])
-              .attr('r', 4)
-              .attr('fill', '#ff6b6b')
-              .attr('stroke', 'white')
-              .attr('stroke-width', 1)
-              .attr('opacity', 0.9)
-              .style('pointer-events', 'none');
-          }
-        }
-      })
-      .on('mouseleave', function () {
-        // Remove tooltip
-        d3.select('.data-point-tooltip').remove();
-
-        // Remove nearest land line and point
-        runG.selectAll('.nearest-land-line').remove();
-        runG.selectAll('.nearest-land-point').remove();
-
-        // Reset highlight
-        d3.select(this).attr('stroke-width', 0).attr('opacity', 0.9);
-      });
+    drawCursor(projection);
 
     // Project and render callouts
     const projectedCallouts = callouts
@@ -610,7 +539,11 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
       .data(projectedCallouts, d => `${d.lat}-${d.lon}`)
       .join(
         enter => {
-          const group = enter.append('g').attr('class', 'callout-group').style('cursor', 'pointer');
+          const group = enter
+            .append('g')
+            .attr('class', 'callout-group')
+            .style('cursor', 'pointer')
+            .style('pointer-events', 'all');
 
           // Add arrow path (curved)
           group
@@ -729,9 +662,90 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
     if (additional?.updateOnZoom) additional.updateOnZoom({ transform, width, height });
   }
 
-  addAttribution(svg, width, height);
+  const index = pointIndex(datas);
+  let map = null;
+  let draw = () => {};
 
-  return svg.node();
+  // Mapbox sizes its canvas from the container when it's created, so wait
+  // until Framework has put the map on the page.
+  function init() {
+    setAccessToken();
+    map = new mapboxgl.Map({
+      container: mapEl,
+      style: mapStyle('satellite-v9'),
+      ...(allPoints.length
+        ? { bounds: pointBounds(allPoints), fitBoundsOptions: { padding: 24, maxZoom: 16 } }
+        : { center: [-156.33, 20.8], zoom: 9 }),
+      minZoom: 1,
+      maxZoom: 18,
+      attributionControl: false,
+      // The overlays assume a north-up, flat map.
+      dragRotate: false,
+      pitchWithRotate: false,
+      touchPitch: false,
+      // On a phone, one finger scrolls the page and two move the map, so
+      // the map doesn't trap you halfway down the run page.
+      cooperativeGestures: coarsePointer(),
+    });
+    map.touchZoomRotate.disableRotation();
+    map.keyboard.disableRotation();
+    map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+
+    let frame = null;
+    draw = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        redraw(mapTransform(map));
+      });
+    };
+    map.on('move', draw);
+    map.on('resize', draw);
+    redraw(mapTransform(map));
+
+    whenStyleReady(map, () => {
+      const features = datas.flatMap((points, i) =>
+        trackFeatures(points, colorizers[i], points[0]?.approximate ? { dashed: true } : {})
+      );
+      addTrackLayers(map, { type: 'FeatureCollection', features }, datas.flatMap(endFeatures), { tolerance: 0 });
+      root.attr('data-ready', 'true');
+    });
+
+    map.on('mousemove', event => {
+      const hit = index.pick(mapTransform(map), event.point.x, event.point.y, 10);
+      if (hit?.point !== hovered?.point) {
+        hovered = hit;
+        draw();
+      }
+    });
+    mapEl.addEventListener('mouseleave', () => {
+      hovered = null;
+      draw();
+    });
+    // A tap (or click) near the track, within a finger's width, pins that
+    // point's details; one away from it clears them.
+    map.on('click', event => {
+      const radius = event.originalEvent.pointerType === 'mouse' ? 12 : 30;
+      pinned = index.pick(mapTransform(map), event.point.x, event.point.y, radius);
+      draw();
+    });
+
+    // Framework's resize() replaces the map when the page width changes;
+    // let go of the old one's WebGL context when it leaves the page.
+    const gone = new MutationObserver(() => {
+      if (root.node().isConnected) return;
+      gone.disconnect();
+      map.remove();
+    });
+    gone.observe(document.body, { childList: true, subtree: true });
+  }
+  (function whenAttached() {
+    if (root.node().isConnected) init();
+    else requestAnimationFrame(whenAttached);
+  })();
+
+  return root.node();
 }
 
 // Wind rosefrom my wind data.
@@ -750,6 +764,7 @@ export function createWindRoseInset(
     normalize = true,
     colors = { type: 'ordinal', scheme: d3.schemeTableau10 },
     title = 'Wind Speed (knots)',
+    fontSize = 18,
   } = {}
 ) {
   if (!readings || readings.length < 1) {
@@ -945,7 +960,7 @@ export function createWindRoseInset(
   function makeLegend(
     selection,
     labels,
-    { position = 'right', padFromRose = 14, maxWidth = 140, fontSize = 18 } = {}
+    { position = 'right', padFromRose = 14, maxWidth = 140 } = {}
   ) {
     selection.select('.legend').remove();
 
@@ -1024,7 +1039,7 @@ export function createWindRoseInset(
       labels.forEach((lab, i) => {
         const g = legend
           .append('g')
-          .attr('transform', `translate(0, ${16 + i * (Math.max(sh, fontSize) + rowGap)})`);
+          .attr('transform', `translate(0, ${fontSize * 0.9 + i * (Math.max(sh, fontSize) + rowGap)})`);
         g.append('rect')
           .attr('width', sw)
           .attr('height', sh)
@@ -1212,6 +1227,7 @@ export function createBuoySwellMarker(
   let isOffscreen = false;
 
   g.style('cursor', 'pointer')
+    .style('pointer-events', 'all')
     .on('pointerenter', () =>
       tooltip
         .style('opacity', 1)

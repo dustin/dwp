@@ -18,7 +18,7 @@ toc: true
 ```js
 import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
 import {compareColorizers} from "./components/color.js";
-import {windRoseOrigin, addWindRose} from "./components/wind-rose.js";
+import {windRoseOrigin, windRoseScale, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
@@ -79,12 +79,14 @@ const [wind1, wind2] = await windFetches;
 const [swell1, swell2] = await swellFetches;
 
 function aRose(d3, svg, width, height, wind, idx, colors, off) {
-  const { centerX, centerY } = windRoseOrigin(16, 130, off);
+  const scale = windRoseScale(width);
+  const { centerX, centerY } = windRoseOrigin(16, 130, off, scale);
   const inset = addWindRose(d3, svg, wind, {
     x: centerX,
     y: centerY,
     title: "Wind Speed " + idx + " (knots)",
-    scheme: [0, 15, 20, 25, 30].map(colors)
+    scheme: [0, 15, 20, 25, 30].map(colors),
+    scale
   });
   return {
     updateOnZoom: null,

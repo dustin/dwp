@@ -9,7 +9,7 @@ import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} fr
 import {beachColorScale} from "./components/beaches.js";
 import {runsTableOptions} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
-import {windRoseOrigin, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
+import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
 import {renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
@@ -72,12 +72,14 @@ function formatIndividualSwells(ts) {
 
 <div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
   additionalMarks: ({ d3, svg, width, height }) => {
-    const { size, centerX, centerY } = windRoseOrigin();
+    const scale = windRoseScale(width);
+    const { size, centerX, centerY } = windRoseOrigin(16, 130, 0, scale);
     const inset = addWindRose(d3, svg, wind, {
       x: centerX,
       y: centerY,
       title: "Wind (avg)",
-      scheme: WIND_SPEED_COLORS
+      scheme: WIND_SPEED_COLORS,
+      scale
     });
     let buoyMarker = null;
     if (swell.length > 0 && (runMeta.region === 'Maui North Shore')) {
