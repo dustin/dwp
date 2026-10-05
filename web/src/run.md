@@ -7,7 +7,7 @@ toc: true
 ```js
 import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
 import {beachColorScale} from "./components/beaches.js";
-import {runsTableOptions} from "./components/runs-table.js";
+import {responsiveRunsTable} from "./components/runs-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
@@ -528,8 +528,7 @@ const compareFuns = {
 ```
 
 <div class="card">${
-Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts),
-  runsTableOptions(beachColor, htl, {
+responsiveRunsTable(Inputs, htl, beachColor, allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -545,5 +544,5 @@ Inputs.table(allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sor
       "foil"
     ],
     linkHref: d => `/compare.html?id1=${thisId}&id2=${d.id}`
-  }))
+  })
 }</div>

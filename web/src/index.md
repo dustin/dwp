@@ -15,7 +15,7 @@ import {fetchMeta, dryLimit} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
 import {foilColorScale} from "./components/foils.js";
-import {runsTableOptions} from "./components/runs-table.js";
+import {responsiveRunsTable} from "./components/runs-table.js";
 import {computeOdometerCrossings} from "./components/odometer.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
@@ -279,8 +279,7 @@ where once I paddled up for real, I stayed up until I was done.
 So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
 <div class="card">${
-Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts),
-  runsTableOptions(beachColor, htl, {
+responsiveRunsTable(Inputs, htl, beachColor, runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -294,7 +293,7 @@ Inputs.table(runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts),
       "foil"
     ],
     linkHref: d => `/run.html?id=${d.id}`
-  }))
+  })
 }</div>
 
 ## Distances
@@ -581,8 +580,7 @@ beach's arc, it'll highlight the places I've gone from that beach.
 Click through to view details.
 
 <div class="card">${
-Inputs.table(runCsv.sort((a, b) => b.ts - a.ts),
-  runsTableOptions(beachColor, htl, {
+responsiveRunsTable(Inputs, htl, beachColor, runCsv.sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -598,5 +596,5 @@ Inputs.table(runCsv.sort((a, b) => b.ts - a.ts),
       "foil"
     ],
     linkHref: d => `/run.html?id=${d.id}`
-  }))
+  })
 }</div>
