@@ -48,7 +48,15 @@ SELECT dwid
 FROM dws
 GROUP BY dwid
 HAVING min(ts) - INTERVAL '5 minutes' <= (SELECT end_ts FROM new_run_range)
-   AND max(ts) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range);
+   AND max(ts) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range)
+UNION
+-- A run entered by hand (import-manual.sql) has no trackpoints, so match
+-- it on its summary times instead, and the real track replaces it.
+SELECT id
+FROM dwlist l
+WHERE NOT EXISTS (SELECT 1 FROM dws WHERE dws.dwid = l.id)
+  AND to_timestamp(l.ts) - INTERVAL '5 minutes' <= (SELECT end_ts FROM new_run_range)
+  AND to_timestamp(l.ts + l.duration_sec) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range);
 
 SELECT 'replacing ' || count(*) || ' existing run(s): ' ||
        coalesce(string_agg(dwid::VARCHAR, ', '), '(none)') AS reimport_notice

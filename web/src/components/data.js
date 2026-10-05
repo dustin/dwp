@@ -1,3 +1,4 @@
+import { FileAttachment } from 'observablehq:stdlib';
 import _ from 'npm:lodash';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
@@ -39,6 +40,9 @@ export async function fetchMeta(f) {
           longest_segment_start: new Date(d.longest_segment_start),
           longest_segment_end: new Date(d.longest_segment_end),
           foil: normalizeFoil(d.foil || 'unknown foil'),
+          // Runs entered by hand (db/import-manual.sql) have no GPS track.
+          // Older runs.csv exports have no has_track column at all.
+          has_track: d.has_track !== false,
           pct_dist_on_foil: d.distance_on_foil / (1000 * d.distance_km),
           pct_time_on_foil: d.duration_on_foil / d.duration_sec,
           linkedDate: { date: ts, id: d.id },
@@ -61,6 +65,7 @@ export async function fetchMeta(f) {
 const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
 
 export async function fetchRun(meta) {
+  if (!meta.has_track) return approximateRoute(meta);
   const runDataURL = `https://${DATAHOST}/runs/dwid%3D${meta.id}/data.csv`;
   return d3.csv(runDataURL, d3.autoType).then(data =>
     _.sortBy(
@@ -68,6 +73,85 @@ export async function fetchRun(meta) {
       d => d.tsi
     )
   );
+}
+
+// Island outlines (db/islands/islands-geojson.py), loaded only when a run
+// without a GPS track needs them.
+let islandsP = null;
+function islands() {
+  islandsP ??= FileAttachment('../data/islands.json')
+    .json()
+    .then(fc => fc.features.map(f => f.geometry.coordinates[0]))
+    .catch(() => []);
+  return islandsP;
+}
+
+// Planar ray casting on lon/lat; fine at island scale.
+function onLand(lon, lat, rings) {
+  return rings.some(ring => {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  });
+}
+
+// A stand-in track for a run with no GPS data: a gentle arc from the start
+// beach to the end beach, with time and distance spread evenly along it.
+// The arc bows to whichever side of the straight line crosses less land,
+// i.e. out to sea. Speed and heart rate are left null, and every point is
+// marked `approximate`, so the map draws it as a guess and nothing derives
+// stats from it.
+export async function approximateRoute(meta, points = 60) {
+  const { start_lat, start_lon, end_lat, end_lon } = meta;
+  if ([start_lat, start_lon, end_lat, end_lon].some(v => v == null || isNaN(v))) return [];
+  // Flat-earth math in km is plenty over a few km.
+  const kmPerLon = 111.32 * Math.cos((start_lat * Math.PI) / 180);
+  const kmPerLat = 110.57;
+  const dx = (end_lon - start_lon) * kmPerLon;
+  const dy = (end_lat - start_lat) * kmPerLat;
+  const chord = Math.hypot(dx, dy);
+  const bow = 0.15 * chord;
+  const arc = side => {
+    // Quadratic Bezier; the control point sits twice the bow out from the
+    // chord's middle, so the curve's midpoint lands `bow` km off the chord.
+    const cx = dx / 2 + (chord > 0 ? (2 * bow * side * -dy) / chord : 0);
+    const cy = dy / 2 + (chord > 0 ? (2 * bow * side * dx) / chord : 0);
+    return d3.range(points).map(i => {
+      const t = i / (points - 1);
+      return {
+        t,
+        lon: start_lon + (2 * (1 - t) * t * cx + t * t * dx) / kmPerLon,
+        lat: start_lat + (2 * (1 - t) * t * cy + t * t * dy) / kmPerLat,
+      };
+    });
+  };
+  const rings = await islands();
+  const landPoints = path => path.filter(p => onLand(p.lon, p.lat, rings)).length;
+  const [left, right] = [arc(1), arc(-1)];
+  const path = landPoints(right) < landPoints(left) ? right : left;
+
+  const startTsi = meta.ts.getTime() / 1000;
+  const totalM = meta.distance_km * 1000;
+  return path.map(({ t, lat, lon }) => {
+    const tsi = startTsi + t * meta.duration_sec;
+    return {
+      approximate: true,
+      tsi,
+      ts: new Date(tsi * 1000),
+      lat,
+      lon,
+      speed: null,
+      hr: null,
+      avg_speed_1k: null,
+      distance_to_land: null,
+      distance: t * totalM,
+      odometer: t * totalM + 1000 * meta.odometer_km,
+    };
+  });
 }
 
 function inRange(meta, allRows) {

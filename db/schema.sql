@@ -55,7 +55,8 @@ CREATE TABLE dwlist(
   distance_computed double, -- the distance from WS is unreliable
   region text,
   distance_on_foil double,
-  duration_on_foil double
+  duration_on_foil double,
+  max_hr double -- only for runs entered by hand (import-manual.sql)
 );
 
 create or replace view dwlist_resolved as

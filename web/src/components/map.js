@@ -149,6 +149,10 @@ export function renderCrashes(width, data) {
   return svg.node();
 }
 
+// Approximate routes (runs with no GPS track; see approximateRoute in
+// data.js) are drawn in gray: there's no speed to color them by.
+export const APPROXIMATE_COLOR = '#999';
+
 function speedColor(speeds) {
   const maxSpeed = d3.max(speeds);
 
@@ -163,24 +167,29 @@ function speedColor(speeds) {
 }
 
 export function findCallouts(runMeta, data, fastestSegments = []) {
-  const calloutSpots = {
-    maxSpeed: _.maxBy(data, d => d.speed),
-    maxDist: _.maxBy(data, d => d.distance_to_land),
-  };
-  const callouts = [
-    {
-      lat: calloutSpots.maxSpeed.lat,
-      lon: calloutSpots.maxSpeed.lon,
-      icon: '🚀',
-      text: `Top speed of ${calloutSpots.maxSpeed.speed.toFixed(2)} kph`,
-    },
-    {
-      lat: calloutSpots.maxDist.lat,
-      lon: calloutSpots.maxDist.lon,
-      icon: '🗺️',
-      text: `Maximum distance from land of ${(calloutSpots.maxDist.distance_to_land / 1000).toFixed(2)} km`,
-    },
-  ];
+  const callouts = [];
+  // An approximate route has no speeds or positions worth pointing at;
+  // only the lifetime odometer milestones below still mean something.
+  if (!data[0]?.approximate) {
+    const maxSpeed = _.maxBy(data, d => d.speed);
+    const maxDist = _.maxBy(data, d => d.distance_to_land);
+    if (maxSpeed) {
+      callouts.push({
+        lat: maxSpeed.lat,
+        lon: maxSpeed.lon,
+        icon: '🚀',
+        text: `Top speed of ${maxSpeed.speed.toFixed(2)} kph`,
+      });
+    }
+    if (maxDist) {
+      callouts.push({
+        lat: maxDist.lat,
+        lon: maxDist.lon,
+        icon: '🗺️',
+        text: `Maximum distance from land of ${(maxDist.distance_to_land / 1000).toFixed(2)} km`,
+      });
+    }
+  }
 
   if (runMeta.min_foiling_hr) {
     const firstPaddleUp = runMeta.distance_to_first_paddle_up || 0;
@@ -236,7 +245,8 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
 
 // Find the fastest 1000m segment in the data
 export function findFastest1kSegment(data) {
-  if (data.length < 2) return null;
+  // An approximate route's even spacing would make up a "fastest" km.
+  if (data.length < 2 || data[0].approximate) return null;
 
   let bestSegment = null;
   let bestDuration = Infinity;
@@ -287,11 +297,13 @@ export function findFastest1kSegment(data) {
 }
 
 export function renderRun(width, datas, callouts = [], opts = { fastestSegments: null }) {
-  const colorizers = opts.colorizers || datas.map(data => speedColor(data.map(d => d.speed)));
+  const colorizers = (opts.colorizers || datas.map(data => speedColor(data.map(d => d.speed)))).map((c, i) =>
+    datas[i][0]?.approximate ? () => APPROXIMATE_COLOR : c
+  );
   const height = width * 0.5;
   const svg = d3.create('svg').attr('viewBox', [0, 0, width, height]);
 
-  const fastestSegments = opts.fastestSegments;
+  const fastestSegments = (opts.fastestSegments || []).filter(Boolean);
 
   // Add defs for arrowhead marker
   const defs = svg.append('defs');
@@ -478,16 +490,22 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
           .style('max-width', '200px');
 
         // Format tooltip content
-        const content = [
-          `Date: ${fmt.date(d.data.ts)}`,
-          `Time: ${fmt.time(d.data.ts)}`,
-          `Time so far: ${fmt.timeDiff(datas[d.dataset][0].ts, d.data.ts)}`,
-          `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
-          `Odometer: ${fmt.distanceM(d.data.odometer)}`,
-          `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
-          `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
-          `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
-        ];
+        const content = d.data.approximate
+          ? [
+              'Approximate route: no GPS track',
+              `for this run (${fmt.date(d.data.ts)}).`,
+              `Odometer: ${fmt.distanceM(d.data.odometer)}`,
+            ]
+          : [
+              `Date: ${fmt.date(d.data.ts)}`,
+              `Time: ${fmt.time(d.data.ts)}`,
+              `Time so far: ${fmt.timeDiff(datas[d.dataset][0].ts, d.data.ts)}`,
+              `Distance So Far: ${(d.data.distance / 1000).toFixed(2)} km`,
+              `Odometer: ${fmt.distanceM(d.data.odometer)}`,
+              `Speed: ${d.data.speed ? d.data.speed.toFixed(1) : 'N/A'} kph`,
+              `Heart Rate: ${d.data.hr ? d.data.hr : 'unknown'} bpm`,
+              `Nearest Land: ${d.data.distance_to_land ? (d.data.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
+            ];
 
         tooltip.html(content.join('<br>'));
 

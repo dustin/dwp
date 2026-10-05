@@ -66,12 +66,22 @@ COPY (
       ORDER BY dr.ts
       ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
     ), 0) AS odometer_km,
+    -- False for runs entered by hand (import-manual.sql): no trackpoints,
+    -- so the web draws an approximate route between the beaches, which
+    -- are placed at the beach outlines' centers.
+    EXISTS (SELECT 1 FROM dws WHERE dws.dwid = dr.id) AS has_track,
+    ST_Y(ST_Centroid(bs.geom)) AS start_lat,
+    ST_X(ST_Centroid(bs.geom)) AS start_lon,
+    ST_Y(ST_Centroid(be.geom)) AS end_lat,
+    ST_X(ST_Centroid(be.geom)) AS end_lon,
     wind_stats.avg_wavg,
     wind_stats.max_wavg,
     wind_stats.avg_wgust,
     wind_stats.max_wgust,
     wind_stats.avg_wdir
   FROM dwlist_resolved dr
+  JOIN beaches bs ON bs.id = dr.start_pos
+  JOIN beaches be ON be.id = dr.end_pos
   LEFT JOIN (
     SELECT
       dr2.id AS dwlist_id,

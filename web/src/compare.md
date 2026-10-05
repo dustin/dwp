@@ -66,6 +66,8 @@ ${Object.assign(html`<button title="Swap which run is first (and which color eac
 const [runCsv1, runCsv2] = await Promise.all(csvFetches);
 
 const colorizers = compareColorizers(runCsv1, runCsv2);
+// Stats that come from the GPS track are empty for a run entered by hand.
+const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
 
 const fastestSegments = [
   findFastest1kSegment(runCsv1),
@@ -117,9 +119,9 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
   <div class="card">
       <h2>Time on Foil</h2>
       <span class="big">
-          <span class="run1">${fmt.seconds(runMeta1.duration_on_foil)} (${(runMeta1.pct_time_on_foil * 100).toFixed(0)}%)</span>
+          <span class="run1">${known(runMeta1.duration_on_foil, d => `${fmt.seconds(d)} (${(runMeta1.pct_time_on_foil * 100).toFixed(0)}%)`)}</span>
           /<br/>
-          <span class="run2">${fmt.seconds(runMeta2.duration_on_foil)} (${(runMeta2.pct_time_on_foil * 100).toFixed(0)}%)</span>
+          <span class="run2">${known(runMeta2.duration_on_foil, d => `${fmt.seconds(d)} (${(runMeta2.pct_time_on_foil * 100).toFixed(0)}%)`)}</span>
       </span>
   </div>
 
@@ -136,13 +138,11 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
     <h2>Distance Traveled on Foil</h2>
     <span class="big">
       <span class="run1">
-        ${(runMeta1.distance_on_foil / 1000).toFixed(2)} km
-        (${(runMeta1.pct_dist_on_foil * 100).toFixed(0)}%)
+        ${known(runMeta1.distance_on_foil, d => `${(d / 1000).toFixed(2)} km (${(runMeta1.pct_dist_on_foil * 100).toFixed(0)}%)`)}
       </span>
       /<br/>
       <span class="run2">
-        ${(runMeta2.distance_on_foil / 1000).toFixed(2)} km
-        (${(runMeta2.pct_dist_on_foil * 100).toFixed(0)}%)
+        ${known(runMeta2.distance_on_foil, d => `${(d / 1000).toFixed(2)} km (${(runMeta2.pct_dist_on_foil * 100).toFixed(0)}%)`)}
       </span>
     </span>
   </div>
@@ -150,18 +150,18 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
     <span class="big">
-      <span class="run1">${(runMeta1.longest_segment_distance / 1000).toFixed(2)} km</span>
+      <span class="run1">${known(runMeta1.longest_segment_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
       /<br/>
-      <span class="run2">${(runMeta2.longest_segment_distance / 1000).toFixed(2)} km</span>
+      <span class="run2">${known(runMeta2.longest_segment_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
     </span>
   </div>
 
   <div class="card">
     <h2>Furthest From Land</h2>
     <span class="big">
-      <span class="run1">${(runMeta1.max_distance / 1000).toFixed(2)} km</span>
+      <span class="run1">${known(runMeta1.max_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
       /<br/>
-      <span class="run2">${(runMeta2.max_distance / 1000).toFixed(2)} km</span>
+      <span class="run2">${known(runMeta2.max_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
     </span>
   </div>
 
@@ -195,27 +195,27 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
   <div class="card">
     <h2>Best 1k Pace</h2>
     <span class="big">
-      <span class="run1">${fmt.pace(runMeta1.max_speed_1k)}</span>
+      <span class="run1">${known(runMeta1.max_speed_1k, fmt.pace)}</span>
       /<br/>
-      <span class="run2">${fmt.pace(runMeta2.max_speed_1k)}</span>
+      <span class="run2">${known(runMeta2.max_speed_1k, fmt.pace)}</span>
     </span>
   </div>
 
   <div class="card">
     <h2>Min Foiling Heart Rate</h2>
     <span class="big">
-      <span class="run1">${fmt.hr(runMeta1.min_foiling_hr)}</span>
+      <span class="run1">${known(runMeta1.min_foiling_hr, fmt.hr)}</span>
       /<br/>
-      <span class="run2">${fmt.hr(runMeta2.min_foiling_hr)}</span>
+      <span class="run2">${known(runMeta2.min_foiling_hr, fmt.hr)}</span>
     </span>
   </div>
 
   <div class="card">
     <h2>Average Foiling Heart Rate</h2>
     <span class="big">
-      <span class="run1">${fmt.hr(runMeta1.avg_foiling_hr)}</span>
+      <span class="run1">${known(runMeta1.avg_foiling_hr, fmt.hr)}</span>
       /<br/>
-      <span class="run2">${fmt.hr(runMeta2.avg_foiling_hr)}</span>
+      <span class="run2">${known(runMeta2.avg_foiling_hr, fmt.hr)}</span>
     </span>
   </div>
 

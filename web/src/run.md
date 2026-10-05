@@ -32,6 +32,11 @@ const urlParams = new URLSearchParams(window.location.search);
 const thisId = urlParams.get("id");
 
 const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
+// Entered by hand (db/import-manual.sql): summary numbers only, and the map
+// shows an approximate route.
+const noTrack = !runMeta.has_track;
+// Stats that come from the GPS track are empty for a run without one.
+const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
 ```
 
 # From ${runMeta.start_beach} to ${runMeta.end_beach}
@@ -40,6 +45,8 @@ const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
     ${fmt.date(runMeta.ts)} at ${fmt.time(runMeta.ts)}
     on the ${runMeta.foil}
 </div>
+
+<div>${noTrack ? html`<p style="color: var(--theme-foreground-muted)"><b>No GPS track for this run.</b> Entered by hand from the watch summary; the gray line on the map is an approximate route between the beaches, and stats that need the track are left blank.</p>` : ""}</div>
 
 ```js
 const [runCsv, wind, swell, swellSpectrum] = await Promise.all([
@@ -106,8 +113,7 @@ function formatIndividualSwells(ts) {
   <div class="card">
     <h2>Foiling Time</h2>
     <span class="big">
-        ${fmt.seconds(runMeta.duration_on_foil)}
-        (${(runMeta.pct_time_on_foil * 100).toFixed(0)}%)
+        ${known(runMeta.duration_on_foil, d => `${fmt.seconds(d)} (${(runMeta.pct_time_on_foil * 100).toFixed(0)}%)`)}
     </span>
   </div>
   <div class="card">
@@ -116,12 +122,11 @@ function formatIndividualSwells(ts) {
   </div>
   <div class="card">
     <h2>Distance Traveled on Foil</h2>
-    <span class="big">${(runMeta.distance_on_foil / 1000).toFixed(2)} km
-        (${(runMeta.pct_dist_on_foil * 100).toFixed(0)}%)</span>
+    <span class="big">${known(runMeta.distance_on_foil, d => `${(d / 1000).toFixed(2)} km (${(runMeta.pct_dist_on_foil * 100).toFixed(0)}%)`)}</span>
   </div>
   <div class="card">
     <h2>First Paddle Up</h2>
-    <span class="big">${runMeta.distance_to_first_paddle_up ? (runMeta.distance_to_first_paddle_up).toFixed(0) + " meters" : "LOL"}</span>
+    <span class="big">${noTrack ? "—" : runMeta.distance_to_first_paddle_up ? (runMeta.distance_to_first_paddle_up).toFixed(0) + " meters" : "LOL"}</span>
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
@@ -134,22 +139,21 @@ function formatIndividualSwells(ts) {
   </div>
   <div class="card">
     <h2>Best 1k Pace</h2>
-    <span class="big">${fmt.pace(runMeta.max_speed_1k)}</span>
+    <span class="big">${known(runMeta.max_speed_1k, fmt.pace)}</span>
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
     <span class="big">
-        ${(runMeta.longest_segment_distance / 1000).toFixed(2)} km
-        / ${fmt.timeDiff(runMeta.longest_segment_start, runMeta.longest_segment_end)}
+        ${known(runMeta.longest_segment_distance, d => `${(d / 1000).toFixed(2)} km / ${fmt.timeDiff(runMeta.longest_segment_start, runMeta.longest_segment_end)}`)}
     </span>
   </div>
   <div class="card">
     <h2>Furthest From Land</h2>
-    <span class="big">${(runMeta.max_distance / 1000).toFixed(2)} km</span>
+    <span class="big">${known(runMeta.max_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
   </div>
   <div class="card">
-    <h2>Foiling Heart Rate</h2>
-    <span class="big">${fmt.hr(runMeta.avg_foiling_hr || 0)} (min: ${fmt.hr(runMeta.min_foiling_hr || 0)})</span>
+    <h2>${noTrack ? "Heart Rate" : "Foiling Heart Rate"}</h2>
+    <span class="big">${noTrack ? known(runMeta.avg_foiling_hr, d => `${fmt.hr(d)} avg`) : html`${fmt.hr(runMeta.avg_foiling_hr || 0)} (min: ${fmt.hr(runMeta.min_foiling_hr || 0)})`}</span>
   </div>
   <div class="card">
       <h2>Conditions</h2>
@@ -174,6 +178,7 @@ const segments = tl.computeSegments(runCsv);
 ```
 
 <div class="card">${
+    noTrack ? html`<p>No GPS track, so no speed over time.</p>` :
     resize(width => Plot.plot({
         title: "Speed",
         width, x: {tickFormat: fmt.clock},
@@ -226,7 +231,7 @@ const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > FOIL_THRESHOLD_KP
     </div>
     <div class="card">
       <h2>Average Foiling Speed</h2>
-      <span class="big">${fmt.speed(d3.mean(foilingSpeeds))} (${fmt.pace(d3.mean(foilingSpeeds))})</span>
+      <span class="big">${noTrack ? "—" : html`${fmt.speed(d3.mean(foilingSpeeds))} (${fmt.pace(d3.mean(foilingSpeeds))})`}</span>
     </div>
     <div class="card">
       <h2>Max Speed</h2>
@@ -234,7 +239,7 @@ const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > FOIL_THRESHOLD_KP
     </div>
     <div class="card">
       <h2>Best 1k Pace</h2>
-      <span class="big">${fmt.pace(runMeta.max_speed_1k)}</span>
+      <span class="big">${known(runMeta.max_speed_1k, fmt.pace)}</span>
     </div>
 </div>
 
@@ -365,7 +370,7 @@ const splits = tl.computeSplits(runCsv);
 ```
 
 ```js
-Inputs.table(splits, {
+noTrack ? html`<p>No GPS track, so no splits.</p>` : Inputs.table(splits, {
   columns: [
     "split",
     "avg_pace",
@@ -399,7 +404,7 @@ Inputs.table(splits, {
 ```
 
 <div class="card">${
-  resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no speed by km.</p>` : resize((width) => Plot.plot({
       title: "Speed",
       color: { legend: true },
       width, x: { interval: 1, label: "km" },
@@ -414,7 +419,7 @@ Inputs.table(splits, {
 }</div>
 
 <div class="card">${
-  resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no pace by km.</p>` : resize((width) => Plot.plot({
       title: "Pace",
       color: { legend: true },
       clip: true,
@@ -430,7 +435,7 @@ Inputs.table(splits, {
 }</div>
 
 <div class="card">${
-  resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no heart rate by km.</p>` : resize((width) => Plot.plot({
       title: "Heart Rate",
       color: { legend: true },
       width, x: { interval: 1, label: "km" },
@@ -445,6 +450,7 @@ Inputs.table(splits, {
 }</div>
 
 <div class="card">${
+noTrack ? html`<p>No GPS track, so no heart rate over time.</p>` :
 resize((width) => {
   const maxSpeed = d3.max([...onFoil, ...offFoil], d => d.speed);
   const maxHr = d3.max(runCsv, d => d.hr);
@@ -488,19 +494,19 @@ resize((width) => {
 <div class="grid grid-cols-4">
     <div class="card">
       <h2>Min Foiling Heart Rate</h2>
-      <span class="big">${fmt.hr(runMeta.min_foiling_hr || 0)}</span>
+      <span class="big">${noTrack ? "—" : fmt.hr(runMeta.min_foiling_hr || 0)}</span>
     </div>
     <div class="card">
       <h2>Average Foiling Heart Rate</h2>
-      <span class="big">${fmt.hr(runMeta.avg_foiling_hr || 0)}</span>
+      <span class="big">${noTrack ? "—" : fmt.hr(runMeta.avg_foiling_hr || 0)}</span>
     </div>
     <div class="card">
       <h2>Overall Average Heart Rate</h2>
-      <span class="big">${fmt.hr(d3.mean(runCsv.map(d => d.hr)))}</span>
+      <span class="big">${noTrack ? known(runMeta.avg_foiling_hr, fmt.hr) : fmt.hr(d3.mean(runCsv.map(d => d.hr)))}</span>
     </div>
     <div class="card">
       <h2>Max Heart Rate</h2>
-      <span class="big">${fmt.hr(d3.max(runCsv.map(d => d.hr)))}</span>
+      <span class="big">${noTrack ? known(runMeta.max_hr, fmt.hr) : fmt.hr(d3.max(runCsv.map(d => d.hr)))}</span>
     </div>
 </div>
 

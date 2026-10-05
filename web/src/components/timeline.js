@@ -39,6 +39,8 @@ function pace(speed) {
 }
 
 export function computeSplits(data) {
+  // Approximate routes (no GPS track) have no speeds or heart rates to split.
+  if (data[0]?.approximate) return [];
   return _.orderBy(
     d3
       .groups(data, d => Math.floor(d.distance / 1000))
