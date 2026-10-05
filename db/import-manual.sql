@@ -32,19 +32,19 @@ ALTER TABLE dwlist ADD COLUMN IF NOT EXISTS max_hr DOUBLE;
 SET VARIABLE tz = 'Pacific/Honolulu';
 
 -- Give the offset (-10) so the times aren't read in the session's zone.
-SET VARIABLE start_time = TIMESTAMPTZ '2026-10-04 14:05:00-10';
-SET VARIABLE end_time   = TIMESTAMPTZ '2026-10-04 15:10:00-10';
-SET VARIABLE distance_m = 15000;
-SET VARIABLE max_speed_ms = 9.0;   -- meters per second, as the watch reports it
-SET VARIABLE avg_hr = 140;         -- whole-run average
-SET VARIABLE max_hr = 170;
-SET VARIABLE paddle_ups = 3;
+SET VARIABLE start_time = TIMESTAMPTZ '2026-10-04 15:54:11-10';
+SET VARIABLE end_time   = TIMESTAMPTZ '2026-10-04 16:42:15-10';
+SET VARIABLE distance_m = 14894.9995;
+SET VARIABLE max_speed_ms = 9.975;   -- meters per second, as the watch reports it
+SET VARIABLE avg_hr = 125;         -- whole-run average
+SET VARIABLE max_hr = 172;
+SET VARIABLE paddle_ups = 2;
 -- Beach names as in the beaches table (and the run list), e.g. 'Maliko',
 -- 'Kahului Harbor', 'Sugar Cove'.
-SET VARIABLE start_beach = 'Maliko';
-SET VARIABLE end_beach = 'Kahului Harbor';
+SET VARIABLE start_beach = 'Green Church';
+SET VARIABLE end_beach = 'Wailea';
 SET VARIABLE board = 'Kalama Gator  95.0 lt';
-SET VARIABLE foil = 'F4 Orca 800';
+SET VARIABLE foil = 'F4 Orca 685';
 
 -- Bail out on a beach name that doesn't match exactly one beach.
 SELECT CASE
