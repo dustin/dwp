@@ -8,6 +8,7 @@ toc: true
 import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} from "./components/map.js";
 import {beachColorScale} from "./components/beaches.js";
 import {responsiveRunsTable} from "./components/runs-table.js";
+import {responsiveSplitsTable} from "./components/splits-table.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
@@ -373,37 +374,7 @@ const splits = tl.computeSplits(runCsv);
 ```
 
 ```js
-noTrack ? html`<p>No GPS track, so no splits.</p>` : Inputs.table(splits, {
-  columns: [
-    "split",
-    "avg_pace",
-    "min_speed",
-    "avg_speed",
-    "max_speed",
-    "max_hr",
-    "min_hr",
-    "avg_hr"
-  ],
-  header: {
-    split: "Split",
-    avg_pace: "Avg Pace",
-    min_speed: "Min Speed",
-    avg_speed: "Avg Speed",
-    max_speed: "Max Speed",
-    max_hr: "Max HR",
-    min_hr: "Min HR",
-    avg_hr: "Avg HR"
-  },
-  format: {
-    split: d => `${d} km`,
-    avg_pace: fmt.minutes,
-    min_speed: fmt.speed,
-    avg_speed: fmt.speed,
-    max_speed: fmt.speed,
-    max_hr: fmt.hr,
-    min_hr: fmt.hr,
-    avg_hr: fmt.hr
-  }})
+noTrack ? html`<p>No GPS track, so no splits.</p>` : responsiveSplitsTable(Inputs, htl, splits)
 ```
 
 <div class="card">${
