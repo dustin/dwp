@@ -2,6 +2,11 @@
 // For every run id in src/data/runs.csv, verify the backend actually has a
 // published track file. This catches runs that are listed in the CSV but
 // whose track data was never uploaded (or was later removed).
+//
+// Runs entered by hand (db/import-manual.sql) have no track by design;
+// runs.csv marks them has_track=false and they're skipped. If the real
+// track is imported later, the export flips the flag and the run is
+// checked again.
 
 import fs from 'fs';
 import path from 'path';
@@ -45,8 +50,12 @@ async function checkRun(id) {
 async function main() {
   const csvText = fs.readFileSync(RUNS_CSV, 'utf8');
   const rows = csvParse(csvText);
-  const ids = [...new Set(rows.map(r => r.id).filter(Boolean))];
+  const noTrack = new Set(rows.filter(r => r.has_track === 'false').map(r => r.id));
+  const ids = [...new Set(rows.map(r => r.id).filter(id => id && !noTrack.has(id)))];
 
+  if (noTrack.size > 0) {
+    console.log(`Skipping ${noTrack.size} run(s) entered by hand without a track: ${[...noTrack].join(', ')}`);
+  }
   console.log(`Checking ${ids.length} run ids against ${DATAHOST} (concurrency ${CONCURRENCY})...`);
 
   const results = await mapWithConcurrency(ids, CONCURRENCY, checkRun);
