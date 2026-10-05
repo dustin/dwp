@@ -9,59 +9,27 @@
 
 import * as d3 from 'npm:d3';
 import { html, svg } from 'npm:htl';
-import mapboxgl from 'npm:mapbox-gl';
 import * as fmt from './formatters.js';
 import { speedColor, APPROXIMATE_COLOR } from './map.js';
 import { FOIL_THRESHOLD_KPH } from './color.js';
-import { MAPBOX_TOKEN } from '../token.js';
+import {
+  mapboxgl,
+  mapStyle,
+  setAccessToken,
+  pointFeature,
+  trackFeatures,
+  endFeatures,
+  addTrackLayers,
+  whenStyleReady,
+  pointBounds,
+} from './gl-map.js';
 
-// Mapbox satellite when the build has a token (CI writes src/token.js);
-// plain OpenStreetMap raster tiles otherwise, so local builds still work.
-function mapStyle() {
-  if (MAPBOX_TOKEN) return 'mapbox://styles/mapbox/satellite-streets-v12';
-  return {
-    version: 8,
-    sources: {
-      osm: {
-        type: 'raster',
-        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
-      },
-    },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }],
-  };
-}
-
-// The track as lines colored the way the desktop map colors its dots
-// (speedColor), so the two read the same. Consecutive points of the same
-// color share one line: thousands of two-point lines would be slow, and
-// Mapbox drops lines shorter than its simplification tolerance when zoomed
-// out, which leaves most of the track missing.
+// The track colored the way the desktop map colors it (speedColor), so the
+// two read the same.
 function trackLines(points, approximate) {
   const color = approximate ? () => APPROXIMATE_COLOR : speedColor(points.map(d => d.speed));
-  const features = [];
-  let current = null;
-  d3.pairs(points).forEach(([a, b]) => {
-    const c = color(b.speed);
-    if (current?.properties.color !== c) {
-      current = {
-        type: 'Feature',
-        properties: { color: c },
-        geometry: { type: 'LineString', coordinates: [[a.lon, a.lat]] },
-      };
-      features.push(current);
-    }
-    current.geometry.coordinates.push([b.lon, b.lat]);
-  });
-  return { type: 'FeatureCollection', features };
+  return { type: 'FeatureCollection', features: trackFeatures(points, color, approximate ? { dashed: true } : {}) };
 }
-
-const pointFeature = d => ({
-  type: 'Feature',
-  properties: {},
-  geometry: { type: 'Point', coordinates: [d.lon, d.lat] },
-});
 
 // The speed/HR strip: speed as an area (dark green on foil, dark red off),
 // heart rate as a red line on its own scale, and a cursor for the selected
@@ -183,11 +151,11 @@ export function trackViewer(meta, points, { invalidation, backHref } = {}) {
   // until Framework has put the viewer on the page, and follow the
   // container's size after that (rotation, browser chrome showing/hiding).
   function init() {
-    mapboxgl.accessToken = MAPBOX_TOKEN || 'no-token';
+    setAccessToken();
     map = new mapboxgl.Map({
       container: mapEl,
       style: mapStyle(),
-      bounds: d3.extent(points, d => d.lon).map((lon, i) => [lon, d3.extent(points, d => d.lat)[i]]),
+      bounds: pointBounds(points),
       fitBoundsOptions: { padding: { top: 80, bottom: 150, left: 30, right: 30 } },
       attributionControl: false,
       pitchWithRotate: false,
@@ -203,44 +171,8 @@ export function trackViewer(meta, points, { invalidation, backHref } = {}) {
       chart?.destroy();
     });
 
-    // Draw the track as soon as the style is ready rather than on 'load',
-    // which waits for every imagery tile (and never comes if one fails).
-    const addTrack = () => {
-      map.addSource('track', { type: 'geojson', data: trackLines(points, approximate), tolerance: 0.2 });
-      map.addLayer({
-        id: 'track-casing',
-        type: 'line',
-        source: 'track',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': '#000', 'line-opacity': 0.35, 'line-width': 7 },
-      });
-      map.addLayer({
-        id: 'track',
-        type: 'line',
-        source: 'track',
-        layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: {
-          'line-color': ['get', 'color'],
-          'line-width': 4,
-          ...(approximate ? { 'line-dasharray': [1, 1.5] } : {}),
-        },
-      });
-      map.addSource('ends', {
-        type: 'geojson',
-        data: {
-          type: 'FeatureCollection',
-          features: [
-            { ...pointFeature(points[0]), properties: { color: '#22c55e' } },
-            { ...pointFeature(points[points.length - 1]), properties: { color: '#ef4444' } },
-          ],
-        },
-      });
-      map.addLayer({
-        id: 'ends',
-        type: 'circle',
-        source: 'ends',
-        paint: { 'circle-radius': 6, 'circle-color': ['get', 'color'], 'circle-stroke-color': '#fff', 'circle-stroke-width': 2 },
-      });
+    whenStyleReady(map, () => {
+      addTrackLayers(map, trackLines(points, approximate), endFeatures(points));
       map.addSource('cursor', { type: 'geojson', data: pointFeature(points[selected]) });
       map.addLayer({
         id: 'cursor',
@@ -250,9 +182,7 @@ export function trackViewer(meta, points, { invalidation, backHref } = {}) {
       });
       select(selected);
       root.dataset.ready = 'true';
-    };
-    if (map.isStyleLoaded()) addTrack();
-    else map.once('style.load', addTrack);
+    });
 
     // Tap (or click) near the track to pick the closest point, within a
     // finger's width.
