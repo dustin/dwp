@@ -171,7 +171,11 @@ Compare ${viewTime ? "the view time" : "the latest readings"} with another time 
 {
   const input = timePicker({label: "Compare with a time", value: compareTime, min: BUOY_DATA_START, max: new Date(), onChange: setCompareTime});
   const clear = Object.assign(html`<button>Clear</button>`, {onclick: () => setCompareTime(null), disabled: compareTime == null});
-  display(html`<div class="time-controls">${input}${clear}</div>`);
+  // Quick pick: 24 hours before the view time (or now, when live).
+  const yesterday = Object.assign(html`<button>This time yesterday</button>`, {
+    onclick: () => setCompareTime(new Date((viewTime ?? new Date()).getTime() - 24 * 3600 * 1000))
+  });
+  display(html`<div class="time-controls">${input}${yesterday}${clear}</div>`);
 }
 ```
 
