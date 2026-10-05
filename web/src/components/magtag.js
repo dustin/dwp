@@ -105,7 +105,10 @@ export function renderMagTag(canvas, { spectrum, partitions, sampleTs, overall, 
   const when = stale ? `${hstDate(ts)} ${hstClock(ts)}` : hstClock(ts);
   paint(ctx, DARK, c => {
     if (!partitions.length) text(c, 'no spectrum', 2, 112, { size: 12 });
-    else if (overall) text(c, `sea ${overall.height.toFixed(1)}ft`, 2, 112, { size: 12 });
+    else if (overall) {
+      const kj = overall.surflineKJ == null ? '' : ` ${Math.round(overall.surflineKJ)}kJ`;
+      text(c, `sea ${overall.height.toFixed(1)}ft${kj}`, 2, 112, { size: 12 });
+    }
   });
   paint(ctx, stale ? BLACK : DARK, c => text(c, when, 2, 125, { size: 12 }));
 
