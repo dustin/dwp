@@ -4,6 +4,7 @@
 // four colors: no anti-aliased edges for the panel to dither.
 
 import { compassPoint } from './spectrum.js';
+import { withBinEdges } from './spectral-partitions.js';
 import { toHstParam } from './data.js';
 
 export const WIDTH = 296;
@@ -60,77 +61,136 @@ function width(ctx, s, { size, weight = 'bold' }) {
 const hstClock = ts => toHstParam(ts).slice(11, 16);
 const hstDate = ts => toHstParam(ts).slice(5, 10).replace('-', '/');
 
-// `readings` are grouped swell_partition rows (fetchSwellPartitionWindow)
-// covering the trend window, oldest first; the newest with an overall
-// (rank 1) reading is the one shown. `now` decides staleness.
-export function renderMagTag(canvas, readings, { now = new Date(), trendHours = 24 } = {}) {
+// The compass rim is this period (longer swells sit on it), with a ring at
+// half of it. The spectrum spans 20s to ~3.3s.
+const RIM_PERIOD = 16;
+const FREQ_DOMAIN = [1 / 20, 0.3];
+const PERIOD_TICKS = [12, 6, 4];
+
+// `spectrum` is one reading's flat swell_spectrum rows, `partitions` its
+// partitionReading (largest first), `sampleTs` when it was measured, and
+// `overall` NDBC's rank 1 reading nearest it, or null. Without a spectrum
+// the card falls back to the overall reading. `now` decides staleness.
+export function renderMagTag(canvas, { spectrum, partitions, sampleTs, overall, now = new Date() }) {
   canvas.width = WIDTH;
   canvas.height = HEIGHT;
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = WHITE;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
-  const overall = readings
-    .map(d => ({ ts: d.ts, ...d.values.find(v => v.rank === 1) }))
-    .filter(d => d.rank === 1);
-  const latest = overall.at(-1);
-  if (!latest) {
+  // The swells for the compass: the spectrum's partitions, or else just
+  // the overall reading.
+  const swells = partitions.length ? partitions : overall ? [overall] : [];
+  const dominant = swells[0];
+  if (!dominant) {
     paint(ctx, BLACK, c => text(c, 'No buoy data', WIDTH / 2, 72, { size: 24, align: 'center' }));
     return null;
   }
+  const ts = sampleTs ?? spectrum[0]?.ts ?? overall.ts;
 
-  // Left: the overall height, huge, with period and direction under it.
-  const height = latest.height.toFixed(1);
-  const hw = width(ctx, height, { size: 66 });
+  // Left: the dominant swell's height and period, big, then its direction,
+  // the overall sea state and when.
+  const height = dominant.height.toFixed(1);
+  const hw = width(ctx, height, { size: 42 });
+  const period = `${Math.round(dominant.period)}`;
+  const pw = width(ctx, period, { size: 42 });
   paint(ctx, BLACK, c => {
-    text(c, height, 4, 58, { size: 66 });
-    text(c, 'ft', 4 + hw + 3, 58, { size: 20 });
-    text(c, `${Math.round(latest.period)}s ${compassPoint(latest.direction)}`, 4, 96, { size: 30 });
+    text(c, height, 2, 38, { size: 42 });
+    text(c, 'ft', 2 + hw + 2, 38, { size: 15 });
+    text(c, period, 2, 82, { size: 42 });
+    text(c, 's', 2 + pw + 2, 82, { size: 15 });
+    text(c, `${compassPoint(dominant.direction)} ${Math.round(dominant.direction)}°`, 2, 100, { size: 14 });
   });
-
-  // Footer: when, plus the reading's kJ.
-  const stale = now - latest.ts > STALE_MS;
-  const when = stale ? `${hstDate(latest.ts)} ${hstClock(latest.ts)}` : hstClock(latest.ts);
-  const kj = latest.surflineKJ == null ? '' : `${Math.round(latest.surflineKJ)} kJ`;
+  const stale = now - ts > STALE_MS;
+  const when = stale ? `${hstDate(ts)} ${hstClock(ts)}` : hstClock(ts);
   paint(ctx, DARK, c => {
-    text(c, [`${Math.round(latest.direction)}°`, kj].filter(Boolean).join('  '), 4, 121, { size: 15 });
+    if (!partitions.length) text(c, 'no spectrum', 2, 112, { size: 12 });
+    else if (overall) text(c, `sea ${overall.height.toFixed(1)}ft`, 2, 112, { size: 12 });
   });
-  paint(ctx, stale ? BLACK : DARK, c => text(c, when, WIDTH - 4, 121, { size: 15, align: 'right' }));
+  paint(ctx, stale ? BLACK : DARK, c => text(c, when, 2, 125, { size: 12 }));
 
-  // Right: the height over the trend window, as a step line over a light
-  // fill. Each reading holds until the next; gaps over two hours are left
-  // empty.
-  const chart = { x0: 172, x1: WIDTH - 4, y0: 8, y1: 100 };
-  const span = trendHours * 3600 * 1000;
-  const start = +latest.ts - span;
-  const trend = overall.filter(d => +d.ts >= start);
-  const lo = Math.max(0, Math.floor(Math.min(...trend.map(d => d.height)) - 0.5));
-  const hi = Math.ceil(Math.max(...trend.map(d => d.height)) + 0.25);
-  const xOf = t => chart.x0 + Math.round(((+t - start) / span) * (chart.x1 - chart.x0));
-  const yOf = h => chart.y1 - Math.round(((h - lo) / (hi - lo)) * (chart.y1 - chart.y0));
-  const steps = trend.map((d, i) => {
-    const next = trend[i + 1];
-    const end = !next ? xOf(d.ts) + 1 : +next.ts - +d.ts > 2 * 3600 * 1000 ? xOf(d.ts) + 2 : xOf(next.ts);
-    return { x: xOf(d.ts), end, y: yOf(d.height) };
-  });
-
-  paint(ctx, DARK, c => {
-    text(c, String(hi), chart.x0 - 5, chart.y0 + 6, { size: 13, align: 'right' });
-    text(c, String(lo), chart.x0 - 5, chart.y1, { size: 13, align: 'right' });
-  });
+  // Middle: a compass with each swell at its direction and at a distance
+  // out set by its period (rim = 16s, ring = 8s), its spoke pointing the way it
+  // travels. The dominant swell is black, the rest dark grey; dot size is
+  // height.
+  const cx = 146;
+  const cy = 64;
+  const R = 50;
+  const at = (deg, r) => {
+    const a = ((deg - 90) * Math.PI) / 180;
+    return [cx + r * Math.cos(a), cy + r * Math.sin(a)];
+  };
+  const ring = (c, r, step) => {
+    for (let deg = 0; deg < 360; deg += step) {
+      const [x, y] = at(deg, r);
+      c.fillRect(Math.round(x), Math.round(y), 1, 1);
+    }
+  };
   paint(ctx, LIGHT, c => {
-    for (const s of steps) c.fillRect(s.x, s.y, s.end - s.x, chart.y1 - s.y + 1);
-    // Dotted rule at the top value.
-    for (let x = chart.x0; x <= chart.x1; x += 3) c.fillRect(x, chart.y0, 1, 1);
+    ring(c, R * 0.5, 6);
+    // Cardinal ticks.
+    for (const deg of [90, 180, 270]) {
+      const [x0, y0] = at(deg, R - 5);
+      const [x1, y1] = at(deg, R);
+      c.lineWidth = 2;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.lineTo(x1, y1);
+      c.stroke();
+    }
   });
-  paint(ctx, BLACK, c => {
-    steps.forEach((s, i) => {
-      c.fillRect(s.x, s.y, s.end - s.x, 2);
-      const prev = steps[i - 1];
-      if (prev && prev.end === s.x) c.fillRect(s.x, Math.min(prev.y, s.y), 2, Math.abs(prev.y - s.y) + 2);
-    });
+  paint(ctx, DARK, c => {
+    c.lineWidth = 1.5;
+    c.beginPath();
+    c.arc(cx, cy, R, 0, 2 * Math.PI);
+    c.stroke();
+    text(c, 'N', cx, cy - R + 13, { size: 12, align: 'center' });
+  });
+  const maxH = Math.max(...swells.map(p => p.height));
+  const swell = (c, p, lineWidth) => {
+    const [x, y] = at(p.direction, Math.min(p.period / RIM_PERIOD, 1) * R);
+    const [hx, hy] = at(p.direction, 4);
+    c.lineWidth = lineWidth;
+    c.lineCap = 'round';
+    c.beginPath();
+    c.moveTo(x, y);
+    c.lineTo(hx, hy);
+    c.stroke();
+    c.beginPath();
+    c.arc(x, y, 2 + 3 * Math.sqrt(p.height / maxH), 0, 2 * Math.PI);
+    c.fill();
+  };
+  for (const p of swells.slice(1).reverse()) paint(ctx, DARK, c => swell(c, p, 2));
+  paint(ctx, BLACK, c => swell(c, dominant, 3));
+
+  // Right: energy by period, on a linear frequency axis like the dashboard's
+  // spectrum. The dominant swell's bins are black.
+  const chart = { x0: 202, x1: WIDTH - 3, y0: 6, y1: 110 };
+  const bins = withBinEdges(spectrum).filter(d => d.hi > FREQ_DOMAIN[0] && d.lo < FREQ_DOMAIN[1]);
+  const eMax = Math.max(1e-9, ...bins.map(d => d.energy));
+  const xOf = f =>
+    chart.x0 + Math.round(((Math.min(Math.max(f, FREQ_DOMAIN[0]), FREQ_DOMAIN[1]) - FREQ_DOMAIN[0]) / (FREQ_DOMAIN[1] - FREQ_DOMAIN[0])) * (chart.x1 - chart.x0));
+  const yOf = e => chart.y1 - Math.round((e / eMax) * (chart.y1 - chart.y0));
+  const inDominant = d => d.freq >= dominant.freqLo && d.freq <= dominant.freqHi;
+  const bars = (c, keep) => {
+    for (const d of bins.filter(keep)) {
+      const x0 = xOf(d.lo);
+      const x1 = xOf(d.hi);
+      if (x1 - x0 < 1) continue;
+      // A 1px gap between bars, except where bins are too narrow to spare it.
+      const w = x1 - x0 >= 4 ? x1 - x0 - 1 : x1 - x0;
+      c.fillRect(x0, yOf(d.energy), w, chart.y1 - yOf(d.energy) + 1);
+    }
+  };
+  paint(ctx, DARK, c => bars(c, d => !inDominant(d)));
+  paint(ctx, BLACK, c => bars(c, inDominant));
+  paint(ctx, LIGHT, c => {
     c.fillRect(chart.x0, chart.y1 + 1, chart.x1 - chart.x0 + 1, 1);
+    for (const p of PERIOD_TICKS) c.fillRect(xOf(1 / p), chart.y1 + 2, 1, 2);
+  });
+  paint(ctx, DARK, c => {
+    for (const p of PERIOD_TICKS) text(c, `${p}s`, xOf(1 / p), 125, { size: 12, align: 'center' });
   });
 
-  return latest;
+  return dominant;
 }
