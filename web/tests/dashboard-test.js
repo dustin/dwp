@@ -1,9 +1,27 @@
 // dashboard-test.js
 // Simple test to verify dashboard loads and links work without errors
 
+import fs from 'fs';
+import path from 'path';
 import { chromium } from 'playwright';
+import { csvParse } from 'd3-dsv';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+const RUNS_CSV = process.env.RUNS_CSV || path.join(process.cwd(), 'src/data/runs.csv');
+// How many of the newest runs to always test, so a bad recent import shows
+// up right away instead of whenever the random sample happens to hit it.
+const RECENT_RUNS = Number(process.env.RECENT_RUNS || 3);
+
+// Pages that are always tested, in addition to the random sample below.
+function requiredLinks() {
+  const rows = csvParse(fs.readFileSync(RUNS_CSV, 'utf8'));
+  const recent = rows
+    .filter(r => r.id)
+    .sort((a, b) => Number(b.ts) - Number(a.ts))
+    .slice(0, RECENT_RUNS)
+    .map(r => `${BASE_URL}/run.html?id=${r.id}`);
+  return [`${BASE_URL}/buoy.html`, `${BASE_URL}/foils.html`, ...recent];
+}
 
 // Wind/swell CSVs live on the external data host and simply don't exist for
 // some runs/days. The app catches those fetch failures (data.js fetchWind /
@@ -87,8 +105,6 @@ async function runTests() {
   const testedUrls = new Set();
 
   // Create output directory for screenshots and HTML
-  const fs = await import('fs');
-  const path = await import('path');
   const outputDir = path.join(process.cwd(), 'test-output');
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
@@ -129,36 +145,21 @@ async function runTests() {
       );
   }, BASE_URL);
 
-  // Get unique links and randomly sample them
-  const uniqueLinks = [...new Set(links)];
-  const sampleSize = Math.min(5, uniqueLinks.length); // Test up to 5 random links
-  const shuffled = uniqueLinks.sort(() => Math.random() - 0.5);
-  const sampledLinks = shuffled.slice(0, sampleSize);
-
-  console.log(
-    `Found ${uniqueLinks.length} unique links, testing ${sampledLinks.length} random samples`
-  );
-
-  const level2Links = []; // Collect links from sampled pages for second level
-
-  // Test each sampled link (Level 1)
-  for (const link of sampledLinks) {
-    if (testedUrls.has(link)) continue;
-
-    console.log(`Testing: ${link}`);
+  // Load one page, record its errors, and return the same-origin links on it
+  // (or none if it failed).
+  async function testPage(link, prefix = '') {
+    console.log(`Testing${prefix ? ` (${prefix})` : ''}: ${link}`);
     const linkErrors = [];
-
-    // Create new page context for each link
     const linkPage = await context.newPage();
-
     attachErrorListeners(linkPage, linkErrors);
+    let pageLinks = [];
 
     try {
       await linkPage.goto(link, { waitUntil: 'networkidle', timeout: 10000 });
       await linkPage.waitForTimeout(2000);
 
       // Save screenshot of subpage
-      const sanitizedUrl = link.replace(/[^a-z0-9]/gi, '_');
+      const sanitizedUrl = (prefix ? `${prefix}_` : '') + link.replace(/[^a-z0-9]/gi, '_');
       await linkPage.screenshot({ path: `${outputDir}/${sanitizedUrl}.png`, fullPage: true });
       const linkHtml = await linkPage.content();
       fs.writeFileSync(`${outputDir}/${sanitizedUrl}.html`, linkHtml);
@@ -170,14 +171,11 @@ async function runTests() {
         errors.push(...linkErrors);
       } else {
         console.log(`  ✓ ${link} loaded successfully`);
-
-        // Collect links from this page for level 2 testing
-        const pageLinks = await linkPage.evaluate(baseUrl => {
+        pageLinks = await linkPage.evaluate(baseUrl => {
           return Array.from(document.querySelectorAll('a[href]'))
             .map(a => a.href)
             .filter(href => href.startsWith(baseUrl) && !href.includes('#'));
         }, BASE_URL);
-        level2Links.push(...pageLinks);
       }
     } catch (error) {
       console.error(`  ❌ Failed to load ${link}: ${error.message}`);
@@ -186,6 +184,32 @@ async function runTests() {
 
     await linkPage.close();
     testedUrls.add(link);
+    return pageLinks;
+  }
+
+  const level2Links = []; // Collect links from level 1 pages for second level
+
+  // Always test buoys, foils, and the most recent runs.
+  const required = requiredLinks();
+  console.log(`Testing ${required.length} required pages (buoy, foils, ${RECENT_RUNS} most recent runs)`);
+  for (const link of required) {
+    if (testedUrls.has(link)) continue;
+    level2Links.push(...(await testPage(link, 'required')));
+  }
+
+  // Then a random sample of the rest of the index page's links.
+  const uniqueLinks = [...new Set(links)].filter(link => !testedUrls.has(link));
+  const sampleSize = Math.min(5, uniqueLinks.length); // Test up to 5 random links
+  const shuffled = uniqueLinks.sort(() => Math.random() - 0.5);
+  const sampledLinks = shuffled.slice(0, sampleSize);
+
+  console.log(
+    `\nFound ${uniqueLinks.length} other unique links, testing ${sampledLinks.length} random samples`
+  );
+
+  for (const link of sampledLinks) {
+    if (testedUrls.has(link)) continue;
+    level2Links.push(...(await testPage(link)));
   }
 
   // Test Level 2 links (links from the sampled pages)
@@ -201,37 +225,7 @@ async function runTests() {
     );
 
     for (const link of sampledLevel2Links) {
-      console.log(`Testing (level 2): ${link}`);
-      const linkErrors = [];
-
-      const linkPage = await context.newPage();
-
-      attachErrorListeners(linkPage, linkErrors);
-
-      try {
-        await linkPage.goto(link, { waitUntil: 'networkidle', timeout: 10000 });
-        await linkPage.waitForTimeout(2000);
-
-        const sanitizedUrl = 'level2_' + link.replace(/[^a-z0-9]/gi, '_');
-        await linkPage.screenshot({ path: `${outputDir}/${sanitizedUrl}.png`, fullPage: true });
-        const linkHtml = await linkPage.content();
-        fs.writeFileSync(`${outputDir}/${sanitizedUrl}.html`, linkHtml);
-
-        if (linkErrors.length > 0) {
-          console.error(`  ❌ Errors on ${link}:`);
-          linkErrors.forEach(err => console.error('    -', err));
-          console.error(`  📸 Screenshot saved to ${outputDir}/${sanitizedUrl}.png`);
-          errors.push(...linkErrors);
-        } else {
-          console.log(`  ✓ ${link} loaded successfully`);
-        }
-      } catch (error) {
-        console.error(`  ❌ Failed to load ${link}: ${error.message}`);
-        errors.push(`Failed to load ${link}: ${error.message}`);
-      }
-
-      await linkPage.close();
-      testedUrls.add(link);
+      await testPage(link, 'level2');
     }
   }
 

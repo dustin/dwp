@@ -52,12 +52,31 @@ jobs:
       - name: Verify run backends published
         run: node tests/run-backend-availability-test.js
 
-      # Install the browser binaries matching the lockfile-pinned Playwright.
-      # Must run after npm ci (npx resolves playwright from node_modules);
-      # unconditional, since a cache keyed only on the lockfile can't self-heal
-      # if node_modules ever desyncs from the downloaded browsers.
+      # Cache the Playwright browser download, keyed on the installed
+      # Playwright version so a version bump fetches matching browsers.
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright-version.outputs.version }}
+
+      # Must run after npm ci (npx resolves playwright from node_modules).
+      # Still runs on a cache hit, where it's a quick no-op if the cached
+      # browsers match, so the cache can't go stale. System deps only need
+      # installing alongside a fresh download; the runner image already has
+      # what Chromium needs (it ships Google Chrome).
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
+
+      - name: Verify cached Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install chromium
 
       - name: Setup token from secret
         env:
