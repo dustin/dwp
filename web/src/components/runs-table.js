@@ -182,11 +182,17 @@ export function runsList(rows, beachColor, htl, opts) {
 // The usual runs table on wide screens, the card list on phones.
 export function responsiveRunsTable(Inputs, htl, beachColor, rows, opts) {
   const table = Inputs.table(rows, runsTableOptions(beachColor, htl, opts));
+  return responsive(htl, table, runsList(rows, beachColor, htl, opts));
+}
+
+// Shows `wide` above the phone breakpoint and `narrow` below it. `narrow`
+// can use the run-card classes for the same look as the runs list.
+export function responsive(htl, wide, narrow) {
   const style = document.createElement('style');
   style.textContent = STYLE;
   return htl.html`<div class="runs-responsive">
     ${style}
-    <div class="runs-wide">${table}</div>
-    <div class="runs-narrow">${runsList(rows, beachColor, htl, opts)}</div>
+    <div class="runs-wide">${wide}</div>
+    <div class="runs-narrow">${narrow}</div>
   </div>`;
 }

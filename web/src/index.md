@@ -15,7 +15,7 @@ import {fetchMeta, dryLimit} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
 import {foilColorScale} from "./components/foils.js";
-import {responsiveRunsTable} from "./components/runs-table.js";
+import {responsiveRunsTable, responsive} from "./components/runs-table.js";
 import {computeOdometerCrossings} from "./components/odometer.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
@@ -388,7 +388,7 @@ Crossing times are interpolated across the run assuming a steady pace, so treat 
 
 ```js
 const odometerStepKm = view(Inputs.radio([100, 1000],
-                            {label: "Milestone every", value: 100, format: d => `${d} km`}));
+                            {label: "Milestone every", value: 1000, format: d => `${d} km`}));
 ```
 
 ```js
@@ -399,8 +399,27 @@ const odometerCrossings = computeOdometerCrossings(runCsv, odometerStepKm)
 
 The odometer has crossed a ${odometerStepKm} km milestone ${fmt.comma(odometerCrossings.length)} times so far.
 
+```js
+function odometerCard(d) {
+  const into = d.into_run_km;
+  const route = d.start_beach === d.end_beach ? [d.start_beach] : [d.start_beach, d.end_beach];
+  return htl.html`<a class="run-card" href=${`/run.html?id=${d.id}`}>
+    <div class="run-card-top">
+      <span class="run-card-when">${fmt.comma(d.milestone_km)} km</span>
+      <span>${fmt.minuteStamp(d.ts)}</span>
+    </div>
+    <div class="run-card-route"><span style=${`color: ${beachColor(d.start_beach)}`}>${route[0]}</span>${
+      route[1] ? htl.html` → ${route[1]}` : ""}</div>
+    <div class="run-card-stats">
+      <span class="run-card-stat" style=${`color: ${foilColor(d.foil)}`}>${d.foil}</span> ·
+      <span class="run-card-stat">${into.into.toFixed(1)} of ${into.total.toFixed(1)} km into the run</span>
+    </div>
+  </a>`;
+}
+```
+
 <div class="card">${
-Inputs.table(odometerCrossings, {
+responsive(htl, Inputs.table(odometerCrossings, {
   columns: ["milestone_km", "linked_ts", "region", "start_beach", "end_beach", "foil", "into_run_km"],
   header: {
     milestone_km: "Odometer (km)",
@@ -420,7 +439,7 @@ Inputs.table(odometerCrossings, {
     into_run_km: d => `${d.into.toFixed(2)} km / ${d.total.toFixed(2)} km (${((d.into / d.total) * 100).toFixed(0)}%)`
   },
   select: false,
-})
+}), htl.html`<div class="runs-cards">${odometerCrossings.map(odometerCard)}</div>`)
 }</div>
 
 ## Paddling
