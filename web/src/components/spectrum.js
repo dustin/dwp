@@ -77,6 +77,11 @@ function binTitle(d) {
 export function renderSpectrumHistogram(rows, { height = 260, title = 'Spectral Energy', partitions = [] } = {}) {
   return width => {
     if (!rows || rows.length === 0) return null;
+    const marginLeft = 50;
+    const marginRight = partitions.length ? 90 : 20;
+    // resize() can first call this before layout, with a width narrower than
+    // the margins; the bars would get negative widths. Wait for a real one.
+    if (width <= marginLeft + marginRight) return null;
     const bins = withBinEdges(rows).filter(d => d.hi > FREQ_DOMAIN[0] && d.lo < FREQ_DOMAIN[1]);
     const yMax = d3.max(bins, d => d.energy) || 1;
 
@@ -84,9 +89,9 @@ export function renderSpectrumHistogram(rows, { height = 260, title = 'Spectral 
       title,
       width,
       height,
-      marginLeft: 50,
+      marginLeft,
       marginTop: 20,
-      marginRight: partitions.length ? 90 : 20,
+      marginRight,
       x: periodAxis(),
       y: { label: 'Energy density (m²/Hz)', grid: true, domain: [0, yMax * (1.05 + 0.1 * partitions.length)] },
       color: DIRECTION_COLOR,

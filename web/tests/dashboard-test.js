@@ -46,6 +46,14 @@ function isMissingDataNoise(text) {
   return /Failed to load resource:.*\b404\b/.test(text);
 }
 
+// On GitHub Actions, also report a failing page as an annotation so it shows
+// on the run summary without digging through the log.
+function annotate(link, messages) {
+  if (!process.env.GITHUB_ACTIONS) return;
+  const first = messages.slice(0, 3).join(' | ').replace(/\r?\n/g, ' ');
+  console.log(`::error title=${link.replace(/[:,]/g, ' ')}::${first}`);
+}
+
 function attachErrorListeners(pg, bucket) {
   // Count of un-attributed 404s on optional-data paths. Each excuses one
   // subsequent "Failed to load resource ... 404" console message.
@@ -130,6 +138,7 @@ async function runTests() {
   if (errors.length > 0) {
     console.error('❌ Errors on index page:');
     errors.forEach(err => console.error('  -', err));
+    annotate(BASE_URL, errors);
     await browser.close();
     process.exit(1);
   }
@@ -168,6 +177,7 @@ async function runTests() {
         console.error(`  ❌ Errors on ${link}:`);
         linkErrors.forEach(err => console.error('    -', err));
         console.error(`  📸 Screenshot saved to ${outputDir}/${sanitizedUrl}.png`);
+        annotate(link, linkErrors);
         errors.push(...linkErrors);
       } else {
         console.log(`  ✓ ${link} loaded successfully`);
@@ -179,6 +189,7 @@ async function runTests() {
       }
     } catch (error) {
       console.error(`  ❌ Failed to load ${link}: ${error.message}`);
+      annotate(link, [error.message.split('\n')[0]]);
       errors.push(`Failed to load ${link}: ${error.message}`);
     }
 
