@@ -95,27 +95,36 @@ export function renderMagTag(canvas, { spectrum, partitions, sampleTs, overall, 
   // it (else the biggest). It's drawn black so the compass and spectrum
   // point at the big numbers.
   const lead = partitions.find(p => 1 / sea.period >= p.freqLo && 1 / sea.period <= p.freqHi) ?? dominant;
+  // Big numbers shrink to keep clear of the compass (10ft+, 10s+).
+  const LEFT_W = 92;
+  const fit = (s, unit) => {
+    let size = 42;
+    while (size > 24 && width(ctx, s, { size }) + 2 + width(ctx, unit, { size: 15 }) > LEFT_W) size--;
+    return size;
+  };
   const height = sea.height.toFixed(1);
-  const hw = width(ctx, height, { size: 42 });
+  const hs = fit(height, 'ft');
+  const hw = width(ctx, height, { size: hs });
   const period = `${Math.round(sea.period)}`;
-  const pw = width(ctx, period, { size: 42 });
+  const ps = fit(period, 's');
+  const pw = width(ctx, period, { size: ps });
   paint(ctx, BLACK, c => {
-    text(c, height, 2, 38, { size: 42 });
+    text(c, height, 2, 38, { size: hs });
     text(c, 'ft', 2 + hw + 2, 38, { size: 15 });
-    text(c, period, 2, 82, { size: 42 });
+    text(c, period, 2, 82, { size: ps });
     text(c, 's', 2 + pw + 2, 82, { size: 15 });
     text(c, `${compassPoint(sea.direction)} ${Math.round(sea.direction)}°`, 2, 100, { size: 14 });
   });
   const stale = now - ts > STALE_MS;
   const when = stale ? `${hstDate(ts)} ${hstClock(ts)}` : hstClock(ts);
-  paint(ctx, DARK, c => {
+  paint(ctx, BLACK, c => {
     const line = [
       sea.surflineKJ == null ? null : `${Math.round(sea.surflineKJ)} kJ`,
       partitions.length ? null : 'no spectrum',
     ].filter(Boolean).join(' · ');
     text(c, line, 2, 112, { size: 12 });
   });
-  paint(ctx, stale ? BLACK : DARK, c => text(c, when, 2, 125, { size: 12 }));
+  paint(ctx, BLACK, c => text(c, when, 2, 125, { size: 12 }));
 
   // Middle: a compass with each swell at its direction and at a distance
   // out set by its period (rim = 16s, ring = 8s), its spoke pointing the way it
