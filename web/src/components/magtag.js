@@ -88,33 +88,38 @@ export function renderMagTag(canvas, { spectrum, partitions, sampleTs, overall, 
   }
   const ts = sampleTs ?? spectrum[0]?.ts ?? overall.ts;
 
-  // Left: the dominant swell's height and period, big, then its direction,
-  // the overall sea state and when.
-  const height = dominant.height.toFixed(1);
+  // Left: the overall sea state (NDBC's reading), big: height, period and
+  // direction, then its kJ and when. Falls back to the dominant swell.
+  const sea = overall ?? dominant;
+  // The swell behind NDBC's dominant period: the partition whose band holds
+  // it (else the biggest). It's drawn black so the compass and spectrum
+  // point at the big numbers.
+  const lead = partitions.find(p => 1 / sea.period >= p.freqLo && 1 / sea.period <= p.freqHi) ?? dominant;
+  const height = sea.height.toFixed(1);
   const hw = width(ctx, height, { size: 42 });
-  const period = `${Math.round(dominant.period)}`;
+  const period = `${Math.round(sea.period)}`;
   const pw = width(ctx, period, { size: 42 });
   paint(ctx, BLACK, c => {
     text(c, height, 2, 38, { size: 42 });
     text(c, 'ft', 2 + hw + 2, 38, { size: 15 });
     text(c, period, 2, 82, { size: 42 });
     text(c, 's', 2 + pw + 2, 82, { size: 15 });
-    text(c, `${compassPoint(dominant.direction)} ${Math.round(dominant.direction)}°`, 2, 100, { size: 14 });
+    text(c, `${compassPoint(sea.direction)} ${Math.round(sea.direction)}°`, 2, 100, { size: 14 });
   });
   const stale = now - ts > STALE_MS;
   const when = stale ? `${hstDate(ts)} ${hstClock(ts)}` : hstClock(ts);
   paint(ctx, DARK, c => {
-    if (!partitions.length) text(c, 'no spectrum', 2, 112, { size: 12 });
-    else if (overall) {
-      const kj = overall.surflineKJ == null ? '' : ` ${Math.round(overall.surflineKJ)}kJ`;
-      text(c, `sea ${overall.height.toFixed(1)}ft${kj}`, 2, 112, { size: 12 });
-    }
+    const line = [
+      sea.surflineKJ == null ? null : `${Math.round(sea.surflineKJ)} kJ`,
+      partitions.length ? null : 'no spectrum',
+    ].filter(Boolean).join(' · ');
+    text(c, line, 2, 112, { size: 12 });
   });
   paint(ctx, stale ? BLACK : DARK, c => text(c, when, 2, 125, { size: 12 }));
 
   // Middle: a compass with each swell at its direction and at a distance
   // out set by its period (rim = 16s, ring = 8s), its spoke pointing the way it
-  // travels. The dominant swell is black, the rest dark grey; dot size is
+  // travels. The swell behind the dominant period is black, the rest dark grey; dot size is
   // height.
   const cx = 146;
   const cy = 64;
@@ -163,18 +168,18 @@ export function renderMagTag(canvas, { spectrum, partitions, sampleTs, overall, 
     c.arc(x, y, 2 + 3 * Math.sqrt(p.height / maxH), 0, 2 * Math.PI);
     c.fill();
   };
-  for (const p of swells.slice(1).reverse()) paint(ctx, DARK, c => swell(c, p, 2));
-  paint(ctx, BLACK, c => swell(c, dominant, 3));
+  for (const p of swells.filter(p => p !== lead).reverse()) paint(ctx, DARK, c => swell(c, p, 2));
+  paint(ctx, BLACK, c => swell(c, lead, 3));
 
   // Right: energy by period, on a linear frequency axis like the dashboard's
-  // spectrum. The dominant swell's bins are black.
+  // spectrum. That swell's bins are black.
   const chart = { x0: 202, x1: WIDTH - 3, y0: 6, y1: 110 };
   const bins = withBinEdges(spectrum).filter(d => d.hi > FREQ_DOMAIN[0] && d.lo < FREQ_DOMAIN[1]);
   const eMax = Math.max(1e-9, ...bins.map(d => d.energy));
   const xOf = f =>
     chart.x0 + Math.round(((Math.min(Math.max(f, FREQ_DOMAIN[0]), FREQ_DOMAIN[1]) - FREQ_DOMAIN[0]) / (FREQ_DOMAIN[1] - FREQ_DOMAIN[0])) * (chart.x1 - chart.x0));
   const yOf = e => chart.y1 - Math.round((e / eMax) * (chart.y1 - chart.y0));
-  const inDominant = d => d.freq >= dominant.freqLo && d.freq <= dominant.freqHi;
+  const inDominant = d => d.freq >= lead.freqLo && d.freq <= lead.freqHi;
   const bars = (c, keep) => {
     for (const d of bins.filter(keep)) {
       const x0 = xOf(d.lo);
