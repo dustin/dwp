@@ -60,15 +60,16 @@ pager: false
   .track-strip svg { display: block; }
   .track-note { color: #bbb; font-size: 13px; padding: 4px 0; }
   .track-details { color: #bbb; font-size: 12px; margin: -2px 0 6px; font-variant-numeric: tabular-nums; }
-  .track-caption {
+  .track-info .mapboxgl-popup-content {
+    color: #111;
     font-size: 13px;
-    background: rgba(255, 255, 255, 0.12);
+    line-height: 1.4;
+    padding: 6px 10px;
     border-radius: 6px;
-    padding: 5px 8px;
-    margin-bottom: 6px;
     white-space: pre-line;
   }
-  .track-caption[hidden] { display: none; }
+  .track-info.mapboxgl-popup-anchor-left .mapboxgl-popup-tip { border-right-color: rgba(17, 17, 17, 0.9); }
+  .track-info.mapboxgl-popup-anchor-right .mapboxgl-popup-tip { border-left-color: rgba(17, 17, 17, 0.9); }
   .track-callout {
     width: 30px;
     height: 30px;

@@ -107,14 +107,27 @@ function strip(points, { onSelect }) {
   };
 }
 
+// Calls `onTap` for a tap or click on a marker. Mapbox cancels the
+// touchstart on its container, so phones never send markers a click;
+// pointer events still arrive. A drag that starts on a marker pans the map
+// and isn't a tap.
+function onMarkerTap(el, onTap) {
+  let down = null;
+  el.addEventListener('pointerdown', event => {
+    down = { x: event.clientX, y: event.clientY };
+  });
+  el.addEventListener('pointerup', event => {
+    if (down && (event.clientX - down.x) ** 2 + (event.clientY - down.y) ** 2 < 10 * 10) onTap();
+    down = null;
+  });
+  el.addEventListener('pointercancel', () => (down = null));
+}
+
 // A callout as a map marker: its emoji on a white badge, with a tail
 // pointing down at the spot.
 function calloutMarker(callout, onTap) {
   const el = html`<button class="track-callout" type="button" aria-label=${callout.text}>${callout.icon}</button>`;
-  el.addEventListener('click', event => {
-    event.stopPropagation();
-    onTap();
-  });
+  onMarkerTap(el, onTap);
   return new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([+callout.lon, +callout.lat]);
 }
 
@@ -136,10 +149,7 @@ function buoyMarker({ lon, lat, summary }, onTap) {
     <circle r="6" fill=${color} fill-opacity="0.85" stroke="white" stroke-width="1.5"></circle>
     <circle r="20" fill="transparent"></circle>
   </svg>`}</button>`;
-  el.addEventListener('click', event => {
-    event.stopPropagation();
-    onTap();
-  });
+  onMarkerTap(el, onTap);
   return new mapboxgl.Marker({ element: el, rotationAlignment: 'map' }).setLngLat([lon, lat]);
 }
 
@@ -184,7 +194,6 @@ export function trackViewer(
   const mapEl = html`<div class="track-map"></div>`;
   const readout = html`<div class="track-readout"></div>`;
   const details = html`<div class="track-details"></div>`;
-  const caption = html`<div class="track-caption" hidden></div>`;
   // The wind rose sits under the title bar; on a phone it starts folded
   // away behind a button so it doesn't cover the track.
   const windBox = wind.length ? html`<div class="track-wind"></div>` : null;
@@ -208,27 +217,32 @@ export function trackViewer(
       </div>
     </header>
     <footer class="track-panel">
-      ${caption}
       ${readout}
       ${details}
       ${chart ? chart.el : html`<div class="track-note">No GPS track for this run: the gray line is an approximate route between the beaches.</div>`}
     </footer>
   </div>`;
 
-  // Says what a tapped callout or the buoy is; picking another point on
-  // the track or the strip clears it.
-  function showCaption(text) {
-    caption.textContent = text;
-    caption.hidden = !text;
+  // An info box on a tapped callout or the buoy, saying what it is.
+  // Picking another point on the track or the strip closes it.
+  const info = new mapboxgl.Popup({ closeButton: false, closeOnClick: false, maxWidth: '280px', className: 'track-info' });
+  // The box goes below a spot in the top half of the map and above one in
+  // the bottom half, so it stays clear of the bars; `above` and `below` are
+  // how far from the spot that is (the callout badge stands above its spot).
+  function showInfo(text, lngLat, { above, below }) {
+    const top = map.project(lngLat).y < mapEl.clientHeight / 2;
+    info.remove();
+    info.options.anchor = top ? 'top' : 'bottom';
+    info.setOffset(top ? [0, below] : [0, -above]).setLngLat(lngLat).setText(text).addTo(map);
   }
 
   let map = null;
   let selected = 0;
-  function select(i, { keepCaption = false } = {}) {
+  function select(i, { keepInfo = false } = {}) {
     selected = i;
     const d = points[i];
     if (!d) return;
-    if (!keepCaption) showCaption('');
+    if (!keepInfo) info.remove();
     map?.getSource('cursor')?.setData(pointFeature(d));
     map
       ?.getSource('nearest-land')
@@ -288,10 +302,6 @@ export function trackViewer(
     });
     map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
     map.addControl(new mapboxgl.NavigationControl({ showZoom: false, visualizePitch: false }), 'top-right');
-    map.addControl(
-      new mapboxgl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }),
-      'top-right'
-    );
     invalidation?.then(() => {
       map.remove();
       chart?.destroy();
@@ -336,16 +346,16 @@ export function trackViewer(
       callouts.forEach(c => {
         const i = points.findIndex(d => d.lat === c.lat && d.lon === c.lon);
         calloutMarker(c, () => {
-          if (i >= 0) select(i, { keepCaption: true });
+          if (i >= 0) select(i, { keepInfo: true });
           const p = map.project([+c.lon, +c.lat]);
           const near = callouts.filter(o => {
             const q = map.project([+o.lon, +o.lat]);
             return (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 32 * 32;
           });
-          showCaption([...new Set(near.map(o => `${o.icon} ${o.text}`))].join('\n'));
+          showInfo([...new Set(near.map(o => `${o.icon} ${o.text}`))].join('\n'), [+c.lon, +c.lat], { above: 40, below: 6 });
         }).addTo(map);
       });
-      if (buoy?.summary?.primary) buoyMarker(buoy, () => showCaption(buoy.text)).addTo(map);
+      if (buoy?.summary?.primary) buoyMarker(buoy, () => showInfo(buoy.text, [buoy.lon, buoy.lat], { above: 12, below: 12 })).addTo(map);
       root.dataset.ready = 'true';
     });
 
@@ -353,6 +363,9 @@ export function trackViewer(
     // finger's width.
     if (!approximate) {
       map.on('click', event => {
+        // The map also sees taps on the markers; those are theirs.
+        if (event.originalEvent.target.closest?.('.track-callout, .track-buoy')) return;
+        info.remove();
         const { x, y } = event.point;
         let best = -1;
         let bestDist = 30 * 30;
@@ -370,7 +383,7 @@ export function trackViewer(
 
     const ro = new ResizeObserver(() => map.resize());
     ro.observe(mapEl);
-    // The panel grows with a caption; keep the map's bottom controls above it.
+    // Keep the map's bottom controls above the panel, whatever its height.
     const panel = root.querySelector('.track-panel');
     const panelRo = new ResizeObserver(() => root.style.setProperty('--track-panel-height', `${panel.offsetHeight}px`));
     panelRo.observe(panel);
