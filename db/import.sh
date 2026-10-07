@@ -4,7 +4,8 @@
 lake=$HOME/stuff/duck
 
 h=`pwd`
-import=`pwd`/import.sql
+# Optional argument: an alternative import SQL file (absolute path).
+import=${1:-`pwd`/import.sql}
 cd $lake
 echo "Full import"
 duckdb --init init.sql < $import
