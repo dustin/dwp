@@ -21,7 +21,7 @@
 #      Settled days are served with a year-long cache lifetime (see
 #      upload-conditions.sh), so rewritten ones won't show up otherwise.
 #
-# Runs against the lake the same way import.sh does; set LAKE to point
+# Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
 # elsewhere.
 
 here=`cd "$(dirname "$0")" && pwd`

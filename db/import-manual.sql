@@ -1,8 +1,7 @@
 -- Enter a run by hand when there's no GPS track for it (the watch app failed
 -- to capture or export it), from the workout summary.
 --
--- Fill in the variables below and run it against the lake the way import.sh
--- runs import.sql:
+-- Fill in the variables below and run it against the lake:
 --
 --   cd ~/stuff/duck && duckdb --init init.sql < .../db/import-manual.sql
 --
