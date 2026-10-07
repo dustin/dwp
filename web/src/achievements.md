@@ -138,7 +138,7 @@ const badge = r => {
 
 const card = ({run, records}) => htl.html`<a class="card ach-run" id=${`run-${run.id}`} href=${`/run.html?id=${run.id}`}>
   <div class="ach-head">
-    <span class="ach-date">${d3.timeFormat("%b %-d")(run.ts)}</span>
+    <span class="ach-date">${shortDate(run.ts)}</span>
     <span class="ach-route">${route(run)}</span>
     <span class="ach-sub">${run.distance_km.toFixed(1)} km · ${run.foil}</span>
   </div>
