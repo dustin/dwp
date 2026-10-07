@@ -13,8 +13,9 @@ toc: false
   .ach-route { font-weight: 600; }
   .ach-sub { font-size: 0.8rem; color: var(--theme-foreground-muted); }
   .ach-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
-  .ach-badge { display: inline-flex; align-items: baseline; gap: 0.35rem; font-size: 0.8rem; padding: 0.15rem 0.5rem;
-    border-radius: 999px; border: 1px solid var(--badge); background: color-mix(in srgb, var(--badge) 14%, transparent); }
+  .ach-badge { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.35rem; font-size: 0.8rem; padding: 0.15rem 0.5rem;
+    border-radius: 0.8rem; border: 1px solid var(--badge); background: color-mix(in srgb, var(--badge) 14%, transparent); }
+  .ach-badge b, .ach-prev { white-space: nowrap; }
   .ach-badge b { font-variant-numeric: tabular-nums; }
   .ach-prev { color: var(--theme-foreground-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
   .ach-year { margin: 1.2rem 0 0.2rem; font-size: 0.9rem; color: var(--theme-foreground-muted); font-weight: 600; }
@@ -23,7 +24,7 @@ toc: false
 
 # Achievements
 
-Every run that beat the previous best in at least one category, oldest first.
+Every run that beat the previous best in at least one category, newest first.
 
 ```js
 import * as d3 from "npm:d3";
@@ -39,6 +40,11 @@ const beachColor = beachColorScale(allRuns);
 const km = m => `${(m / 1000).toFixed(2)} km`;
 const kph = v => `${v.toFixed(1)} kph`;
 const bpm = v => `${Math.round(v)} bpm`;
+// Pace to the tenth of a second, for gains too small to show at whole seconds.
+const finePace = kph => {
+  const s = 3600 / kph;
+  return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, "0")} min/km`;
+};
 
 // Each category: how to read it off a run, which way is better, how to show it.
 const categories = [
@@ -53,7 +59,7 @@ const categories = [
   {key: "max_speed", label: "Top speed", color: "#efb118",
    value: d => d.max_speed_kmh, better: d3.ascending, fmt: kph},
   {key: "best_1k", label: "Best 1 km", color: "#a463f2",
-   value: d => d.max_speed_1k, better: d3.ascending, fmt: fmt.pace},
+   value: d => d.max_speed_1k, better: d3.ascending, fmt: fmt.pace, fine: finePace},
   {key: "avg_speed", label: "Best avg speed", color: "#97bbf5",
    value: d => d.avg_speed_kmh, better: d3.ascending, fmt: kph},
   // Tracked per region: open-ocean runs would otherwise swamp the rest.
@@ -80,7 +86,7 @@ const achievements = (() => {
     }
     if (records.length) out.push({run, records});
   }
-  return out;
+  return out.reverse();
 })();
 ```
 
@@ -88,8 +94,11 @@ const achievements = (() => {
 const route = d => htl.html`<span style=${`color: ${beachColor(d.start_beach)}`}>${d.start_beach}</span>${
   d.end_beach !== d.start_beach ? htl.html` → <span style=${`color: ${beachColor(d.end_beach)}`}>${d.end_beach}</span>` : ""}`;
 
-const badge = ({category: c, group, value, prev}) => htl.html`<span class="ach-badge" style=${`--badge: ${c.color}`}>
-  ${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">was ${c.fmt(prev)}</span>` : ""}</span>`;
+const badge = ({category: c, group, value, prev}) => {
+  const f = c.fine && prev != null && c.fmt(prev) === c.fmt(value) ? c.fine : c.fmt;
+  return htl.html`<span class="ach-badge" style=${`--badge: ${c.color}`}>
+  ${c.label}${group ? ` (${group})` : ""} <b>${f(value)}</b>${prev != null ? htl.html`<span class="ach-prev">was ${f(prev)}</span>` : ""}</span>`;
+};
 
 const card = ({run, records}) => htl.html`<a class="card ach-run" href=${`/run.html?id=${run.id}`}>
   <div class="ach-head">
