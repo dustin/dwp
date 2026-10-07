@@ -24,7 +24,7 @@ const STALE_MS = 3 * 3600 * 1000;
 // Draw with `draw(ctx)` in black, then lay it down as solid `color`
 // wherever coverage is at least half. Every pixel ends up either untouched
 // or exactly `color`.
-function paint(ctx, color, draw) {
+export function paint(ctx, color, draw) {
   const layer = document.createElement('canvas');
   layer.width = WIDTH;
   layer.height = HEIGHT;
@@ -45,7 +45,7 @@ function paint(ctx, color, draw) {
   ctx.drawImage(layer, 0, 0);
 }
 
-function text(ctx, s, x, y, { size, weight = 'bold', align = 'left' }) {
+export function text(ctx, s, x, y, { size, weight = 'bold', align = 'left' }) {
   ctx.font = `${weight} ${size}px ${FONT}`;
   ctx.textAlign = align;
   ctx.textBaseline = 'alphabetic';
@@ -53,12 +53,12 @@ function text(ctx, s, x, y, { size, weight = 'bold', align = 'left' }) {
   return ctx.measureText(s).width;
 }
 
-function width(ctx, s, { size, weight = 'bold' }) {
+export function width(ctx, s, { size, weight = 'bold' }) {
   ctx.font = `${weight} ${size}px ${FONT}`;
   return ctx.measureText(s).width;
 }
 
-const hstClock = ts => toHstParam(ts).slice(11, 16);
+export const hstClock = ts => toHstParam(ts).slice(11, 16);
 const hstDate = ts => toHstParam(ts).slice(5, 10).replace('-', '/');
 
 // The compass rim is this period (longer swells sit on it), with a ring at
