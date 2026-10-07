@@ -56,6 +56,9 @@ const categories = [
    value: d => d.max_speed_1k, better: d3.ascending, fmt: fmt.pace},
   {key: "avg_speed", label: "Best avg speed", color: "#97bbf5",
    value: d => d.avg_speed_kmh, better: d3.ascending, fmt: kph},
+  // Tracked per region: open-ocean runs would otherwise swamp the rest.
+  {key: "max_dist", label: "Furthest from land", color: "#9c6b4e", group: d => d.region,
+   value: d => d.max_distance, better: d3.ascending, fmt: km},
 ];
 
 // Walk runs in time order, tracking the best so far in each category.
@@ -67,10 +70,12 @@ const achievements = (() => {
     for (const c of categories) {
       const v = c.value(run);
       if (v == null || !Number.isFinite(v) || v <= 0) continue;
-      const prev = best.get(c.key);
+      const group = c.group?.(run);
+      const k = group == null ? c.key : `${c.key}:${group}`;
+      const prev = best.get(k);
       if (prev == null || c.better(prev, v) < 0) {
-        records.push({category: c, value: v, prev});
-        best.set(c.key, v);
+        records.push({category: c, group, value: v, prev});
+        best.set(k, v);
       }
     }
     if (records.length) out.push({run, records});
@@ -83,8 +88,8 @@ const achievements = (() => {
 const route = d => htl.html`<span style=${`color: ${beachColor(d.start_beach)}`}>${d.start_beach}</span>${
   d.end_beach !== d.start_beach ? htl.html` → <span style=${`color: ${beachColor(d.end_beach)}`}>${d.end_beach}</span>` : ""}`;
 
-const badge = ({category: c, value, prev}) => htl.html`<span class="ach-badge" style=${`--badge: ${c.color}`}>
-  ${c.label} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">was ${c.fmt(prev)}</span>` : ""}</span>`;
+const badge = ({category: c, group, value, prev}) => htl.html`<span class="ach-badge" style=${`--badge: ${c.color}`}>
+  ${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">was ${c.fmt(prev)}</span>` : ""}</span>`;
 
 const card = ({run, records}) => htl.html`<a class="card ach-run" href=${`/run.html?id=${run.id}`}>
   <div class="ach-head">
