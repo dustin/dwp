@@ -20,7 +20,10 @@ toc: false
   .ach-badge b, .ach-prev { white-space: nowrap; }
   .ach-badge b { font-variant-numeric: tabular-nums; }
   .ach-prev { color: var(--theme-foreground-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
-  .ach-year { margin: 1.2rem 0 0.2rem; font-size: 0.9rem; color: var(--theme-foreground-muted); font-weight: 600; }
+  .ach-year { margin: 1.6rem 0 0.2rem; scroll-margin-top: 1rem; }
+  #current { scroll-margin-top: 1rem; }
+  .ach-count { font-size: 0.9rem; font-weight: normal; color: var(--theme-foreground-muted); }
+  .ach-nav { margin-bottom: 0.5rem; font-variant-numeric: tabular-nums; }
   .ach-summary { max-width: 760px; box-sizing: border-box; padding: 0.5rem 0.8rem; font-size: 0.85rem; }
   .ach-summary .row { display: grid; grid-template-columns: 0.6rem 1fr auto 5.5rem; align-items: baseline; gap: 0.6rem; padding: 0.15rem 0; color: inherit; text-decoration: none; }
   .ach-summary a.row[href]:hover .name { text-decoration: underline; }
@@ -174,7 +177,6 @@ const summary = (best, since, sinceTs) => htl.html`<div class="card ach-summary"
   </a>`;
 })}</div>`;
 
-display(summary(bestAsOf(new Date())));
 // Where each best stood at the end of the year, against the start of it.
 const yearSummary = year => {
   const start = new Date(year, 0, 1);
@@ -182,8 +184,11 @@ const yearSummary = year => {
 };
 
 const byYear = d3.groups(achievements, d => d.run.ts.getFullYear());
+display(htl.html`<nav class="ach-nav"><a href="#current">Current</a>${byYear.map(([year]) => htl.html` · <a href=${`#y${year}`}>${year}</a>`)}</nav>`);
+display(htl.html`<h2 id="current">Current</h2>`);
+display(summary(bestAsOf(new Date())));
 display(htl.html`<div class="ach-list">${byYear.map(([year, rows]) => htl.html`
-  <div class="ach-year">${year} · ${rows.length} runs</div>
+  <h2 class="ach-year" id=${`y${year}`}>${year} <span class="ach-count">${rows.length} runs</span></h2>
   ${yearSummary(year)}
   ${rows.map(card)}`)}</div>`);
 ```
