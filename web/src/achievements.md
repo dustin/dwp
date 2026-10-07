@@ -15,6 +15,7 @@ toc: false
   .ach-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
   .ach-badge { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.35rem; font-size: 0.8rem; padding: 0.15rem 0.5rem;
     border-radius: 0.8rem; border: 1px solid var(--badge); background: color-mix(in srgb, var(--badge) 14%, transparent); }
+  .ach-badge.matched { border-style: dashed; background: none; }
   .ach-badge b, .ach-prev { white-space: nowrap; }
   .ach-badge b { font-variant-numeric: tabular-nums; }
   .ach-prev { color: var(--theme-foreground-muted); font-size: 0.72rem; font-variant-numeric: tabular-nums; }
@@ -24,7 +25,7 @@ toc: false
 
 # Achievements
 
-Every run that beat the previous best in at least one category, newest first.
+Every run that beat or matched the previous best in at least one category, newest first.
 
 ```js
 import * as d3 from "npm:d3";
@@ -41,25 +42,27 @@ const km = m => `${(m / 1000).toFixed(2)} km`;
 const kph = v => `${v.toFixed(1)} kph`;
 const bpm = v => `${Math.round(v)} bpm`;
 
-// Each category: how to read it off a run, which way is better, how to show it.
+// Each category: how to read it off a run, how to show it, and a score
+// (higher wins) at the precision shown, so a record has to beat the old
+// one by enough to see, and a tie counts as matching it.
 const categories = [
   {key: "seg_dist", label: "Longest foil (distance)", color: "#4269d0",
-   value: d => d.longest_segment_distance, better: d3.ascending, fmt: km},
+   value: d => d.longest_segment_distance, score: v => Math.round(v / 10), fmt: km},
   {key: "seg_time", label: "Longest foil (time)", color: "#6cc5b0",
-   value: d => (d.longest_segment_end - d.longest_segment_start) / 1000, better: d3.ascending, fmt: fmt.seconds},
+   value: d => (d.longest_segment_end - d.longest_segment_start) / 1000, score: v => Math.round(v), fmt: fmt.seconds},
   {key: "avg_hr", label: "Lowest avg foiling HR", color: "#ff725c",
-   value: d => d.avg_foiling_hr, better: d3.descending, fmt: bpm},
+   value: d => d.avg_foiling_hr, score: v => -Math.round(v), fmt: bpm},
   {key: "min_hr", label: "Lowest min foiling HR", color: "#ff8ab7",
-   value: d => d.min_foiling_hr, better: d3.descending, fmt: bpm},
+   value: d => d.min_foiling_hr, score: v => -Math.round(v), fmt: bpm},
   {key: "max_speed", label: "Top speed", color: "#efb118",
-   value: d => d.max_speed_kmh, better: d3.ascending, fmt: kph},
+   value: d => d.max_speed_kmh, score: v => Math.round(v * 10), fmt: kph},
   {key: "best_1k", label: "Best 1 km", color: "#a463f2",
-   value: d => d.max_speed_1k, better: d3.ascending, fmt: fmt.pace},
+   value: d => d.max_speed_1k, score: v => -Math.floor(3600 / v + 1e-9), fmt: fmt.pace},
   {key: "avg_speed", label: "Best avg speed", color: "#97bbf5",
-   value: d => d.avg_speed_kmh, better: d3.ascending, fmt: kph},
+   value: d => d.avg_speed_kmh, score: v => Math.round(v * 10), fmt: kph},
   // Tracked per region: open-ocean runs would otherwise swamp the rest.
   {key: "max_dist", label: "Furthest from land", color: "#9c6b4e", group: d => d.region,
-   value: d => d.max_distance, better: d3.ascending, fmt: km},
+   value: d => d.max_distance, score: v => Math.round(v / 10), fmt: km},
 ];
 
 // Walk runs in time order, tracking the best so far in each category.
@@ -74,10 +77,9 @@ const achievements = (() => {
       const group = c.group?.(run);
       const k = group == null ? c.key : `${c.key}:${group}`;
       const prev = best.get(k);
-      if (prev == null || c.better(prev, v) < 0) {
-        records.push({category: c, group, value: v, prev});
-        best.set(k, v);
-      }
+      const delta = prev == null ? 1 : c.score(v) - c.score(prev);
+      if (delta > 0) best.set(k, v);
+      if (delta >= 0) records.push({category: c, group, value: v, prev, matched: delta === 0});
     }
     if (records.length) out.push({run, records});
   }
@@ -89,8 +91,8 @@ const achievements = (() => {
 const route = d => htl.html`<span style=${`color: ${beachColor(d.start_beach)}`}>${d.start_beach}</span>${
   d.end_beach !== d.start_beach ? htl.html` → <span style=${`color: ${beachColor(d.end_beach)}`}>${d.end_beach}</span>` : ""}`;
 
-const badge = ({category: c, group, value, prev}) => htl.html`<span class="ach-badge" style=${`--badge: ${c.color}`}>
-  ${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">was ${c.fmt(prev)}</span>` : ""}</span>`;
+const badge = ({category: c, group, value, prev, matched}) => htl.html`<span class=${`ach-badge${matched ? " matched" : ""}`} style=${`--badge: ${c.color}`}>
+  ${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">${matched ? "matched" : `was ${c.fmt(prev)}`}</span>` : ""}</span>`;
 
 const card = ({run, records}) => htl.html`<a class="card ach-run" href=${`/run.html?id=${run.id}`}>
   <div class="ach-head">
