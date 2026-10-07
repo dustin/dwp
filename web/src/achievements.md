@@ -44,7 +44,6 @@ import {beachColorScale} from "./components/beaches.js";
 
 const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
 const beachColor = beachColorScale(allRuns);
-const crashCount = d3.rollup(await FileAttachment("data/crashes.csv").csv(), v => v.length, d => d.dwid);
 ```
 
 ```js
@@ -87,8 +86,9 @@ const categories = [
   {key: "light_wind", label: "Lightest wind foiled", color: "#9498a0",
    eligible: d => fullRun(d) && d.pct_dist_on_foil >= 0.8,
    value: d => d.avg_wavg, score: v => -Math.round(v), fmt: v => `${Math.round(v)} kn`},
-  {key: "crash_free", label: "Longest crash-free run", color: "#e45756",
-   value: d => crashCount.has(d.id) ? null : d.distance_km * 1000, score: v => Math.round(v / 10), fmt: km},
+  // Dry as the rest of the dashboard defines it (data.js isDry).
+  {key: "dry", label: "Longest dry run", color: "#e45756",
+   value: d => d.dry ? d.distance_km * 1000 : null, score: v => Math.round(v / 10), fmt: km},
   // Tracked per region: open-ocean runs would otherwise swamp the rest.
   {key: "max_dist", label: "Furthest from land", color: "#9c6b4e", group: d => d.region,
    value: d => d.max_distance, score: v => Math.round(v / 10), fmt: km},
