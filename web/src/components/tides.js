@@ -14,11 +14,14 @@ export const STATIONS = {
 // `enough` is the height (ft above MLLW) a spot wants; null for no line.
 export const SPOTS = [
   { name: 'Maʻalaea', station: 'kihei', enough: 1.0 },
-  { name: 'Kaipukaihina', station: 'kahului', enough: 1.6 },
+  { name: 'Kaipukaihina', station: 'kihei', enough: 1.6 },
   { name: 'Ukumehame', station: 'kihei', enough: 1.6 },
   { name: 'Guardrails', station: 'lahaina', enough: 1.0 },
   { name: 'Kaʻa', station: 'kahului', enough: null },
 ];
+
+// "Kaʻa" → "kaa", for URLs.
+export const spotSlug = spot => spot.name.normalize('NFD').replace(/[^A-Za-z]/g, '').toLowerCase();
 
 const ymd = d3.utcFormat('%Y%m%d');
 
