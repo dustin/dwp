@@ -9,6 +9,7 @@ toc: false
   .tide-head h2 { margin: 0; }
   .tide-now { font-weight: 600; }
   .muted { color: var(--theme-foreground-muted); }
+  .tide-region { margin: 1.2em 0 0.4em; }
 </style>
 
 # Tides
@@ -35,16 +36,21 @@ const extremes = Object.fromEntries(await Promise.all(
 ```
 
 ```js
-for (const spot of SPOTS) {
+const card = spot => {
   const ex = extremes[spot.station];
-  display(html`<div class="card">
+  return html`<div class="card">
     <div class="tide-head">
       <h2>${spot.name}</h2>
       ${now >= start && now < end ? html`<span class="tide-now">${fmt.clock(now)} ${nowSummary(spot, ex, now)}</span>` : ""}
     </div>
     ${resize(width => renderTideChart(spot, ex, {start, end, now, width}))}
     <div class="muted">${STATIONS[spot.station].name}${spot.enough == null ? "" : ` · enough at ${spot.enough}′`}</div>
-  </div>`);
+  </div>`;
+};
+// Two charts a row per region, one on narrow screens.
+for (const [region, spots] of d3.group(SPOTS, s => s.region)) {
+  display(html`<h2 class="tide-region">${region}</h2>`);
+  display(html`<div class="grid grid-cols-2">${spots.map(card)}</div>`);
 }
 ```
 
