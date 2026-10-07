@@ -8,6 +8,9 @@ import.sh) with the foil set to whichever known foil matches the second
 argument, then `jj commit` and `jj here main` in this repo.  Pass
 --push to finish with `jj push`.
 
+gpx_filter.py runs in gpxconvert's nix dev shell and import.sh in db's,
+so their tools are present wherever this is run from.
+
 Known foils come from the SET VARIABLE foil lines in import.sql
 (commented out or not) and the foil column of web/src/data/runs.csv.
 A foil argument matches when it's a case-insensitive substring of a
@@ -18,6 +21,7 @@ import argparse
 import csv
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,7 +30,8 @@ DB_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(DB_DIR)
 IMPORT_SQL = os.path.join(DB_DIR, "import.sql")
 RUNS_CSV = os.path.join(REPO_DIR, "web", "src", "data", "runs.csv")
-GPX_FILTER = os.path.join(DB_DIR, "gpxconvert", "gpx_filter.py")
+GPX_DIR = os.path.join(DB_DIR, "gpxconvert")
+GPX_FILTER = os.path.join(GPX_DIR, "gpx_filter.py")
 
 FOIL_RE = re.compile(r"^\s*(--\s*)?SET VARIABLE foil\s*=\s*'([^']*)'\s*;", re.M)
 CSV_PATH_RE = re.compile(r"^(\s*SET VARIABLE csv_path\s*=\s*)'[^']*'", re.M)
@@ -79,6 +84,15 @@ def import_sql_for(foil, csv_path):
                            sql, count=1)
 
 
+def in_flake(flake_dir, cmd):
+    """Run cmd inside flake_dir's dev shell, so its tools (python3 and
+    tzdata for gpx_filter; duckdb and rclone for import.sh) are present.
+    Without nix, run it as is and hope they're on PATH."""
+    if shutil.which("nix") is None:
+        return cmd
+    return ["nix", "develop", flake_dir, "--command"] + cmd
+
+
 def run(cmd, cwd=None, stdin=None):
     print("+ " + " ".join(cmd), file=sys.stderr)
     r = subprocess.run(cmd, cwd=cwd, stdin=stdin)
@@ -121,8 +135,9 @@ def main(argv=None):
             except EOFError:
                 die("no commit message")
 
-        run([sys.executable, GPX_FILTER, os.path.abspath(args.gpx), "-o", csv_path])
-        run([os.path.join(DB_DIR, "import.sh"), sql_path], cwd=DB_DIR)
+        run(in_flake(GPX_DIR, ["python3", GPX_FILTER, os.path.abspath(args.gpx),
+                               "-o", csv_path]))
+        run(in_flake(DB_DIR, [os.path.join(DB_DIR, "import.sh"), sql_path]), cwd=DB_DIR)
 
     run(["jj", "commit", "-m", message], cwd=REPO_DIR)
     run(["jj", "here", "main"], cwd=REPO_DIR)
