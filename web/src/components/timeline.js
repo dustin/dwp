@@ -272,3 +272,36 @@ export function makeSwellMarks(swell, swell2, idx, label, colors) {
     ),
   ];
 }
+
+// Per-run scatter colored by region (`color` is a Plot color scale spec),
+// with a rolling median to show the trend instead of joining every run.
+export function tlRegion(data, title, opts, xField, yField, color, dotOpts = {}) {
+  const sorted = _.sortBy(data.filter(d => d[yField] != null), xField);
+  return width =>
+    Plot.plot({
+      title,
+      width,
+      color,
+      ...opts,
+      marks: [
+        Plot.dot(sorted, {
+          x: xField,
+          y: yField,
+          fill: 'region',
+          r: d => (d.dry ? 6 : 3),
+          fillOpacity: d => (d.dry ? 0.9 : 0.45),
+          symbol: d => (d.dry ? 'star' : 'circle'),
+          href: d => `/run.html?id=${encodeURIComponent(d.id)}`,
+          ...dotOpts,
+        }),
+        Plot.lineY(sorted, Plot.windowY({ k: 25, reduce: 'median', anchor: 'middle' }, {
+          x: xField,
+          y: yField,
+          stroke: 'var(--theme-foreground)',
+          strokeOpacity: 0.45,
+          strokeWidth: 1.5,
+          curve: 'basis',
+        })),
+      ],
+    });
+}

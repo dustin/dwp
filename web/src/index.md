@@ -50,6 +50,7 @@ const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObse
 const regions = regionList(runCsv);
 const regionColor = regionColorScale(runCsv);
 const foilColor = foilColorScale(runCsv);
+const regionColorSpec = {domain: regions, range: regions.map(r => regionColor(r))};
 ```
 
 ```js
@@ -389,32 +390,31 @@ function regress(x, y, src) {
 }
 ```
 
+${Plot.legend({color: regionColorSpec})}
+
 <div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
   <div class="card">${
-    resize(tl.tl(runCsv, "Total Distance Traveled per Session", {y: {label: "km"}},
+    resize(tl.tlRegion(runCsv, "Total Distance Traveled per Session", {y: {label: "km"}},
                  "ts", "distance_km" ,
-                 {stroke: beachColorNamed("start_beach")},
-                 {fill: beachColorNamed("start_beach"),
-                  title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
+                 regionColorSpec,
+                 {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "went", d.distance_km.toFixed(2), "km"
                                 ].join(' '))})) }
   </div>
   <div class="card">${
-    resize(tl.tl(runCsv, "Maximum Distance from Land", {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
+    resize(tl.tlRegion(runCsv, "Maximum Distance from Land", {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
                  "ts", "max_distance",
-                 {stroke: beachColorNamed("start_beach")},
-                 {fill: beachColorNamed("start_beach"),
-                  title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
+                 regionColorSpec,
+                 {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "hit", (d.max_distance / 1000).toFixed(2), "km"].join(' '))
                  })
     )
   }</div>
   <div class="card">${
-    resize(tl.tl(runCsv, "Longest Segment on Foil",
+    resize(tl.tlRegion(runCsv, "Longest Segment on Foil",
       {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
-      "longest_segment_start", "longest_segment_distance", {stroke: beachColorNamed("start_beach")},
-      {fill: beachColorNamed("start_beach"),
-       title: d => ([fmt.date(d.longest_segment_start) + ":", "from", d.start_beach, "to",
+      "longest_segment_start", "longest_segment_distance", regionColorSpec,
+                 {title: d => ([fmt.date(d.longest_segment_start) + ":", "from", d.start_beach, "to",
                      d.end_beach, "went", (d.longest_segment_distance / 1000).toFixed(2), "km in",
                      fmt.timeDiff(d.longest_segment_start, d.longest_segment_end)
                      ].join(' '))
@@ -422,11 +422,10 @@ function regress(x, y, src) {
     ))
     }</div>
     <div class="card">${
-      resize(tl.tl(runCsv, "Distance to First Paddle Up", {y: { label: "meters" , domain: [0, 2000] }, clip: true },
+      resize(tl.tlRegion(runCsv, "Distance to First Paddle Up", {y: { label: "meters" , domain: [0, 2000] }, clip: true },
         "ts", "distance_to_first_paddle_up",
-        {stroke: beachColorNamed("start_beach")},
-        {fill: beachColorNamed("start_beach"),
-         title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
+        regionColorSpec,
+                 {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                        d.end_beach, "paddled up within",
                        (d.distance_to_first_paddle_up || 0).toFixed(0), "meters", d.foil
                       ].join(' '))
@@ -435,11 +434,10 @@ function regress(x, y, src) {
   }</div>
 
   <div class="card">${
-    resize(tl.tl(runCsv, "Percentage of Distance on Foil",
+    resize(tl.tlRegion(runCsv, "Percentage of Distance on Foil",
         {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
-        "ts", "pct_dist_on_foil", {stroke: beachColorNamed("start_beach")},
-        {fill: beachColorNamed("start_beach"),
-         title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
+        "ts", "pct_dist_on_foil", regionColorSpec,
+                 {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                        d.end_beach, "on foil", (d.pct_dist_on_foil * 100).toFixed(0) + "%",
                        "on foil"
                       ].join(' '))
@@ -448,12 +446,11 @@ function regress(x, y, src) {
   }</div>
 
   <div class="card">${
-    resize(tl.tl(runCsv, "Percentage of Time on Foil",
+    resize(tl.tlRegion(runCsv, "Percentage of Time on Foil",
                  {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
                  "ts", "pct_time_on_foil",
-                 {stroke: beachColorNamed("start_beach")},
-                 {fill: beachColorNamed("start_beach"),
-                  title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
+                 regionColorSpec,
+                 {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
                                 d.end_beach, "on foil", (d.pct_time_on_foil * 100).toFixed(0) + "%",
                                 "of the time foil"
                                ].join(' '))
@@ -464,7 +461,9 @@ function regress(x, y, src) {
 
 </div>
 
-Broken down by start beach:  ${beachLegend}
+Each dot is a run; ★ is a dry run. The dark line is the median of the surrounding 25 runs.
+
+
 
 ## Odometer Milestones
 
