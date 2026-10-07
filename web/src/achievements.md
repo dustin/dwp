@@ -183,12 +183,13 @@ const yearSummary = year => {
   return summary(bestAsOf(new Date(year + 1, 0, 1, 0, 0, -1)), bestAsOf(new Date(start - 1)), start);
 };
 
+const runsPerYear = d3.rollup(allRuns, v => v.length, d => d.ts.getFullYear());
 const byYear = d3.groups(achievements, d => d.run.ts.getFullYear());
 display(htl.html`<nav class="ach-nav"><a href="#current">Current</a>${byYear.map(([year]) => htl.html` · <a href=${`#y${year}`}>${year}</a>`)}</nav>`);
 display(htl.html`<h2 id="current">Current</h2>`);
 display(summary(bestAsOf(new Date())));
 display(htl.html`<div class="ach-list">${byYear.map(([year, rows]) => htl.html`
-  <h2 class="ach-year" id=${`y${year}`}>${year} <span class="ach-count">${rows.length} runs</span></h2>
+  <h2 class="ach-year" id=${`y${year}`}>${year} <span class="ach-count">${rows.length} of ${runsPerYear.get(year)} runs set or matched a record</span></h2>
   ${yearSummary(year)}
   ${rows.map(card)}`)}</div>`);
 ```
