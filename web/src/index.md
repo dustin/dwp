@@ -206,14 +206,99 @@ function regionBreakdown(items) {
   </div>
 </div>
 
-Check out the details of my ${htl.html`<a href="/run.html?id=${latestRun.id}">most recent run</a>`}
-from ${latestRun.start_beach} to ${latestRun.end_beach}
-from ${fmt.relativeTime(latestRun.ts)} where I was
-on foil ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% of the way.
+```js
+import {fetchBuoySnapshot} from "./components/data.js";
+import {formatDirection} from "./components/spectrum.js";
+import {SPOTS, STATIONS, fetchExtremes, heightAt, crossings} from "./components/tides.js";
 
-I've used a few different foils and have <a href="foils.html">breakdowns by foil</a> as well.
+// Live bits for the subpage cards; each card still renders if its fetch fails.
+const buoyNow = fetchBuoySnapshot(new Date()).catch(() => null);
+const tidesNow = (async () => {
+  const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
+  const stations = [...new Set(SPOTS.map(s => s.station))];
+  return Object.fromEntries(await Promise.all(stations.map(async s => [s, await fetchExtremes(s, start, end)])));
+})().catch(() => null);
+```
 
-Curious about current conditions? Check out the <a href="buoy.html">buoy analysis</a> page for a live look at the swell spectrum and wave partitions off Pauwela.
+```js
+function navCard(href, title, body) {
+  return htl.html`<a class="card nav-card" href=${href}>
+    <div class="nav-card-title"><h2>${title}</h2><span class="nav-card-arrow">→</span></div>
+    ${body}
+  </a>`;
+}
+
+function tideRows(ex) {
+  const now = new Date();
+  return SPOTS.map(spot => {
+    const e = ex?.[spot.station];
+    const h = e ? heightAt(e, now) : null;
+    if (h == null) return null;
+    const rising = heightAt(e, new Date(+now + 6e5)) > h;
+    let status = "";
+    if (spot.enough != null) {
+      const next = crossings(e, spot.enough).find(x => x.time > now);
+      const ok = h >= spot.enough;
+      status = htl.html`<span class=${ok ? "tide-ok" : "nav-muted"}>${ok ? "✓" : "·"}${next ? ` ${ok ? "until" : "from"} ${fmt.clock(next.time)}` : ""}</span>`;
+    }
+    return htl.html`<div class="nav-row"><span class="nav-row-name">${spot.name}</span>
+      <span class="nav-row-value">${h.toFixed(1)}′ ${rising ? "↑" : "↓"}</span>${status}</div>`;
+  });
+}
+```
+
+<hr class="nav-rule">
+
+<div class="grid grid-cols-4 nav-cards">
+  ${navCard(`/run.html?id=${latestRun.id}`, "Most Recent Run", htl.html`
+    <div class="nav-lead"><span style=${`color: ${beachColorNamed(latestRun.start_beach)}`}>${latestRun.start_beach}</span>${
+      latestRun.end_beach !== latestRun.start_beach ? htl.html` → <span style=${`color: ${beachColorNamed(latestRun.end_beach)}`}>${latestRun.end_beach}</span>` : ""}</div>
+    <div class="nav-muted">${fmt.relativeTime(latestRun.ts)} · ${latestRun.distance_km.toFixed(1)} km · ${(latestRun.pct_dist_on_foil * 100).toFixed(0)}% on foil</div>
+    <div class="nav-muted" style=${`color: ${foilColor(latestRun.foil)}`}>${latestRun.foil}</div>`)}
+  ${navCard("foils.html", "Foils", htl.html`
+    <div class="nav-lead">${foilColor.domain().length} foils</div>
+    <div class="nav-muted">Most used, last 3 months</div>
+    <div class="nav-rows">${d3.rollups(runCsv.filter(d => d.ts >= d3.timeMonth.offset(latestRun.ts, -3)), v => d3.sum(v, d => d.distance_km), d => d.foil)
+      .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([f, km]) => htl.html`
+      <div class="nav-row"><span class="region-swatch" style=${`background:${foilColor(f)}`}></span>
+        <span class="nav-row-name">${f}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}
+  ${navCard("buoy.html", "Pauwela Buoy", buoyNow?.primary ? htl.html`
+    <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${formatDirection(buoyNow.primary.direction)}</div>
+    <div class="nav-muted">${buoyNow.primary.surflineKJ == null ? "" : `${buoyNow.primary.surflineKJ.toFixed(0)} kJ · `}${fmt.relativeTime(buoyNow.primaryTs)}</div>
+    <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>` : htl.html`
+    <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>`)}
+  ${navCard("tides.html", "Tides", tidesNow ? htl.html`<div class="nav-rows">${tideRows(tidesNow)}</div>` : htl.html`
+    <div class="nav-muted">Today's tides at my spots</div>`)}
+</div>
+
+<style>
+  .nav-rule { margin: 1.5rem 0 1rem; }
+  .nav-cards { grid-auto-rows: auto; }
+  a.nav-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    color: var(--theme-foreground);
+    text-decoration: none;
+    background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
+    border-color: color-mix(in srgb, var(--theme-foreground-focus) 25%, transparent);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  a.nav-card:hover { border-color: var(--theme-foreground-focus); }
+  a.nav-card:active { background: color-mix(in srgb, var(--theme-foreground-focus) 14%, var(--theme-background-alt)); }
+  .nav-card-title { display: flex; justify-content: space-between; align-items: baseline; }
+  .nav-card-title h2 { margin: 0; }
+  .nav-card-arrow { color: var(--theme-foreground-focus); font-weight: 600; }
+  a.nav-card:hover .nav-card-arrow { transform: translateX(2px); }
+  .nav-lead { font-size: 1.15rem; font-weight: 600; }
+  .nav-muted { color: var(--theme-foreground-muted); font-size: 0.8rem; }
+  .nav-rows { display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.8rem; }
+  .nav-row { display: flex; align-items: center; gap: 0.4rem; }
+  .nav-row-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nav-row-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .nav-rows .tide-ok, .nav-rows .nav-muted { white-space: nowrap; min-width: 5.5em; text-align: right; font-size: 0.8rem; }
+  .tide-ok { color: var(--theme-green, #3ca951); }
+</style>
 
 ## Time on Water
 
