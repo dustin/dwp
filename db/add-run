@@ -11,8 +11,7 @@ argument, then `jj commit` and `jj here main` in this repo.  Pass
 Run it from db's nix dev shell, which has python3, tzdata, duckdb and
 rclone.
 
-Known foils come from the SET VARIABLE foil lines in import.sql
-(commented out or not) and the foil column of web/src/data/runs.csv.
+Known foils come from the foil column of web/src/data/runs.csv.
 A foil argument matches when it's a case-insensitive substring of a
 foil name; it has to pick out exactly one.
 """
@@ -45,14 +44,9 @@ def die(msg):
 
 
 def known_foils():
-    with open(IMPORT_SQL) as f:
-        foils = {m.group(2) for m in FOIL_RE.finditer(f.read())}
-    try:
-        with open(RUNS_CSV, newline="") as f:
-            foils |= {r["foil"] for r in csv.DictReader(f) if r.get("foil")}
-    except FileNotFoundError:
-        pass
-    return sorted(foils)
+    """Foils from runs.csv, which is exported from the lake's dwlist."""
+    with open(RUNS_CSV, newline="") as f:
+        return sorted({r["foil"] for r in csv.DictReader(f) if r.get("foil")})
 
 
 def pick_foil(query, foils):
