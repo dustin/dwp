@@ -56,7 +56,7 @@ const bpm = v => `${Math.round(v)} bpm`;
 // (higher wins) at the precision shown, so a record has to beat the old
 // one by enough to see, and a tie counts as matching it.
 // Runs shorter than this can't set the ratio-style records (% on foil,
-// paddle-ups, lightest wind), which a short paddle would otherwise win.
+// lightest wind), which a short paddle would otherwise win.
 const fullRun = d => d.distance_km >= 10;
 const milestones = [100, 250, 500, ...d3.range(1000, 100001, 500)];
 
@@ -69,10 +69,9 @@ const categories = [
    value: d => d.distance_on_foil, score: v => Math.round(v / 10), fmt: km},
   {key: "pct_foil", label: "Most of a run on foil", color: "#2a9d8f", eligible: fullRun,
    value: d => d.pct_dist_on_foil, score: v => Math.round(v * 100), fmt: v => `${Math.round(v * 100)}%`},
-  {key: "paddle_ups", label: "Fewest paddle-ups", color: "#8a6d3b", eligible: fullRun,
-   value: d => d.paddle_up_count, score: v => -v, fmt: v => `${v}`},
-  {key: "first_pu", label: "Quickest first paddle-up", color: "#b8860b",
-   value: d => d.distance_to_first_paddle_up, score: v => -Math.round(v / 10), fmt: km},
+  // Per region, since the paddle out depends on the beach.
+  {key: "first_pu", label: "Quickest first paddle-up", color: "#b8860b", group: d => d.region,
+   value: d => d.distance_to_first_paddle_up, score: v => -Math.round(v), fmt: v => `${Math.round(v)} m`},
   {key: "avg_hr", label: "Lowest avg foiling HR", color: "#ff725c",
    value: d => d.avg_foiling_hr, score: v => -Math.round(v), fmt: bpm},
   {key: "min_hr", label: "Lowest min foiling HR", color: "#ff8ab7",
