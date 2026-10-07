@@ -15,8 +15,6 @@ toc: false
   .ach-badges { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.45rem; }
   .ach-badge { display: inline-flex; flex-wrap: wrap; align-items: baseline; column-gap: 0.35rem; font-size: 0.8rem; padding: 0.15rem 0.5rem;
     border-radius: 0.8rem; border: 1px solid var(--badge); background: color-mix(in srgb, var(--badge) 14%, transparent); }
-  .ach-badge.beaten { opacity: 0.45; }
-  .ach-badge.current { font-weight: 600; }
   .ach-star { color: var(--badge); }
   .ach-badge.matched { border-style: dashed; background: none; }
   .ach-badge b, .ach-prev { white-space: nowrap; }
@@ -130,7 +128,7 @@ const holds = ({category: c, group, value}) =>
 const badge = r => {
   const {category: c, group, value, prev, matched} = r;
   const current = holds(r);
-  return htl.html`<span class=${`ach-badge${matched ? " matched" : ""}${current ? " current" : " beaten"}`} style=${`--badge: ${c.color}`}
+  return htl.html`<span class=${`ach-badge${matched ? " matched" : ""}`} style=${`--badge: ${c.color}`}
     title=${current ? "Still the record" : "Since beaten"}>
   ${current ? htl.html`<span class="ach-star">★</span>` : ""}${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">${matched ? "matched" : `was ${c.fmt(prev)}`}</span>` : ""}</span>`;
 };
