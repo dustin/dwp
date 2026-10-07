@@ -120,7 +120,7 @@ const latestKJ = swellKJShares(latestPartitions, now.primary?.surflineKJ);
         }))
       : html`<p>No data for this time.</p>`
   }
-  <div class="muted" style="font-size: 0.85em;">Arrows point the way the swell is travelling, from the direction it comes from. Distance out is period; the dashed gray arrow is NDBC's overall reading.</div>
+  <div class="muted" style="font-size: 0.85em;">Arrows point the way the swell is travelling. Distance out is period; the dashed gray arrow is NDBC's overall reading.</div>
   </div>
 </div>
 
