@@ -123,88 +123,84 @@ function regionBreakdown(items) {
   }
 </style>
 
-<div class="grid grid-cols-4">
+```js
+function regionBar(field) {
+  const total = d3.sum(regions, r => regionStats.get(r)[field]);
+  return htl.html`<div class="region-bar">${regions
+    .filter(r => regionStats.get(r)[field] > 0)
+    .map(r => htl.html`<span title=${`${r}: ${(regionStats.get(r)[field] / total * 100).toFixed(0)}%`}
+      style=${`flex: ${regionStats.get(r)[field]}; background: ${regionColor(r)}`}></span>`)}</div>`;
+}
+
+const recordDate = d3.timeFormat("%b %-d, %Y");
+function recordCard(title, run, text, field, fmtRegion) {
+  const route = run.start_beach === run.end_beach ? run.start_beach : `${run.start_beach} → ${run.end_beach}`;
+  const others = regions
+    .map(r => [r, regionStats.get(r)[field]])
+    .filter(([r, best]) => best && best.id !== run.id)
+    .sort((a, b) => d3.descending(a[1][fmtRegion.key], b[1][fmtRegion.key]));
+  return htl.html`<a class="card record-card" href=${`/run.html?id=${run.id}`}>
+    <h2>${title}</h2>
+    <span class="big">${text}</span>
+    <div class="record-context"><span class="region-swatch" style=${`background:${regionColor(run.region)}`}></span>${route}</div>
+    <div class="record-sub">${recordDate(run.ts)} · <span style=${`color: ${foilColor(run.foil)}`}>${run.foil}</span></div>
+    <div class="record-others">${others.map(([r, best], i) => htl.html`${i ? " · " : ""}<span class="region-swatch" style=${`background:${regionColor(r)}`}></span> ${fmtRegion.fmt(best)}`)}</div>
+  </a>`;
+}
+const byId = new Map(runCsv.map(d => [d.id, d]));
+```
+
+<style>
+  .stat-row-label { margin: 0.4rem 0 0.2rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--theme-foreground-muted); display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; }
+  .stat-row-label .legend { text-transform: none; letter-spacing: 0; display: flex; gap: 0.8rem; flex-wrap: wrap; }
+  .stat-row-label .legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+  .region-bar { display: flex; height: 0.5rem; border-radius: 0.25rem; overflow: hidden; margin-top: 0.6rem; gap: 1px; }
+  .region-bar span { min-width: 2px; }
+  a.record-card { color: inherit; text-decoration: none; display: flex; flex-direction: column; }
+  a.record-card .big { color: var(--theme-foreground-focus); }
+  a.record-card:hover { border-color: var(--theme-foreground-focus); }
+  .record-context { margin-top: 0.3rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
+  .record-sub { font-size: 0.8rem; color: var(--theme-foreground-muted); }
+  .record-others { margin-top: auto; padding-top: 0.5rem; font-size: 0.7rem; color: var(--theme-foreground-muted); font-variant-numeric: tabular-nums; }
+  .record-others .region-swatch { width: 0.5rem; height: 0.5rem; min-width: 0.5rem; vertical-align: 0; }
+</style>
+
+<div class="stat-row-label">Totals <span class="legend">${regions.map(r => htl.html`<span><span class="region-swatch" style=${`background:${regionColor(r)}`}></span>${r}</span>`)}</span></div>
+
+<div class="grid grid-cols-4" style="grid-auto-rows: auto;">
   <div class="card">
-    <h2>Total Sessions</h2>
+    <h2>Sessions</h2>
     <span class="big">${fmt.comma(totals.sessions)}</span>
-    ${regionBreakdown(regions.map(r => ({
-      region: r, value: regionStats.get(r).sessions, text: fmt.comma(regionStats.get(r).sessions)
-    })))}
+    ${regionBar("sessions")}
   </div>
   <div class="card">
-    <h2>Total Time</h2>
-    <span class="big">${fmt.seconds(totals.time)}</span>
-    ${regionBreakdown(regions.map(r => ({
-      region: r, value: regionStats.get(r).time, text: fmt.seconds(regionStats.get(r).time)
-    })))}
+    <h2>Time on Water</h2>
+    <span class="big">${fmt.comma(Math.round(totals.time / 3600))} h</span>
+    ${regionBar("time")}
   </div>
   <div class="card">
-    <h2>Distance Traveled</h2>
-    <span class="big">${fmt.comma(totals.dist.toFixed(2))} km</span>
-    ${regionBreakdown(regions.map(r => ({
-      region: r, value: regionStats.get(r).dist, text: fmt.comma(regionStats.get(r).dist.toFixed(2)) + " km"
-    })))}
+    <h2>Distance</h2>
+    <span class="big">${fmt.comma(Math.round(totals.dist))} km</span>
+    ${regionBar("dist")}
   </div>
   <div class="card">
     <h2>Paddle Ups</h2>
     <span class="big">${fmt.comma(totals.paddle_ups)}</span>
-    ${regionBreakdown(regions.map(r => ({
-      region: r, value: regionStats.get(r).paddle_ups, text: fmt.comma(regionStats.get(r).paddle_ups)
-    })))}
+    ${regionBar("paddle_ups")}
   </div>
+</div>
 
-  <div class="card">
-    <h2>Max Speed</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_id}">
-        ${totals.max_speed.toFixed(2)} kph</a>`}</span>
-    ${regionBreakdown(regions.map(r => {
-      const best = regionStats.get(r).max_speed;
-      return best ? {
-        region: r, value: best.max_speed_kmh,
-        text: `${best.max_speed_kmh.toFixed(2)} kph`,
-        href: `/run.html?id=${best.id}`
-      } : { region: r, value: null };
-    }))}
-  </div>
-  <div class="card">
-    <h2>Best 1k Pace</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_1k_id}">
-        ${fmt.pace(totals.max_speed_1k)}</a>`}</span>
-    ${regionBreakdown(regions.map(r => {
-      const best = regionStats.get(r).max_speed_1k;
-      return best ? {
-        region: r, value: best.max_speed_1k,
-        text: fmt.pace(best.max_speed_1k),
-        href: `/run.html?id=${best.id}`
-      } : { region: r, value: null };
-    }))}
-  </div>
-  <div class="card">
-    <h2>Longest Continuous Foiling Segment</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.longest_seg_id}">
-        ${(totals.longest_seg / 1000).toFixed(2)} km</a>`}</span>
-    ${regionBreakdown(regions.map(r => {
-      const best = regionStats.get(r).longest_seg;
-      return best ? {
-        region: r, value: best.longest_segment_distance,
-        text: (best.longest_segment_distance / 1000).toFixed(2) + " km",
-        href: `/run.html?id=${best.id}`
-      } : { region: r, value: null };
-    }))}
-  </div>
-  <div class="card">
-    <h2>Furthest From Land</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_dist_id}">
-        ${(totals.max_dist / 1000).toFixed(2)} km</a>`}</span>
-    ${regionBreakdown(regions.map(r => {
-      const best = regionStats.get(r).max_dist;
-      return best ? {
-        region: r, value: best.max_distance,
-        text: (best.max_distance / 1000).toFixed(2) + " km",
-        href: `/run.html?id=${best.id}`
-      } : { region: r, value: null };
-    }))}
-  </div>
+<div class="stat-row-label">Records</div>
+
+<div class="grid grid-cols-4" style="grid-auto-rows: auto;">
+  ${recordCard("Max Speed", byId.get(totals.max_speed_id), `${totals.max_speed.toFixed(1)} kph`,
+    "max_speed", {key: "max_speed_kmh", fmt: d => d.max_speed_kmh.toFixed(1)})}
+  ${recordCard("Best 1k Pace", byId.get(totals.max_speed_1k_id), fmt.pace(totals.max_speed_1k),
+    "max_speed_1k", {key: "max_speed_1k", fmt: d => fmt.paceNoUnit(d.max_speed_1k)})}
+  ${recordCard("Longest Foiling Segment", byId.get(totals.longest_seg_id), `${(totals.longest_seg / 1000).toFixed(1)} km`,
+    "longest_seg", {key: "longest_segment_distance", fmt: d => (d.longest_segment_distance / 1000).toFixed(1)})}
+  ${recordCard("Furthest From Land", byId.get(totals.max_dist_id), `${(totals.max_dist / 1000).toFixed(1)} km`,
+    "max_dist", {key: "max_distance", fmt: d => (d.max_distance / 1000).toFixed(1)})}
 </div>
 
 ```js
