@@ -41,6 +41,11 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # One deploy at a time, so an older push can't finish last and rsync
+    # its stale build over a newer one.
+    concurrency:
+      group: deploy
+      cancel-in-progress: false
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - name: Download build artifact
