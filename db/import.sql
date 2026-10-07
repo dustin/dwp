@@ -8,8 +8,32 @@ call lake.set_commit_message('dustin', 'import DW run from filtered csv');
 SET VARIABLE csv_path = coalesce(nullif(getenv('DWP_CSV'), ''), '/tmp/activity.csv');
 SET VARIABLE tz = 'Pacific/Honolulu';
 SET VARIABLE board = 'Kalama Gator  95.0 lt';
-SET VARIABLE foil = coalesce(nullif(getenv('DWP_FOIL'), ''),
-                             error('set DWP_FOIL to the foil name'));
+
+-- Resolve DWP_FOIL (any case-insensitive piece of a foil name, e.g. 688)
+-- to the one foil in dwlist it names. An exact name always wins. With
+-- DWP_NEW_FOIL set, DWP_FOIL is a foil not used before, taken as is.
+SET VARIABLE foil = (
+  WITH known AS (SELECT DISTINCT foil FROM dwlist WHERE foil IS NOT NULL),
+  hits AS (
+    SELECT foil FROM known
+    WHERE contains(lower(foil), lower(getenv('DWP_FOIL')))
+    QUALIFY NOT bool_or(lower(foil) = lower(getenv('DWP_FOIL'))) OVER ()
+         OR lower(foil) = lower(getenv('DWP_FOIL'))
+  )
+  SELECT CASE
+    WHEN coalesce(getenv('DWP_FOIL'), '') = ''
+      THEN error('set DWP_FOIL to the foil, e.g. DWP_FOIL=688')
+    WHEN coalesce(getenv('DWP_NEW_FOIL'), '') <> '' THEN getenv('DWP_FOIL')
+    WHEN count(*) = 1 THEN any_value(foil)
+    WHEN count(*) = 0
+      THEN error('no foil matches ''' || getenv('DWP_FOIL')
+                 || ''' (add-run --new-foil to add one)')
+    ELSE error('''' || getenv('DWP_FOIL') || ''' matches more than one foil: '
+               || string_agg(foil, ', ' ORDER BY foil))
+  END
+  FROM hits
+);
+SELECT getvariable('foil') AS foil;
 
 -- All filtering happens in gpx_filter.py; speed_final_kmh,
 -- lat_filtered/lon_filtered, and distance_cumulative_m are
