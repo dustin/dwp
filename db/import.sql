@@ -4,8 +4,7 @@ begin;
 
 call lake.set_commit_message('dustin', 'import DW run from filtered csv');
 
--- The CSV path and foil come from the environment (add-run sets both):
---   DWP_FOIL='F4 Orca 685' ./import.sh
+-- The CSV path and foil come from the environment; add-run sets both.
 SET VARIABLE csv_path = coalesce(nullif(getenv('DWP_CSV'), ''), '/tmp/activity.csv');
 SET VARIABLE tz = 'Pacific/Honolulu';
 SET VARIABLE board = 'Kalama Gator  95.0 lt';
