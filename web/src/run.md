@@ -324,7 +324,7 @@ swellPrimary && swellPrimary.length > 0
   swellSpectrum.length === 0
     ? html`<p>No Pauwela buoy spectra for this run (captured since ${fmt.date(BUOY_DATA_START)}).</p>`
     : html`
-<p>Buoy: <a href="buoy.html?t=${toHstParam(runMeta.ts)}">full report at the start of this run</a> · <a href="buoy.html?a=${runMeta.id}#compare">compare with now or another run</a>.</p>
+<p>Buoy: <a href="buoy.html?t=${toHstParam(new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000))}">full report at the end of this run</a> · <a href="buoy.html?a=${runMeta.id}#compare">compare with now or another run</a>.</p>
 <div class="grid grid-cols-2">
   <div class="card">${
   midRunPartitions.length > 0
