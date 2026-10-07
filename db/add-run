@@ -4,21 +4,19 @@
     ./add-run some/run.gpx 688 -m "Light Maliko"
 
 Filters the GPX with gpxconvert/gpx_filter.py, runs import.sql against
-the lake with DWP_FOIL set to whichever known foil matches the second
-argument and DWP_CSV to the filtered CSV (import.sql reads both), runs
-upload-runs.sh, then `jj commit` and `jj here main` in this repo.  Pass
---push to finish with `jj push`.
+the lake with DWP_FOIL set to the second argument and DWP_CSV to the
+filtered CSV, runs upload-runs.sh, then `jj commit` and `jj here main`
+in this repo.  Pass --push to finish with `jj push`.
+
+import.sql resolves DWP_FOIL to the one known foil it names (688 means
+F4 Hammerhead 688), and fails the import if it names none or several.
+For a foil you haven't used before, pass --new-foil and its full name.
 
 Run it from db's nix dev shell, which has python3, tzdata, duckdb and
 rclone.
-
-Known foils come from the foil column of web/src/data/runs.csv.
-A foil argument matches when it's a case-insensitive substring of a
-foil name; it has to pick out exactly one.
 """
 
 import argparse
-import csv
 import os
 import subprocess
 import sys
@@ -27,7 +25,6 @@ import tempfile
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(DB_DIR)
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
-RUNS_CSV = os.path.join(REPO_DIR, "web", "src", "data", "runs.csv")
 
 # No __pycache__ in gpxconvert, or jj would sweep it into the commit.
 sys.dont_write_bytecode = True
@@ -35,29 +32,9 @@ sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
 import gpx_filter  # noqa: E402
 
 
-
 def die(msg):
     print(f"add-run: {msg}", file=sys.stderr)
     sys.exit(1)
-
-
-def known_foils():
-    """Foils from runs.csv, which is exported from the lake's dwlist."""
-    with open(RUNS_CSV, newline="") as f:
-        return sorted({r["foil"] for r in csv.DictReader(f) if r.get("foil")})
-
-
-def pick_foil(query, foils):
-    q = query.strip().lower()
-    exact = [f for f in foils if f.lower() == q]
-    if exact:
-        return exact[0]
-    matches = [f for f in foils if q in f.lower()]
-    if len(matches) == 1:
-        return matches[0]
-    if not matches:
-        die(f"no foil matches {query!r}. Known foils:\n  " + "\n  ".join(foils))
-    die(f"{query!r} matches more than one foil:\n  " + "\n  ".join(matches))
 
 
 def run(cmd, cwd=None, env=None, stdin=None):
@@ -73,17 +50,13 @@ def main(argv=None):
     ap.add_argument("gpx", help="GPX file to import")
     ap.add_argument("foil", help="foil to record, e.g. 688 or 'orca 685'")
     ap.add_argument("-m", "--message", help="jj commit message (prompted for if omitted)")
+    ap.add_argument("--new-foil", action="store_true",
+                    help="the foil is new: record its name exactly as given")
     ap.add_argument("--push", action="store_true", help="jj push after committing")
-    ap.add_argument("-n", "--dry-run", action="store_true",
-                    help="show which foil matched, then stop")
     args = ap.parse_args(argv)
 
     if not os.path.isfile(args.gpx):
         die(f"no such file: {args.gpx}")
-    foil = pick_foil(args.foil, known_foils())
-    print(f"Foil: {foil}", file=sys.stderr)
-    if args.dry_run:
-        return
 
     # Ask up front so the rest can run unattended.
     message = args.message
@@ -97,7 +70,8 @@ def main(argv=None):
         csv_path = os.path.join(tmp, "activity.csv")
         gpx_filter.main([args.gpx, "-o", csv_path])
         # import.sql reads these with getenv().
-        env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil)
+        env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
+                   DWP_NEW_FOIL="1" if args.new_foil else "")
         with open(os.path.join(DB_DIR, "import.sql")) as sql:
             run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
 
