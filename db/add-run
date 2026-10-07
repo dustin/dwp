@@ -3,10 +3,10 @@
 
     ./add-run some/run.gpx 688 -m "Light Maliko"
 
-Filters the GPX with gpxconvert/gpx_filter.py, runs import.sql (via
-import.sh) with the foil set to whichever known foil matches the second
-argument, then `jj commit` and `jj here main` in this repo.  Pass
---push to finish with `jj push`.
+Filters the GPX with gpxconvert/gpx_filter.py, runs import.sh with
+DWP_FOIL set to whichever known foil matches the second argument and
+DWP_CSV to the filtered CSV (import.sql reads both), then `jj commit`
+and `jj here main` in this repo.  Pass --push to finish with `jj push`.
 
 Run it from db's nix dev shell, which has python3, tzdata, duckdb and
 rclone.
@@ -19,14 +19,12 @@ foil name; it has to pick out exactly one.
 import argparse
 import csv
 import os
-import re
 import subprocess
 import sys
 import tempfile
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_DIR = os.path.dirname(DB_DIR)
-IMPORT_SQL = os.path.join(DB_DIR, "import.sql")
 RUNS_CSV = os.path.join(REPO_DIR, "web", "src", "data", "runs.csv")
 
 # No __pycache__ in gpxconvert, or jj would sweep it into the commit.
@@ -34,8 +32,6 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
 import gpx_filter  # noqa: E402
 
-FOIL_RE = re.compile(r"^\s*(--\s*)?SET VARIABLE foil\s*=\s*'([^']*)'\s*;", re.M)
-CSV_PATH_RE = re.compile(r"^(\s*SET VARIABLE csv_path\s*=\s*)'[^']*'", re.M)
 
 
 def die(msg):
@@ -62,27 +58,9 @@ def pick_foil(query, foils):
     die(f"{query!r} matches more than one foil:\n  " + "\n  ".join(matches))
 
 
-def import_sql_for(foil, csv_path):
-    """import.sql with the foil and CSV path swapped in."""
-    with open(IMPORT_SQL) as f:
-        sql = f.read()
-    if not FOIL_RE.search(sql):
-        die("couldn't find a SET VARIABLE foil line in import.sql")
-    if not CSV_PATH_RE.search(sql):
-        die("couldn't find a SET VARIABLE csv_path line in import.sql")
-    # Comment out whichever foil is active, then set ours ahead of the list.
-    sql = re.sub(r"^(\s*)(SET VARIABLE foil\s*=)", r"\1-- \2", sql, flags=re.M)
-    first = FOIL_RE.search(sql)
-    escaped = foil.replace("'", "''")
-    sql = (sql[:first.start()] + f"SET VARIABLE foil = '{escaped}';\n"
-           + sql[first.start():])
-    return CSV_PATH_RE.sub(lambda m: m.group(1) + "'" + csv_path.replace("'", "''") + "'",
-                           sql, count=1)
-
-
-def run(cmd, cwd=None, stdin=None):
+def run(cmd, cwd=None, env=None):
     print("+ " + " ".join(cmd), file=sys.stderr)
-    r = subprocess.run(cmd, cwd=cwd, stdin=stdin)
+    r = subprocess.run(cmd, cwd=cwd, env=env)
     if r.returncode != 0:
         die(f"{cmd[0]} failed (exit {r.returncode})")
 
@@ -95,35 +73,30 @@ def main(argv=None):
     ap.add_argument("-m", "--message", help="jj commit message (prompted for if omitted)")
     ap.add_argument("--push", action="store_true", help="jj push after committing")
     ap.add_argument("-n", "--dry-run", action="store_true",
-                    help="show the foil and generated SQL, then stop")
+                    help="show which foil matched, then stop")
     args = ap.parse_args(argv)
 
     if not os.path.isfile(args.gpx):
         die(f"no such file: {args.gpx}")
     foil = pick_foil(args.foil, known_foils())
     print(f"Foil: {foil}", file=sys.stderr)
+    if args.dry_run:
+        return
+
+    # Ask up front so the rest can run unattended.
+    message = args.message
+    while not message:
+        try:
+            message = input("Commit message: ").strip()
+        except EOFError:
+            die("no commit message")
 
     with tempfile.TemporaryDirectory(prefix="dwp-import-") as tmp:
         csv_path = os.path.join(tmp, "activity.csv")
-        sql_path = os.path.join(tmp, "import.sql")
-        with open(sql_path, "w") as f:
-            f.write(import_sql_for(foil, csv_path))
-
-        if args.dry_run:
-            with open(sql_path) as f:
-                print(f.read())
-            return
-
-        # Ask up front so the rest can run unattended.
-        message = args.message
-        while not message:
-            try:
-                message = input("Commit message: ").strip()
-            except EOFError:
-                die("no commit message")
-
         gpx_filter.main([args.gpx, "-o", csv_path])
-        run([os.path.join(DB_DIR, "import.sh"), sql_path], cwd=DB_DIR)
+        # import.sql reads these with getenv().
+        env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil)
+        run([os.path.join(DB_DIR, "import.sh")], cwd=DB_DIR, env=env)
 
     run(["jj", "commit", "-m", message], cwd=REPO_DIR)
     run(["jj", "here", "main"], cwd=REPO_DIR)
