@@ -4,13 +4,13 @@ begin;
 
 call lake.set_commit_message('dustin', 'import DW run from filtered csv');
 
-SET VARIABLE csv_path = '/tmp/activity.csv';
+-- The CSV path and foil come from the environment (add-run sets both):
+--   DWP_FOIL='F4 Orca 685' ./import.sh
+SET VARIABLE csv_path = coalesce(nullif(getenv('DWP_CSV'), ''), '/tmp/activity.csv');
 SET VARIABLE tz = 'Pacific/Honolulu';
 SET VARIABLE board = 'Kalama Gator  95.0 lt';
--- SET VARIABLE foil = 'F4 Hammerhead 585';
--- SET VARIABLE foil = 'F4 Hammerhead 688';
-SET VARIABLE foil = 'F4 Orca 685';
--- SET VARIABLE foil = 'F4 Orca 800';
+SET VARIABLE foil = coalesce(nullif(getenv('DWP_FOIL'), ''),
+                             error('set DWP_FOIL to the foil name'));
 
 -- All filtering happens in gpx_filter.py; speed_final_kmh,
 -- lat_filtered/lon_filtered, and distance_cumulative_m are
