@@ -43,6 +43,10 @@ export const categories = [
   // Tracked per region: open-ocean runs would otherwise swamp the rest.
   {key: "max_dist", label: "Furthest from land", color: "#9c6b4e", group: d => d.region,
    value: d => d.max_distance, score: v => Math.round(v / 10), fmt: km},
+  // Consecutive days with at least one dry run (other runs that day don't
+  // break it). The day's first dry run is the one that extends the streak.
+  {key: "dry_streak", label: "Dry run streak", color: "#b07aa1", ties: false,
+   value: (d, ctx) => ctx.dryStreak.get(d), score: v => v, fmt: v => `${v} day${v === 1 ? "" : "s"}`},
   // Not a best, a milestone: the run that carried the odometer past it.
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
@@ -52,13 +56,14 @@ export const categories = [
 // Walk runs in time order, tracking the best so far in each category.
 // Newest first.
 export function computeAchievements(allRuns) {
+  const ctx = {dryStreak: dryStreaks(allRuns)};
   const best = new Map();
   const out = [];
   for (const run of d3.sort(allRuns.filter(d => d.has_track), d => d.ts)) {
     const records = [];
     for (const c of categories) {
       if (c.eligible && !c.eligible(run)) continue;
-      const v = c.value(run);
+      const v = c.value(run, ctx);
       if (v == null || !Number.isFinite(v) || v <= 0) continue;
       const group = c.group?.(run);
       const k = group == null ? c.key : `${c.key}:${group}`;
@@ -70,4 +75,18 @@ export function computeAchievements(allRuns) {
     if (records.length) out.push({run, records});
   }
   return out.reverse();
+}
+
+// The dry streak (in days) as of each day's first dry run.
+function dryStreaks(allRuns) {
+  const streaks = new Map();
+  let lastDay = null, streak = 0;
+  for (const run of d3.sort(allRuns.filter(d => d.dry), d => d.ts)) {
+    const day = d3.timeDay(run.ts);
+    if (+day === +lastDay) continue;
+    streak = lastDay && +d3.timeDay.offset(lastDay, 1) === +day ? streak + 1 : 1;
+    lastDay = day;
+    streaks.set(run, streak);
+  }
+  return streaks;
 }
