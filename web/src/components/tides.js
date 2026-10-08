@@ -14,8 +14,8 @@ export const STATIONS = {
 // `enough` is the height (ft above MLLW) a spot wants; null for no line.
 // `region` groups spots on the tides page, in this order.
 export const SPOTS = [
-  { name: 'Maʻalaea', region: 'Kīhei', station: 'kihei', enough: 1.0 },
-  { name: 'Kaipukaihina', region: 'Kīhei', station: 'kihei', enough: 1.6 },
+  { name: 'Maʻalaea', region: 'Kīhei', station: 'kihei', enough: null },
+  { name: 'Kaipukaihina', region: 'Kīhei', station: 'kihei', enough: 1.5 },
   { name: 'Ukumehame', region: 'West Side', station: 'kihei', enough: 1.2 },
   { name: 'Guardrails', region: 'West Side', station: 'lahaina', enough: 1.0 },
   { name: 'Kaʻa', region: 'North Shore', station: 'kahului', enough: null },
