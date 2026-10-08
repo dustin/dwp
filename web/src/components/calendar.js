@@ -79,7 +79,7 @@ function month(m, byDay, color, r) {
   const km = d3.sum(runs, d => d.distance_km);
 
   const today = hstDay(new Date());
-  const root = d3.create('svg').attr('viewBox', `0 0 ${w} ${h}`);
+  const root = d3.create('svg').attr('width', w).attr('height', h).attr('viewBox', `0 0 ${w} ${h}`);
   root.append('text').attr('x', 1).attr("y", 17).attr("class", "cal-title").text(d3.utcFormat('%b %Y')(first));
   root.append('text').attr('x', w - 1).attr('y', 17).attr('class', 'cal-sum').attr('text-anchor', 'end')
     .text(runs.length ? `${runs.length} · ${Math.round(km)} km` : '');
