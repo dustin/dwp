@@ -259,15 +259,18 @@ function tideRows(ex) {
       .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([f, km]) => htl.html`
       <div class="nav-row"><span class="region-swatch" style=${`background:${foilColor(f)}`}></span>
         <span class="nav-row-name">${f}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}
-  ${navCard("buoy.html", htl.html`Pauwela Buoy${buoyNow?.primaryTs ? htl.html` <span class="nav-age">${fmt.relativeTime(buoyNow.primaryTs)}</span>` : ""}`, buoyNow?.primary ? htl.html`
-    <div class="buoy-body">
-      <div class="buoy-text">
-        <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${compassPoint(buoyNow.primary.direction)}${
-          buoyNow.primary.surflineKJ == null ? "" : htl.html` <span class="nav-age">${buoyNow.primary.surflineKJ.toFixed(0)} kJ</span>`}</div>
-        ${resize(width => renderSpectrumSparkline(buoyNow.spectrum, {width: Math.min(width, 220), height: 34}))}
-      </div>
-      ${renderMiniRose(buoyNow.spectrum, {size: 60})}
-    </div>` : htl.html`
+  ${buoyNow?.primary ? htl.html`<a class="card nav-card buoy-card" href="buoy.html">
+    <div class="buoy-main">
+      <div class="nav-card-title"><h2>Pauwela Buoy <span class="nav-age">${fmt.relativeTime(buoyNow.primaryTs)}</span></h2></div>
+      <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${compassPoint(buoyNow.primary.direction)}${
+        buoyNow.primary.surflineKJ == null ? "" : htl.html` <span class="nav-age">${buoyNow.primary.surflineKJ.toFixed(0)} kJ</span>`}</div>
+      <div class="buoy-spark">${resize((width, height) => renderSpectrumSparkline(buoyNow.spectrum, {width: Math.min(width, 200), height: Math.max(34, height)}))}</div>
+    </div>
+    <div class="buoy-side">
+      <div class="buoy-rose">${renderMiniRose(buoyNow.spectrum)}</div>
+      <span class="nav-card-arrow">→</span>
+    </div>
+  </a>` : navCard("buoy.html", "Pauwela Buoy", htl.html`
     <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>`)}
   ${navCard("tides.html", "Tides", tidesNow ? htl.html`<div class="nav-rows">${tideRows(tidesNow)}</div>` : htl.html`
     <div class="nav-muted">Today's tides at my spots</div>`)}
@@ -300,9 +303,15 @@ function tideRows(ex) {
   .nav-row-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .nav-rows .tide-ok, .nav-rows .nav-muted { white-space: nowrap; min-width: 5.5em; text-align: right; font-size: 0.8rem; }
   .nav-age { white-space: nowrap; font-size: 0.75rem; font-weight: 400; color: var(--theme-foreground-muted); }
-  .buoy-body { display: flex; align-items: flex-end; gap: 0.6rem; }
-  .buoy-text { flex: 0 1 220px; min-width: 0; }
-  .buoy-body > svg { flex: none; color: var(--theme-foreground); }
+  /* The rose fills whatever height the text column (or the row) gives the
+     card, so it grows on wide cards without making the card taller. */
+  a.nav-card.buoy-card { flex-direction: row; gap: 0.6rem; }
+  .buoy-main { flex: 0 1 200px; min-width: 10.5rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .buoy-spark { flex: 1 1 auto; min-height: 34px; position: relative; }
+  .buoy-spark > div { position: absolute; inset: 0; }
+  .buoy-side { flex: 1 1 0; min-width: 56px; position: relative; }
+  .buoy-rose svg { position: absolute; inset: 0; width: 100%; height: 100%; color: var(--theme-foreground); }
+  .buoy-side .nav-card-arrow { position: absolute; top: 0; right: 0; }
   .tide-ok { color: var(--theme-green, #3ca951); }
 </style>
 

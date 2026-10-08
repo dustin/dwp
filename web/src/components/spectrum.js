@@ -454,7 +454,7 @@ export function renderMiniRose(rows, { size = 64 } = {}) {
   const max = d3.max(totals, d => d.energy) || 1;
   const r = size / 2 - 7;
   const arc = d3.arc().innerRadius(0);
-  const svg = d3.create('svg').attr('width', size).attr('height', size).attr('viewBox', [-size / 2, -size / 2, size, size]);
+  const svg = d3.create('svg').attr('width', size).attr('height', size).attr('viewBox', [-size / 2, -size / 2, size, size]).attr('preserveAspectRatio', 'xMinYMid meet');
   svg.append('circle').attr('r', r).attr('fill', 'none').attr('stroke', 'currentColor').attr('stroke-opacity', 0.2);
   svg.append('g').selectAll('path').data(totals.filter(d => d.energy > 0)).join('path')
     .attr('d', d => arc({ outerRadius: r * Math.sqrt(d.energy / max), startAngle: ((d.deg - step / 2) * Math.PI) / 180, endAngle: ((d.deg + step / 2) * Math.PI) / 180 }))
