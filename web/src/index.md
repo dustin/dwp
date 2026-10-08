@@ -18,6 +18,7 @@ import {foilColorScale} from "./components/foils.js";
 import {responsiveRunsTable, responsive} from "./components/runs-table.js";
 import {computeOdometerCrossings} from "./components/odometer.js";
 import {runCalendar, isReverse} from "./components/calendar.js";
+import {computeAchievements} from "./components/achievements.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -149,6 +150,23 @@ function recordCard(title, run, text, field, fmtRegion) {
   </a>`;
 }
 const byId = new Map(runCsv.map(d => [d.id, d]));
+
+// The newest run that set or matched a record, as a way into the full list.
+const achievements = computeAchievements(runCsv);
+function achievementsCard() {
+  const {run, records} = achievements[0];
+  const route = run.start_beach === run.end_beach ? run.start_beach : `${run.start_beach} → ${run.end_beach}`;
+  return htl.html`<a class="card nav-card ach-card" href="achievements.html">
+    <div class="nav-card-title"><h2>Achievements</h2><span class="nav-card-arrow">→</span></div>
+    <div class="nav-lead">${route}</div>
+    <div class="nav-muted">Latest, ${fmt.relativeTime(run.ts)}</div>
+    <div class="nav-rows">${records.map(r => htl.html`<div class="nav-row">
+      <span class="region-swatch" style=${`background:${r.category.color}`}></span>
+      <span class="nav-row-name">${r.category.label}${r.group ? ` (${r.group})` : ""}</span>
+      <span class="nav-row-value">${r.matched ? "= " : ""}${r.category.fmt(r.value)}</span></div>`)}</div>
+    <div class="nav-muted ach-card-count">${achievements.length} of ${runCsv.filter(d => d.has_track).length} runs set or matched a record</div>
+  </a>`;
+}
 ```
 
 <style>
@@ -163,6 +181,15 @@ const byId = new Map(runCsv.map(d => [d.id, d]));
   .record-context { margin-top: 0.3rem; font-weight: 600; display: flex; align-items: center; gap: 0.4rem; }
   .record-sub { font-size: 0.8rem; color: var(--theme-foreground-muted); }
   .record-others { margin-top: auto; padding-top: 0.5rem; font-size: 0.7rem; color: var(--theme-foreground-muted); font-variant-numeric: tabular-nums; }
+  /* Four records plus the achievements card: five across when there's room
+     for the records not to wrap, otherwise the achievements card takes a
+     row of its own. */
+  @container (min-width: 640px) { .records-grid .ach-card { grid-column: 1 / -1; } .ach-card .nav-rows { max-width: 22rem; } }
+  @container (min-width: 1300px) {
+    .records-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .records-grid .ach-card { grid-column: auto; }
+  }
+  .ach-card-count { margin-top: auto; padding-top: 0.3rem; font-size: 0.7rem; }
   .record-others .region-swatch { width: 0.5rem; height: 0.5rem; min-width: 0.5rem; vertical-align: 0; }
 </style>
 
@@ -193,7 +220,7 @@ const byId = new Map(runCsv.map(d => [d.id, d]));
 
 <div class="stat-row-label">Records</div>
 
-<div class="grid grid-cols-4" style="grid-auto-rows: auto;">
+<div class="grid grid-cols-4 records-grid" style="grid-auto-rows: auto;">
   ${recordCard("Max Speed", byId.get(totals.max_speed_id), `${totals.max_speed.toFixed(1)} kph`,
     "max_speed", {key: "max_speed_kmh", fmt: d => d.max_speed_kmh.toFixed(1)})}
   ${recordCard("Best 1k Pace", byId.get(totals.max_speed_1k_id), fmt.pace(totals.max_speed_1k),
@@ -202,6 +229,7 @@ const byId = new Map(runCsv.map(d => [d.id, d]));
     "longest_seg", {key: "longest_segment_distance", fmt: d => (d.longest_segment_distance / 1000).toFixed(1)})}
   ${recordCard("Furthest From Land", byId.get(totals.max_dist_id), `${(totals.max_dist / 1000).toFixed(1)} km`,
     "max_dist", {key: "max_distance", fmt: d => (d.max_distance / 1000).toFixed(1)})}
+  ${achievementsCard()}
 </div>
 
 ```js
