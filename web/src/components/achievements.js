@@ -54,7 +54,8 @@ export const categories = [
 ];
 
 // Walk runs in time order, tracking the best so far in each category.
-// Newest first.
+// Newest first. Each record links to the record it beat or matched
+// (prevRecord) and, once beaten, the record that beat it (beatenBy).
 export function computeAchievements(allRuns) {
   const ctx = {dryStreak: dryStreaks(allRuns)};
   const best = new Map();
@@ -67,10 +68,17 @@ export function computeAchievements(allRuns) {
       if (v == null || !Number.isFinite(v) || v <= 0) continue;
       const group = c.group?.(run);
       const k = group == null ? c.key : `${c.key}:${group}`;
-      const prev = best.get(k);
+      const prevRecord = best.get(k);
+      const prev = prevRecord?.value;
       const delta = prev == null ? 1 : c.score(v) - c.score(prev);
-      if (delta > 0) best.set(k, v);
-      if (delta > 0 || (delta === 0 && c.ties !== false)) records.push({category: c, group, value: v, prev, matched: delta === 0});
+      if (delta > 0 || (delta === 0 && c.ties !== false)) {
+        const r = {category: c, group, value: v, prev, matched: delta === 0, run, prevRecord};
+        records.push(r);
+        if (delta > 0) {
+          if (prevRecord) prevRecord.beatenBy = r;
+          best.set(k, r);
+        }
+      }
     }
     if (records.length) out.push({run, records});
   }

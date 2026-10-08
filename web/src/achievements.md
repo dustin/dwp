@@ -63,11 +63,40 @@ const route = d => htl.html`<span style=${`color: ${beachColor(d.start_beach)}`}
 const holds = ({category: c, group, value}) =>
   c.score(value) === c.score(snapshots.at(-1).best.get(`${c.key}:${group ?? ""}`).value);
 
+// How long a record stood, in rough human units.
+const heldFor = (from, to) => {
+  const days = Math.round((to - from) / 864e5);
+  return days < 1 ? "under a day" : days < 60 ? `${days} day${days === 1 ? "" : "s"}`
+    : days < 730 ? `${Math.round(days / 30.4)} months` : `${(days / 365.25).toFixed(1)} years`;
+};
+const recordRef = r => `${r.category.fmt(r.value)} on ${shortDate(r.run.ts)} (${r.run.start_beach}${
+  r.run.end_beach !== r.run.start_beach ? ` → ${r.run.end_beach}` : ""})`;
+
+// Hover text: what this record replaced and how long that stood, and what
+// happened to this one after.
+const badgeTitle = (r, current) => {
+  const lines = [];
+  const p = r.prevRecord;
+  if (p) lines.push(r.matched
+    ? `Matched ${recordRef(p)}, the record for ${heldFor(p.run.ts, r.run.ts)} by then`
+    : `Beat ${recordRef(p)}, which stood ${heldFor(p.run.ts, r.run.ts)}`);
+  else lines.push("First in this category");
+  const now = new Date();
+  if (r.matched) {
+    if (!current) lines.push(`Beaten by ${recordRef(p.beatenBy)}`);
+  } else if (r.beatenBy) {
+    lines.push(`Stood ${heldFor(r.run.ts, r.beatenBy.run.ts)}, until ${recordRef(r.beatenBy)}`);
+  } else {
+    lines.push(`Still the record, ${heldFor(r.run.ts, now)} so far`);
+  }
+  return lines.join("\n");
+};
+
 const badge = r => {
   const {category: c, group, value, prev, matched} = r;
   const current = holds(r);
   return htl.html`<span class=${`ach-badge${matched ? " matched" : ""}`} style=${`--badge: ${c.color}`}
-    title=${current ? "Still the record" : "Since beaten"}>
+    title=${badgeTitle(r, current)}>
   ${current ? htl.html`<span class="ach-star">★</span>` : ""}${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">${matched ? "matched" : `was ${c.fmt(prev)}`}</span>` : ""}</span>`;
 };
 
