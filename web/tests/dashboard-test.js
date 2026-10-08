@@ -148,7 +148,7 @@ async function runTests() {
   // Find all links on the page
   const links = await page.evaluate(baseUrl => {
     return Array.from(document.querySelectorAll('a[href]'))
-      .map(a => a.href)
+      .map(a => new URL(a.getAttribute('href'), document.baseURI).href) // SVG <a> has no string .href
       .filter(
         href => href.startsWith(baseUrl) && !href.includes('#') // Skip anchor links
       );
@@ -183,7 +183,7 @@ async function runTests() {
         console.log(`  ✓ ${link} loaded successfully`);
         pageLinks = await linkPage.evaluate(baseUrl => {
           return Array.from(document.querySelectorAll('a[href]'))
-            .map(a => a.href)
+            .map(a => new URL(a.getAttribute('href'), document.baseURI).href) // SVG <a> has no string .href
             .filter(href => href.startsWith(baseUrl) && !href.includes('#'));
         }, BASE_URL);
       }
