@@ -111,7 +111,7 @@ function strip(points, { onSelect }) {
 // touchstart on its container, so phones never send markers a click;
 // pointer events still arrive. A drag that starts on a marker pans the map
 // and isn't a tap.
-function onMarkerTap(el, onTap) {
+export function onMarkerTap(el, onTap) {
   let down = null;
   el.addEventListener('pointerdown', event => {
     down = { x: event.clientX, y: event.clientY };
@@ -124,9 +124,12 @@ function onMarkerTap(el, onTap) {
 }
 
 // A callout as a map marker: its emoji on a white badge, with a tail
-// pointing down at the spot.
-function calloutMarker(callout, onTap) {
-  const el = html`<button class="track-callout" type="button" aria-label=${callout.text}>${callout.icon}</button>`;
+// pointing down at the spot. `callout.run` (0 or 1), when set, picks a
+// run-colored badge variant for the compare viewer; plain callouts (no
+// `run`) render as before.
+export function calloutMarker(callout, onTap) {
+  const cls = callout.run === 1 ? 'track-callout track-callout-run2' : callout.run === 0 ? 'track-callout track-callout-run1' : 'track-callout';
+  const el = html`<button class=${cls} type="button" aria-label=${callout.text}>${callout.icon}</button>`;
   onMarkerTap(el, onTap);
   return new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([+callout.lon, +callout.lat]);
 }
@@ -134,7 +137,7 @@ function calloutMarker(callout, onTap) {
 // The buoy's swell: a dot with an arrow per component, pointing the way
 // the swell travels and as long as it is tall (relative to the primary).
 // rotationAlignment 'map' turns the arrows with the map.
-function buoyMarker({ lon, lat, summary }, onTap) {
+export function buoyMarker({ lon, lat, summary }, onTap) {
   const color = '#0ea5e9';
   const swells = [summary.primary, ...summary.components].filter(Boolean);
   const length = d3.scaleLinear([0, summary.primary.height], [0, 60]).clamp(true);
@@ -154,15 +157,15 @@ function buoyMarker({ lon, lat, summary }, onTap) {
 }
 
 // The wind rose in its own SVG, sized to what it drew.
-function windRoseInset(wind, width) {
+export function windRoseInset(wind, width, title = 'Wind (avg)') {
   const scale = windRoseScale(width);
   const el = svg`<svg class="track-wind-rose"></svg>`;
   const sel = d3.select(el);
-  addWindRose(d3, sel, wind, { x: 0, y: 0, title: 'Wind (avg)', scheme: WIND_SPEED_COLORS, scale });
+  addWindRose(d3, sel, wind, { x: 0, y: 0, title, scheme: WIND_SPEED_COLORS, scale });
   return el;
 }
 
-function fitToContents(el) {
+export function fitToContents(el) {
   const box = el.getBBox();
   if (!box.width) return;
   const pad = 4;
@@ -171,13 +174,13 @@ function fitToContents(el) {
   el.setAttribute('height', box.height + pad * 2);
 }
 
-const lineFeature = (a, b) => ({
+export const lineFeature = (a, b) => ({
   type: 'Feature',
   properties: {},
   geometry: { type: 'LineString', coordinates: [a, b] },
 });
 
-const emptyCollection = { type: 'FeatureCollection', features: [] };
+export const emptyCollection = { type: 'FeatureCollection', features: [] };
 
 // `meta` is a runs.csv row (fetchMeta), `points` its track (fetchRun).
 // `invalidation` is Framework's promise for cleaning up when the cell

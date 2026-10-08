@@ -52,6 +52,8 @@ const buoyFetches = [runMeta1, runMeta2].map(m =>
 
 # Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
 
+${html`<a href="comparetrack.html?id1=${id1}&id2=${id2}">Open map</a>`}
+
 ${Object.assign(html`<button title="Swap which run is first (and which color each gets)">⇄ Swap</button>`, {
   // A new page load with id1/id2 exchanged; Back undoes it.
   onclick: () => {
