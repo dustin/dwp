@@ -65,8 +65,8 @@ function hideTip() {
   if (tipEl) tipEl.style.display = 'none';
 }
 
-const CELL = 26;
-const HEAD = 34;
+const CELL = 38;
+const HEAD = 46;
 
 function month(m, byDay, color, r) {
   const y = m.getUTCFullYear(), mo = m.getUTCMonth();
@@ -80,11 +80,11 @@ function month(m, byDay, color, r) {
 
   const today = hstDay(new Date());
   const root = d3.create('svg').attr('viewBox', `0 0 ${w} ${h}`);
-  root.append('text').attr('x', 1).attr('y', 13).attr('class', 'cal-title').text(d3.utcFormat('%b %Y')(first));
-  root.append('text').attr('x', w - 1).attr('y', 13).attr('class', 'cal-sum').attr('text-anchor', 'end')
+  root.append('text').attr('x', 1).attr("y", 17).attr("class", "cal-title").text(d3.utcFormat('%b %Y')(first));
+  root.append('text').attr('x', w - 1).attr('y', 17).attr('class', 'cal-sum').attr('text-anchor', 'end')
     .text(runs.length ? `${runs.length} · ${Math.round(km)} km` : '');
   'SMTWTFS'.split('').forEach((c, i) =>
-    root.append('text').attr('x', i * CELL + CELL / 2).attr('y', HEAD - 6).attr('class', 'cal-dow').text(c));
+    root.append('text').attr('x', i * CELL + CELL / 2).attr('y', HEAD - 8).attr('class', 'cal-dow').text(c));
 
   days.forEach((d, i) => {
     const k = offset + i, cx = (k % 7) * CELL, cy = HEAD + Math.floor(k / 7) * CELL;
@@ -95,7 +95,7 @@ function month(m, byDay, color, r) {
     g.append('rect').attr('x', cx + 1).attr('y', cy + 1).attr('width', CELL - 2).attr('height', CELL - 2)
       .attr('rx', 3).attr('class', n ? 'cal-day on' : 'cal-day');
     if (!n) {
-      g.append('text').attr('x', cx + CELL / 2).attr('y', cy + CELL / 2 + 3).attr('class', 'cal-num').text(d.getUTCDate());
+      g.append('text').attr('x', cx + CELL / 2).attr('y', cy + CELL / 2 + 4).attr('class', 'cal-num').text(d.getUTCDate());
       return;
     }
     // One run centered; several spread across the cell.
@@ -107,7 +107,7 @@ function month(m, byDay, color, r) {
     dayRuns.slice(0, 4).forEach((run, j) => {
       const [fx, fy] = spots[j];
       const x = cx + fx * CELL, yy = cy + fy * CELL;
-      let rr = Math.max(2, r(run.distance_km) * scale);
+      let rr = Math.max(4, r(run.distance_km) * scale);
       const a = g.append('a').attr('href', `/run.html?id=${run.id}`)
         .on('pointerenter', e => showTip(e, run)).on('pointerleave', hideTip);
       if (run.dry) rr = Math.max(rr, isReverse(run) ? 6 : 4.5);

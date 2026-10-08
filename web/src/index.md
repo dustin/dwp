@@ -380,19 +380,19 @@ ${runCalendar(runCsv, regionColor)}
 </div>
 
 <style>
-.cal-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 0.85rem; margin-bottom: 1rem; align-items: center; }
+.cal-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 1rem; margin-bottom: 1rem; align-items: center; }
 .cal-legend > span { display: inline-flex; gap: 0.35rem; align-items: center; }
-.cal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(135px, 1fr)); gap: 1.25rem 1rem; }
-.cal-month svg { display: block; overflow: visible; width: 100%; max-width: 260px; height: auto; }
-.cal-title { font-size: 12px; font-weight: 600; fill: var(--theme-foreground); }
-.cal-sum { font-size: 10px; fill: var(--theme-foreground-muted); }
-.cal-dow { font-size: 9px; text-anchor: middle; fill: var(--theme-foreground-faint); }
-.cal-num { font-size: 8px; text-anchor: middle; fill: var(--theme-foreground-faint); }
+.cal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 1.75rem 1.5rem; }
+.cal-month svg { display: block; overflow: visible; width: 100%; max-width: 340px; height: auto; }
+.cal-title { font-size: 16px; font-weight: 600; fill: var(--theme-foreground); }
+.cal-sum { font-size: 13px; fill: var(--theme-foreground-muted); }
+.cal-dow { font-size: 12px; text-anchor: middle; fill: var(--theme-foreground-faint); }
+.cal-num { font-size: 12px; text-anchor: middle; fill: var(--theme-foreground-faint); }
 .cal-day { fill: var(--theme-foreground-faintest); }
 .cal-day.on { fill: none; }
 .cal-rev { stroke: var(--theme-foreground); stroke-width: 1; }
 .cal-dry { fill: white; pointer-events: none; }
-.cal-tip { position: absolute; font-family: var(--sans-serif); display: none; z-index: 10; pointer-events: none; max-width: 260px; padding: 0.5rem 0.65rem; font-size: 12px; line-height: 1.4;
+.cal-tip { position: absolute; font-family: var(--sans-serif); display: none; z-index: 10; pointer-events: none; max-width: 300px; padding: 0.6rem 0.75rem; font-size: 14px; line-height: 1.4;
   background: var(--theme-background-alt); color: var(--theme-foreground); border: 1px solid var(--theme-foreground-faint); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .cal-tip-when { color: var(--theme-foreground-muted); }
 .cal-tip-route { font-weight: 600; }
