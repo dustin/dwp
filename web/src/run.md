@@ -179,6 +179,34 @@ const [onFoil, offFoil] = _.unzip(
 );
 
 const segments = tl.computeSegments(runCsv);
+
+// Plot evaluates a tip's title for every point up front, so describe each
+// segment once and share the text across its points.
+const segmentDescs = new Map();
+function segmentTip(d) {
+  const seg = segments.find(s => d.ts >= s.start && d.ts <= s.end);
+  if (!seg) return null;
+  if (!segmentDescs.has(seg)) {
+    const speeds = seg.data.map(d => d.speed);
+    const hrs = seg.data.map(d => d.hr).filter(h => h !== null);
+    const [mindist, maxdist] = d3.extent(seg.data.map(d => d.distance));
+    const dist = maxdist - mindist;
+    const landdist = d3.mean(seg.data, d => d.distance_to_land);
+    segmentDescs.set(seg, [
+      `${seg.onFoil ? 'On' : 'Off'} foil segment`,
+      `Duration: ${fmt.timeDiff(seg.start, seg.end)}`,
+      `Distance Traveled: ${fmt.distanceM(dist)}`,
+      `Nearest Land: ${fmt.distanceM(landdist)}`,
+      `Max speed: ${fmt.speed(d3.max(speeds))}`,
+      `Average speed: ${fmt.speed(d3.mean(speeds))}`,
+      `Pace: ${fmt.pace(d3.mean(speeds))}`,
+      `Average HR: ${fmt.hr(d3.mean(hrs))}`,
+      `Max HR: ${fmt.hr(d3.max(hrs))}`,
+      `Min HR: ${fmt.hr(d3.min(hrs))}`
+    ].join('\n'));
+  }
+  return segmentDescs.get(seg);
+}
 ```
 
 <div class="card">${
@@ -197,28 +225,7 @@ const segments = tl.computeSegments(runCsv);
             Plot.tip(runCsv, Plot.pointer({
                 x: "ts",
                 y: "speed", fontSize: 15,
-                title: d => {
-                    const seg = segments.find(s => d.ts >= s.start && d.ts <= s.end);
-                    if (!seg) return null;
-                    const speeds = seg.data.map(d => d.speed);
-                    const hrs = seg.data.map(d => d.hr).filter(h => h !== null);
-                    const [mindist, maxdist] = d3.extent(seg.data.map(d => d.distance));
-                    const dist = maxdist - mindist;
-                    const landdist = d3.mean(seg.data, d => d.distance_to_land);
-                    const desc = [
-                        `${seg.onFoil ? 'On' : 'Off'} foil segment`,
-                        `Duration: ${fmt.timeDiff(seg.start, seg.end)}`,
-                        `Distance Traveled: ${fmt.distanceM(dist)}`,
-                        `Nearest Land: ${fmt.distanceM(landdist)}`,
-                        `Max speed: ${fmt.speed(d3.max(speeds))}`,
-                        `Average speed: ${fmt.speed(d3.mean(speeds))}`,
-                        `Pace: ${fmt.pace(d3.mean(speeds))}`,
-                        `Average HR: ${fmt.hr(d3.mean(hrs))}`,
-                        `Max HR: ${fmt.hr(d3.max(hrs))}`,
-                        `Min HR: ${fmt.hr(d3.min(hrs))}`
-                    ];
-                    return desc.join('\n');
-                }
+                title: segmentTip
             }))
         ]
     }))
@@ -433,7 +440,7 @@ resize((width) => {
     title: "Heart Rate vs. Speed",
     color: { legend: true },
     width,
-    x: {tickFormat: fmt.clock, interval: 1},
+    x: {tickFormat: fmt.clock},
     y: { label: "Speed (knots)" },
     marks: [
     Plot.areaY(runCsv, { x: "ts", y: d => d.speed <= FOIL_THRESHOLD_KPH ? d.speed : null, fill: "#500", stroke: "none" }),

@@ -8,7 +8,7 @@ toc: true
 
 ```js
 import {renderChord} from "./components/chord.js";
-import {renderCrashes} from "./components/map.js";
+import {renderCrashes} from "./components/crash-map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, dryLimit} from "./components/data.js";

@@ -425,3 +425,46 @@ export async function fetchBuoySnapshot(ts, site = 'pauwela', { windowHours = 3 
     primaryTs: reading?.ts ?? null,
   };
 }
+
+// Mid-run buoy snapshots exported by db/export-runs.sql (run_buoy.csv): one
+// row per spectrum bin, with the run's nearest NDBC report repeated on each.
+// Returns a Map of run id -> snapshot shaped like fetchBuoySnapshot's (null
+// when the export found no buoy data for that run). Runs missing from the
+// map weren't exported yet; callers can fall back to fetchBuoySnapshot.
+export async function runBuoySnapshots(file, runs) {
+  const midpoints = new Map(runs.map(meta => [meta.id, runMidpoint(meta)]));
+  const rows = await file.csv();
+  const snapshots = new Map();
+  for (const [dwid, group] of d3.group(rows, d => d.dwid)) {
+    if (!midpoints.has(dwid)) continue;
+    const first = group[0];
+    const spectrumTs = first.spectrum_ts ? new Date(first.spectrum_ts) : null;
+    const primaryTs = first.primary_ts ? new Date(first.primary_ts) : null;
+    if (!spectrumTs && !primaryTs) {
+      snapshots.set(dwid, null);
+      continue;
+    }
+    snapshots.set(dwid, {
+      ts: midpoints.get(dwid),
+      spectrumTs,
+      sampleTs: first.sample_ts ? new Date(first.sample_ts) : null,
+      spectrum: spectrumTs
+        ? group.map(d => ({ ts: spectrumTs, freq: +d.freq, energy: +d.energy, direction: +d.direction, r1: +d.r1 }))
+        : [],
+      primary: primaryTs
+        ? parseSwellPartitionRow({
+            ts: first.primary_ts,
+            rank: 1,
+            period: first.primary_period,
+            direction: first.primary_direction,
+            spread: '',
+            height: first.primary_height,
+            energy: first.primary_energy,
+            surfline_kj: first.primary_surfline_kj,
+          })
+        : null,
+      primaryTs,
+    });
+  }
+  return snapshots;
+}

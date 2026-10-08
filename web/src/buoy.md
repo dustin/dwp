@@ -18,7 +18,7 @@ Conditions from the Pauwela buoy (NDBC 51205), off Maui's North Shore: the lates
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
+import {fetchMeta, runBuoySnapshots, fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 import {renderSpectrumHistogram, renderSpectrumWaterfall, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions, spectrumSimilarity, swellKJShares} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
@@ -187,8 +187,13 @@ const compareSnapshot = compareTime ? await fetchBuoySnapshot(compareTime) : nul
 
 ```js
 const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
+const buoyRuns = allRuns.filter(hasBuoyData);
+// Exported alongside runs.csv; only runs newer than the export fetch live.
+const exportedSnapshots = await runBuoySnapshots(FileAttachment("data/run_buoy.csv"), buoyRuns);
 const runSnapshots = await Promise.all(
-  allRuns.filter(hasBuoyData).map(meta => fetchBuoySnapshot(runMidpoint(meta), buoySite(meta)).then(snapshot => ({meta, snapshot})))
+  buoyRuns.map(meta => exportedSnapshots.has(meta.id)
+    ? {meta, snapshot: exportedSnapshots.get(meta.id)}
+    : fetchBuoySnapshot(runMidpoint(meta), buoySite(meta)).then(snapshot => ({meta, snapshot})))
 );
 ```
 

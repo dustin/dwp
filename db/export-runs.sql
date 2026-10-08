@@ -54,6 +54,67 @@ WHERE
 ORDER BY
     ts) to '/Users/dustin/prog/downwind.pro/web/src/data/crashes.csv';
 
+-- Run buoy snapshots
+--
+-- Buoy conditions at each North Shore run's midpoint
+--
+-- The buoy page compares every North Shore run against current conditions.
+-- Fetching each run's whole day of buoy data in the browser takes a request
+-- pair per run, so export just the reading nearest each run's midpoint here:
+-- the nearest spectrum (one row per frequency bin) and the nearest NDBC
+-- standard report (swell_partition rank 1), each within 3 hours. A run with
+-- neither still gets one row of nulls, so the page can tell "no buoy data"
+-- from "not exported yet". Mirrors fetchBuoySnapshot in web/src/components/data.js.
+
+copy (
+  with runs as (
+    select id as dwid, to_timestamp(ts + duration_sec / 2) as mid
+    from dwlist_resolved
+    where region = 'Maui North Shore'
+      -- BUOY_DATA_START in web/src/components/data.js
+      and to_timestamp(ts) >= TIMESTAMPTZ '2026-07-22 00:00:00-10'
+  ),
+  slots as (select distinct ts from swell_spectrum where site = 'pauwela'),
+  reports as (select * from swell_partition where site = 'pauwela' and rank = 1),
+  nearest_spectrum as (
+    select r.dwid, arg_min(s.ts, (abs(epoch(s.ts) - epoch(r.mid)), s.ts)) as spectrum_ts
+    from runs r
+    join slots s on s.ts between r.mid - interval 3 hour and r.mid + interval 3 hour
+    group by r.dwid
+  ),
+  nearest_report as (
+    select r.dwid, arg_min(p, (abs(epoch(p.ts) - epoch(r.mid)), p.ts)) as p
+    from runs r
+    join reports p on p.ts between r.mid - interval 3 hour and r.mid + interval 3 hour
+    group by r.dwid
+  )
+  select
+    r.dwid,
+    ns.spectrum_ts,
+    -- When that spectrum was sampled: NDBC stamps it 4 minutes after the :56
+    -- report, but until that report is out the slot holds the :26 sample
+    -- (spectrumSampleTime in data.js).
+    case
+      when ns.spectrum_ts is null then null
+      when not exists (select 1 from reports q where q.ts = ns.spectrum_ts - interval 4 minute)
+       and exists (select 1 from reports q where q.ts = ns.spectrum_ts - interval 34 minute)
+        then ns.spectrum_ts - interval 34 minute
+      else ns.spectrum_ts - interval 4 minute
+    end as sample_ts,
+    s.freq, s.energy, s.direction, s.r1,
+    nr.p.ts as primary_ts,
+    nr.p.period as primary_period,
+    nr.p.direction as primary_direction,
+    nr.p.height as primary_height,
+    nr.p.energy as primary_energy,
+    nr.p.surfline_kj as primary_surfline_kj
+  from runs r
+  left join nearest_spectrum ns using (dwid)
+  left join swell_spectrum s on s.site = 'pauwela' and s.ts = ns.spectrum_ts
+  left join nearest_report nr using (dwid)
+  order by r.dwid, s.freq
+) to '/Users/dustin/prog/downwind.pro/web/src/data/run_buoy.csv';
+
 -- The List
 
 COPY (

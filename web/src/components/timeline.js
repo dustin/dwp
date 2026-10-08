@@ -28,6 +28,9 @@ export function tl(data, title, opts, xField, yField, lineOpts, dotOpts) {
           opacity: d => (d.dry ? 0.8 : 0.2),
           symbol: d => (d.dry ? 'star' : 'circle'),
           href: d => `/run.html?id=${encodeURIComponent(d.id)}`,
+          // A tip shows the title on hover; without it Plot adds an SVG
+          // <title> to every dot, which bloats the DOM on long timelines.
+          ...(dotOpts?.title ? { tip: true } : {}),
           ...dotOpts,
         }),
       ],
@@ -292,6 +295,9 @@ export function tlRegion(data, title, opts, xField, yField, color, dotOpts = {})
           fillOpacity: d => (d.dry ? 0.9 : 0.45),
           symbol: d => (d.dry ? 'star' : 'circle'),
           href: d => `/run.html?id=${encodeURIComponent(d.id)}`,
+          // A tip shows the title on hover; without it Plot adds an SVG
+          // <title> to every dot, which bloats the DOM on long timelines.
+          ...(dotOpts?.title ? { tip: true } : {}),
           ...dotOpts,
         }),
         Plot.lineY(sorted, Plot.windowY({ k: 25, reduce: 'median', anchor: 'middle' }, {
