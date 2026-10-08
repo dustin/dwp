@@ -264,7 +264,7 @@ function tideRows(ex) {
       <div class="buoy-text">
         <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${compassPoint(buoyNow.primary.direction)}${
           buoyNow.primary.surflineKJ == null ? "" : htl.html` <span class="nav-age">${buoyNow.primary.surflineKJ.toFixed(0)} kJ</span>`}</div>
-        ${resize(width => renderSpectrumSparkline(buoyNow.spectrum, {width, height: 34}))}
+        ${resize(width => renderSpectrumSparkline(buoyNow.spectrum, {width: Math.min(width, 220), height: 34}))}
       </div>
       ${renderMiniRose(buoyNow.spectrum, {size: 60})}
     </div>` : htl.html`
@@ -301,7 +301,7 @@ function tideRows(ex) {
   .nav-rows .tide-ok, .nav-rows .nav-muted { white-space: nowrap; min-width: 5.5em; text-align: right; font-size: 0.8rem; }
   .nav-age { white-space: nowrap; font-size: 0.75rem; font-weight: 400; color: var(--theme-foreground-muted); }
   .buoy-body { display: flex; align-items: flex-end; gap: 0.6rem; }
-  .buoy-text { flex: 1 1 auto; min-width: 0; }
+  .buoy-text { flex: 0 1 220px; min-width: 0; }
   .buoy-body > svg { flex: none; color: var(--theme-foreground); }
   .tide-ok { color: var(--theme-green, #3ca951); }
 </style>
