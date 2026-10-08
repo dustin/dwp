@@ -1,6 +1,6 @@
 ---
 theme: dashboard
-title: tides
+title: Maui Tides
 toc: false
 ---
 
@@ -12,7 +12,7 @@ toc: false
   .tide-region { margin: 1.2em 0 0.4em; }
 </style>
 
-# Tides
+# Maui Tides
 
 ```js
 import * as d3 from "npm:d3";
