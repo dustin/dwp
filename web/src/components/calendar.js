@@ -128,5 +128,13 @@ export function runCalendar(runs, color, opts = {}) {
   const keys = [...byDay.keys()].sort();
   const [y0, m0] = keys[0].split('-').map(Number), [y1, m1] = keys[keys.length - 1].split('-').map(Number);
   const months = d3.utcMonths(new Date(Date.UTC(y0, m0 - 1, 1)), new Date(Date.UTC(y1, m1, 1))).reverse();
-  return html`<div class="cal-grid">${months.map(m => month(m, byDay, color, r))}</div>`;
+  // Show only the first row of months until expanded; CSS collapses the
+  // rest, so this works however many months fit across.
+  const grid = html`<div class="cal-grid collapsed">${months.map(m => month(m, byDay, color, r))}</div>`;
+  const button = html`<button class="cal-more">Show all ${months.length} months</button>`;
+  button.onclick = () => {
+    const collapsed = grid.classList.toggle('collapsed');
+    button.textContent = collapsed ? `Show all ${months.length} months` : 'Show fewer';
+  };
+  return html`<div>${grid}${button}</div>`;
 }

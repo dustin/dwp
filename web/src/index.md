@@ -383,6 +383,8 @@ ${runCalendar(runCsv, regionColor)}
 .cal-legend { display: flex; flex-wrap: wrap; gap: 0.4rem 1.2rem; font-size: 1rem; margin-bottom: 1rem; align-items: center; }
 .cal-legend > span { display: inline-flex; gap: 0.35rem; align-items: center; }
 .cal-grid { display: grid; grid-template-columns: repeat(auto-fill, 266px); gap: 1.75rem 1.5rem; }
+.cal-grid.collapsed { grid-template-rows: auto; grid-auto-rows: 0; row-gap: 0; overflow: hidden; }
+.cal-more { margin-top: 0.75rem; font: inherit; font-size: 0.9rem; padding: 0.3rem 0.8rem; cursor: pointer; }
 .cal-month svg { display: block; overflow: visible; max-width: 100%; height: auto; }
 .cal-title { font-size: 16px; font-weight: 600; fill: var(--theme-foreground); }
 .cal-sum { font-size: 13px; fill: var(--theme-foreground-muted); }
