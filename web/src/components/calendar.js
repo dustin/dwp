@@ -1,5 +1,6 @@
 import * as d3 from 'npm:d3';
 import {html} from 'npm:htl';
+import * as fmt from './formatters.js';
 
 const TZ = 'Pacific/Honolulu';
 const dayKey = d3.utcFormat('%Y-%m-%d');
@@ -18,6 +19,50 @@ export function isReverse(d) {
   if (d.region !== 'Kihei') return false;
   if (d.start_lat == null || d.end_lat == null) return false;
   return (d.end_lat - d.start_lat) * 111 >= REVERSE_MIN_KM;
+}
+
+const when = new Intl.DateTimeFormat('en-US', {timeZone: TZ, weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit'});
+
+function star(x, y, R) {
+  const pts = d3.range(10).map(i => {
+    const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? R * 0.42 : R;
+    return `${x + rr * Math.cos(a)},${y + rr * Math.sin(a)}`;
+  });
+  return `M${pts.join('L')}Z`;
+}
+
+function tipHTML(run) {
+  const w = run.wind_data;
+  const tags = [isReverse(run) ? 'reverse' : null, run.dry ? '★ dry' : null].filter(Boolean).join(' · ');
+  return html`<div class="cal-tip-when">${when.format(run.ts)}</div>
+    <div class="cal-tip-route">${run.start_beach} → ${run.end_beach}${tags ? html` <span class="cal-tip-tags">${tags}</span>` : ''}</div>
+    <div>${run.distance_km.toFixed(1)} km in ${fmt.seconds(run.duration_sec)}${run.has_track ? ` · ${(100 * run.pct_dist_on_foil).toFixed(0)}% on foil` : ''}</div>
+    ${run.has_track ? html`<div>top ${run.max_speed_kmh.toFixed(1)} kph${run.max_speed_1k ? ` · best 1k ${fmt.pace(run.max_speed_1k)}` : ''}</div>` : ''}
+    ${w.avg_avg ? html`<div>wind ${fmt.wind(w.avg_avg, w.gust_max, w.avg_dir)}</div>` : ''}
+    <div class="cal-tip-gear">${run.foil}</div>`;
+}
+
+let tipEl = null;
+function tip() {
+  if (!tipEl) {
+    tipEl = document.createElement('div');
+    tipEl.className = 'cal-tip';
+    document.body.appendChild(tipEl);
+  }
+  return tipEl;
+}
+function showTip(event, run) {
+  const t = tip();
+  t.replaceChildren(tipHTML(run));
+  t.style.display = 'block';
+  const b = event.currentTarget.getBoundingClientRect();
+  const left = Math.min(window.innerWidth - t.offsetWidth - 8, Math.max(8, b.left + b.width / 2 - t.offsetWidth / 2));
+  const above = b.top - t.offsetHeight - 8;
+  t.style.left = `${left + window.scrollX}px`;
+  t.style.top = `${(above > 0 ? above : b.bottom + 8) + window.scrollY}px`;
+}
+function hideTip() {
+  if (tipEl) tipEl.style.display = 'none';
 }
 
 const CELL = 26;
@@ -61,14 +106,17 @@ function month(m, byDay, color, r) {
     const scale = n === 1 ? 1 : 0.62;
     dayRuns.slice(0, 4).forEach((run, j) => {
       const [fx, fy] = spots[j];
-      const x = cx + fx * CELL, yy = cy + fy * CELL, rr = Math.max(2, r(run.distance_km) * scale);
-      const a = g.append('a').attr('href', `/run.html?id=${run.id}`);
-      a.append('title').text(`${hstDay(run.ts)} ${run.start_beach} → ${run.end_beach}\n${run.distance_km.toFixed(1)} km${isReverse(run) ? ' · reverse' : ''}`);
+      const x = cx + fx * CELL, yy = cy + fy * CELL;
+      let rr = Math.max(2, r(run.distance_km) * scale);
+      const a = g.append('a').attr('href', `/run.html?id=${run.id}`)
+        .on('pointerenter', e => showTip(e, run)).on('pointerleave', hideTip);
+      if (run.dry) rr = Math.max(rr, isReverse(run) ? 6 : 4.5);
       if (isReverse(run))
         a.append('path').attr('d', `M${x},${yy - rr * 1.35}L${x + rr * 1.2},${yy + rr * 0.8}L${x - rr * 1.2},${yy + rr * 0.8}Z`)
           .attr('fill', color(run.region)).attr('class', 'cal-rev');
       else
         a.append('circle').attr('cx', x).attr('cy', yy).attr('r', rr).attr('fill', color(run.region));
+      if (run.dry) a.append('path').attr('d', star(x, isReverse(run) ? yy + rr * 0.15 : yy, rr * (isReverse(run) ? 0.68 : 0.75))).attr('class', 'cal-dry');
     });
   });
   return html`<div class="cal-month">${root.node()}</div>`;

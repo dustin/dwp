@@ -373,6 +373,7 @@ const outings = d3.rollups(runCsv,
 <div class="cal-legend">
   ${regions.map(r => htl.html`<span><span class="region-swatch" style=${`background:${regionColor(r)}`}></span>${r}</span>`)}
   <span><svg width="14" height="12"><path d="M7,1L13,11L1,11Z" fill="var(--theme-foreground-faint)" stroke="var(--theme-foreground)"/></svg> reverse Kihei run (${runCsv.filter(isReverse).length})</span>
+  <span><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="var(--theme-foreground-faint)"/><path d="M6,1.2L7.1,4.5L10.6,4.5L7.8,6.6L8.8,9.9L6,7.9L3.2,9.9L4.2,6.6L1.4,4.5L4.9,4.5Z" fill="white"/></svg> dry run</span>
   <span class="muted">dot size = distance</span>
 </div>
 ${runCalendar(runCsv, regionColor)}
@@ -390,6 +391,13 @@ ${runCalendar(runCsv, regionColor)}
 .cal-day { fill: var(--theme-foreground-faintest); }
 .cal-day.on { fill: none; }
 .cal-rev { stroke: var(--theme-foreground); stroke-width: 1; }
+.cal-dry { fill: white; pointer-events: none; }
+.cal-tip { position: absolute; font-family: var(--sans-serif); display: none; z-index: 10; pointer-events: none; max-width: 260px; padding: 0.5rem 0.65rem; font-size: 12px; line-height: 1.4;
+  background: var(--theme-background-alt); color: var(--theme-foreground); border: 1px solid var(--theme-foreground-faint); border-radius: 6px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
+.cal-tip-when { color: var(--theme-foreground-muted); }
+.cal-tip-route { font-weight: 600; }
+.cal-tip-tags { font-weight: 400; color: var(--theme-foreground-muted); }
+.cal-tip-gear { color: var(--theme-foreground-muted); }
 </style>
 
 ## On Dry Runs
