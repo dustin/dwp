@@ -89,6 +89,8 @@ Pipeline stages, in order:
 Run with --help for the full list of tunable thresholds.
 """
 
+from __future__ import annotations
+
 import argparse
 import bisect
 import csv
