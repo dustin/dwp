@@ -604,10 +604,6 @@ responsive(htl, Inputs.table(odometerCrossings, {
 }), htl.html`<div class="runs-cards">${odometerCrossings.map(odometerCard)}</div>`)
 }</div>
 
-## And More…
-
-See all my <a href="achievements.html">achievements</a>.
-
 ## Paddling
 
 The number of times I've had to paddle up on a run has changed quite a bit from
