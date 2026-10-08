@@ -418,3 +418,47 @@ export function readingNear(rows, ts) {
   const closest = d3.least(byTs.keys(), t => Math.abs(t - target));
   return closest == null ? [] : byTs.get(closest);
 }
+
+// Sparkline-sized spectrum for summary cards: the same direction-colored
+// bins as renderSpectrumHistogram, with only a few period ticks.
+export function renderSpectrumSparkline(rows, { width = 200, height = 48 } = {}) {
+  if (!rows || rows.length === 0) return null;
+  // Out to 4s: shorter is chop, and on this scale it squeezes the swell.
+  const domain = [FREQ_DOMAIN[0], 0.25];
+  const bins = withBinEdges(rows).filter(d => d.hi > domain[0] && d.lo < domain[1]);
+  return Plot.plot({
+    width,
+    height,
+    marginTop: 2,
+    marginLeft: 2,
+    marginRight: 2,
+    marginBottom: 11,
+    style: { fontSize: '8px' },
+    x: { domain, ticks: [1 / 20, 1 / 12, 1 / 8, 1 / 6, 1 / 5], tickFormat: f => `${Math.round(1 / f)}s`, tickSize: 2, label: null },
+    y: { axis: null },
+    marks: [
+      Plot.rectY(bins, { x1: 'lo', x2: 'hi', y: 'energy', fill: d => directionColor(d.direction), insetLeft: 0.25, insetRight: 0.25 }),
+      Plot.ruleY([0], { strokeOpacity: 0.3 }),
+    ],
+  });
+}
+
+// Tiny rose: spectral energy summed into 16 sectors by the direction it
+// comes from, each wedge's length the square root of its share.
+export function renderMiniRose(rows, { size = 64 } = {}) {
+  if (!rows || rows.length === 0) return null;
+  const sectors = 16, step = 360 / sectors;
+  const bins = withBinEdges(rows).filter(d => d.hi > FREQ_DOMAIN[0] && d.lo < FREQ_DOMAIN[1]);
+  const totals = d3.range(sectors).map(i => ({ deg: i * step, energy: 0 }));
+  for (const d of bins) totals[Math.round((((d.direction % 360) + 360) % 360) / step) % sectors].energy += d.energy * (d.hi - d.lo);
+  const max = d3.max(totals, d => d.energy) || 1;
+  const r = size / 2 - 7;
+  const arc = d3.arc().innerRadius(0);
+  const svg = d3.create('svg').attr('width', size).attr('height', size).attr('viewBox', [-size / 2, -size / 2, size, size]);
+  svg.append('circle').attr('r', r).attr('fill', 'none').attr('stroke', 'currentColor').attr('stroke-opacity', 0.2);
+  svg.append('g').selectAll('path').data(totals.filter(d => d.energy > 0)).join('path')
+    .attr('d', d => arc({ outerRadius: r * Math.sqrt(d.energy / max), startAngle: ((d.deg - step / 2) * Math.PI) / 180, endAngle: ((d.deg + step / 2) * Math.PI) / 180 }))
+    .attr('fill', d => directionColor(d.deg));
+  svg.append('text').attr('y', -r - 1).attr('text-anchor', 'middle').attr('font-size', 8).attr('fill', 'currentColor').attr('fill-opacity', 0.6).text('N');
+  return svg.node();
+}

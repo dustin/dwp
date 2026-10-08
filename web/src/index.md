@@ -205,7 +205,7 @@ const byId = new Map(runCsv.map(d => [d.id, d]));
 
 ```js
 import {fetchBuoySnapshot} from "./components/data.js";
-import {formatDirection} from "./components/spectrum.js";
+import {compassPoint, formatDirection, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, STATIONS, fetchExtremes, heightAt, crossings} from "./components/tides.js";
 
 // Live bits for the subpage cards; each card still renders if its fetch fails.
@@ -259,10 +259,15 @@ function tideRows(ex) {
       .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([f, km]) => htl.html`
       <div class="nav-row"><span class="region-swatch" style=${`background:${foilColor(f)}`}></span>
         <span class="nav-row-name">${f}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}
-  ${navCard("buoy.html", "Pauwela Buoy", buoyNow?.primary ? htl.html`
-    <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${formatDirection(buoyNow.primary.direction)}</div>
-    <div class="nav-muted">${buoyNow.primary.surflineKJ == null ? "" : `${buoyNow.primary.surflineKJ.toFixed(0)} kJ · `}${fmt.relativeTime(buoyNow.primaryTs)}</div>
-    <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>` : htl.html`
+  ${navCard("buoy.html", htl.html`Pauwela Buoy${buoyNow?.primaryTs ? htl.html` <span class="nav-age">${fmt.relativeTime(buoyNow.primaryTs)}</span>` : ""}`, buoyNow?.primary ? htl.html`
+    <div class="buoy-body">
+      <div class="buoy-text">
+        <div class="nav-lead">${buoyNow.primary.height.toFixed(1)}′ @ ${buoyNow.primary.period.toFixed(0)}s ${compassPoint(buoyNow.primary.direction)}${
+          buoyNow.primary.surflineKJ == null ? "" : htl.html` <span class="nav-age">${buoyNow.primary.surflineKJ.toFixed(0)} kJ</span>`}</div>
+        ${resize(width => renderSpectrumSparkline(buoyNow.spectrum, {width, height: 34}))}
+      </div>
+      ${renderMiniRose(buoyNow.spectrum, {size: 60})}
+    </div>` : htl.html`
     <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>`)}
   ${navCard("tides.html", "Tides", tidesNow ? htl.html`<div class="nav-rows">${tideRows(tidesNow)}</div>` : htl.html`
     <div class="nav-muted">Today's tides at my spots</div>`)}
@@ -294,6 +299,10 @@ function tideRows(ex) {
   .nav-row-name { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .nav-row-value { font-variant-numeric: tabular-nums; white-space: nowrap; }
   .nav-rows .tide-ok, .nav-rows .nav-muted { white-space: nowrap; min-width: 5.5em; text-align: right; font-size: 0.8rem; }
+  .nav-age { white-space: nowrap; font-size: 0.75rem; font-weight: 400; color: var(--theme-foreground-muted); }
+  .buoy-body { display: flex; align-items: flex-end; gap: 0.6rem; }
+  .buoy-text { flex: 1 1 auto; min-width: 0; }
+  .buoy-body > svg { flex: none; color: var(--theme-foreground); }
   .tide-ok { color: var(--theme-green, #3ca951); }
 </style>
 
