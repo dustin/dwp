@@ -1,5 +1,4 @@
 import { FileAttachment } from 'observablehq:stdlib';
-import _ from 'npm:lodash';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
 
@@ -71,7 +70,7 @@ export function runDataURL(meta) {
 export async function fetchRun(meta) {
   if (!meta.has_track) return approximateRoute(meta);
   return d3.csv(runDataURL(meta), d3.autoType).then(data =>
-    _.sortBy(
+    d3.sort(
       data.map(d => ({ ...d, odometer: d.distance + 1000 * meta.odometer_km, ts: new Date(d.tsi * 1000) })),
       d => d.tsi
     )

@@ -129,11 +129,10 @@ import {trackViewer} from "./components/track-viewer.js";
 import {findCallouts, findFastest1kSegment} from "./components/map.js";
 import {summarizeSwellPartition, formatIndividualSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import * as fmt from "./components/formatters.js";
-import _ from "npm:lodash";
 
 const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
 const id = new URLSearchParams(location.search).get("id");
-const meta = allRuns.find(d => d.id === id) ?? _.maxBy(allRuns, d => d.ts);
+const meta = allRuns.find(d => d.id === id) ?? d3.greatest(allRuns, d => d.ts);
 const [run, wind, swell] = await Promise.all([fetchRun(meta), fetchWind(meta), fetchSwell(meta)]);
 const points = run.filter(d => d.lat != null && d.lon != null);
 

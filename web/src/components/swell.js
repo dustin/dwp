@@ -1,4 +1,3 @@
-import _ from 'npm:lodash';
 
 // NDBC station 51205 / Pauwela, Maui -- see db/swell/update.sql.
 export const PAUWELA_BUOY = { lat: 21.018, lon: -156.421 };
@@ -58,5 +57,6 @@ export function formatIndividualSwells(partitionByTimestamp, ts) {
 export function representativeSwellReading(swell, meta) {
   if (!swell || swell.length === 0) return null;
   const mid = new Date(meta.ts.getTime() + (meta.duration_sec * 1000) / 2);
-  return _.minBy(swell, d => Math.abs(d.ts.getTime() - mid.getTime()));
+  const gap = d => Math.abs(d.ts.getTime() - mid.getTime());
+  return swell.reduce((best, d) => (gap(d) < gap(best) ? d : best));
 }

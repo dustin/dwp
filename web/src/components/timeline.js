@@ -1,5 +1,4 @@
 import * as Plot from 'npm:@observablehq/plot';
-import _ from 'npm:lodash';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
 import {FOIL_THRESHOLD_KPH} from './color.js';
@@ -44,7 +43,7 @@ function pace(speed) {
 export function computeSplits(data) {
   // Approximate routes (no GPS track) have no speeds or heart rates to split.
   if (data[0]?.approximate) return [];
-  return _.orderBy(
+  return d3.sort(
     d3
       .groups(data, d => Math.floor(d.distance / 1000))
       .map(([s, d]) => {
@@ -279,7 +278,7 @@ export function makeSwellMarks(swell, swell2, idx, label, colors) {
 // Per-run scatter colored by region (`color` is a Plot color scale spec),
 // with a rolling median to show the trend instead of joining every run.
 export function tlRegion(data, title, opts, xField, yField, color, dotOpts = {}) {
-  const sorted = _.sortBy(data.filter(d => d[yField] != null), xField);
+  const sorted = d3.sort(data.filter(d => d[yField] != null), d => d[xField]);
   return width =>
     Plot.plot({
       title,

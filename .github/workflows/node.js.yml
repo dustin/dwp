@@ -32,6 +32,10 @@ jobs:
           echo "export const MAPBOX_TOKEN = '$MAPBOX_TOKEN';" >> src/token.js
       - name: Build
         run: npm run build
+      # nginx serves these with gzip_static instead of compressing each
+      # request, and at the best level rather than its default of 1.
+      - name: Precompress
+        run: find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.csv' -o -name '*.json' -o -name '*.svg' \) -size +1k -exec gzip -9 -k -f -n {} +
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:

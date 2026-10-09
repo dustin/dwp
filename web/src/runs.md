@@ -6,7 +6,6 @@ toc: true
 
 ```js
 import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
-import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, fetchRun} from "./components/data.js";
@@ -25,7 +24,7 @@ const runMetaMap = allRuns.reduce((m, r) => {
 const urlParams = new URLSearchParams(window.location.search);
 const thisId = urlParams.get("id");
 
-const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
+const runMeta = runMetaMap[thisId] || d3.greatest(allRuns, d => d.ts);
 ```
 
 # Overlay All The Things

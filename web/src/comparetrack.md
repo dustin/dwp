@@ -138,7 +138,6 @@ import {findCallouts, findFastest1kSegment} from "./components/map.js";
 import {compareColorizers} from "./components/color.js";
 import {summarizeSwellPartition, formatIndividualSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import * as fmt from "./components/formatters.js";
-import _ from "npm:lodash";
 
 const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
 const runMetaMap = allRuns.reduce((m, r) => { m[r.id] = r; return m; }, {});
@@ -146,8 +145,8 @@ const runMetaMap = allRuns.reduce((m, r) => { m[r.id] = r; return m; }, {});
 const urlParams = new URLSearchParams(location.search);
 const id1 = urlParams.get("id1");
 const id2 = urlParams.get("id2");
-const runMeta1 = runMetaMap[id1] ?? _.maxBy(allRuns, d => d.ts);
-const runMeta2 = runMetaMap[id2] ?? _.maxBy(allRuns, d => d.ts);
+const runMeta1 = runMetaMap[id1] ?? d3.greatest(allRuns, d => d.ts);
+const runMeta2 = runMetaMap[id2] ?? d3.greatest(allRuns, d => d.ts);
 const metas = [runMeta1, runMeta2];
 
 const [runCsv1, runCsv2, wind1, wind2, swell1, swell2] = await Promise.all([

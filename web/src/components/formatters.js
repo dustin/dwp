@@ -1,7 +1,13 @@
 import * as d3 from 'npm:d3';
-import * as luxon from 'npm:luxon';
+const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'always' });
+const rtUnits = [['year', 31536e6], ['month', 2628e6], ['day', 864e5], ['hour', 36e5], ['minute', 6e4], ['second', 1e3]];
 
-export const relativeTime = d => luxon.DateTime.fromJSDate(new Date(d)).toRelative();
+// "3 days ago", "in 2 hours": the largest whole unit, like luxon's toRelative().
+export const relativeTime = d => {
+  const ms = new Date(d) - Date.now();
+  const [unit, size] = rtUnits.find(([, size]) => Math.abs(ms) >= size) ?? rtUnits.at(-1);
+  return rtf.format(Math.trunc(ms / size), unit);
+};
 
 // Always the 24-hour clock. (The browser's locale isn't a usable signal:
 // US English reports 12-hour whatever the person actually prefers.)

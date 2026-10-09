@@ -1,6 +1,5 @@
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
-import _ from 'npm:lodash';
 import {FOIL_THRESHOLD_KPH} from './color.js';
 import {
   mapboxgl,
@@ -37,8 +36,8 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
   // An approximate route has no speeds or positions worth pointing at;
   // only the lifetime odometer milestones below still mean something.
   if (!data[0]?.approximate) {
-    const maxSpeed = _.maxBy(data, d => d.speed);
-    const maxDist = _.maxBy(data, d => d.distance_to_land);
+    const maxSpeed = d3.greatest(data, d => d.speed);
+    const maxDist = d3.greatest(data, d => d.distance_to_land);
     if (maxSpeed) {
       callouts.push({
         lat: maxSpeed.lat,

@@ -16,7 +16,6 @@ import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatI
 import {renderSpectrumHistogram, readingNear} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
-import _ from "npm:lodash";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
@@ -33,7 +32,7 @@ const runMetaMap = allRuns.reduce((m, r) => {
 const urlParams = new URLSearchParams(window.location.search);
 const thisId = urlParams.get("id");
 
-const runMeta = runMetaMap[thisId] || _.maxBy(allRuns, d => d.ts);
+const runMeta = runMetaMap[thisId] || d3.greatest(allRuns, d => d.ts);
 // Entered by hand (db/import-manual.sql): summary numbers only, and the map
 // shows an approximate route.
 const noTrack = !runMeta.has_track;
@@ -181,13 +180,8 @@ function formatIndividualSwells(ts) {
 ## Speed
 
 ```js
-const [onFoil, offFoil] = _.unzip(
-  _.map(runCsv, d => {
-    const on = d.speed > FOIL_THRESHOLD_KPH;
-    return [ { ...d, speed: on ? d.speed : null, }, { ...d, speed: on ? null : d.speed }
-    ]
-  })
-);
+const onFoil = runCsv.map(d => ({...d, speed: d.speed > FOIL_THRESHOLD_KPH ? d.speed : null}));
+const offFoil = runCsv.map(d => ({...d, speed: d.speed > FOIL_THRESHOLD_KPH ? null : d.speed}));
 
 const segments = tl.computeSegments(runCsv);
 
