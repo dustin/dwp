@@ -72,7 +72,7 @@ function formatIndividualSwells(ts) {
 }
 ```
 
-<div class="card">${resize(width => renderRun(width, [runCsv], callouts, {
+<div class="card run-map-card"><div class="run-map-slot">${resize(width => renderRun(width, [runCsv], callouts, {
   additionalMarks: ({ d3, svg, width, height }) => {
     const scale = windRoseScale(width);
     const { size, centerX, centerY } = windRoseOrigin(16, 130, 0, scale);
@@ -106,7 +106,17 @@ function formatIndividualSwells(ts) {
     };
   },
   fastestSegments: [fastestSegment],
-}))}</div>
+}))}</div></div>
+
+<style>
+/* Hold the map's space while the track loads, so the page doesn't jump when
+   it appears. Mirrors mapHeight() in components/map.js. */
+.run-map-card { container-type: inline-size; }
+.run-map-slot {
+  min-height: 360px;
+  min-height: min(max(50cqw, min(100cqw, 360px)), max(320px, 75vh));
+}
+</style>
 
 ## At a Glance
 
