@@ -11,7 +11,7 @@ import {renderChord} from "./components/chord.js";
 import {renderCrashes} from "./components/crash-map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, dryLimit} from "./components/data.js";
+import {fetchMeta, dryLimit, runDataURL} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
 import {foilColorScale} from "./components/foils.js";
@@ -20,10 +20,15 @@ import {computeOdometerCrossings} from "./components/odometer.js";
 import {runCalendar, isReverse} from "./components/calendar.js";
 import {computeAchievements} from "./components/achievements.js";
 import {lazy, lazyResize} from "./components/lazy.js";
+import {prefetchPage} from "./components/prefetch.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
 const latestRun = runCsv[runCsv.findIndex(d => d.ts === d3.max(runCsv, d => d.ts))];
+
+// Most clicks from here open a run, so once this page is idle, fetch the run
+// page's scripts (and the latest run's track) into the cache.
+prefetchPage("run.html", {extra: latestRun.has_track ? [runDataURL(latestRun)] : []});
 ```
 
 ```js
