@@ -30,6 +30,8 @@ toc: false
   .ach-summary .name { min-width: 0; }
   .ach-summary b { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ach-summary .ach-sub { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ach-summary .row.sub { padding: 0.05rem 0; font-size: 0.8rem; }
+  .ach-summary .row.sub .name { padding-left: 0.8rem; }
   .ach-summary .row.quiet { color: var(--theme-foreground-muted); }
   .ach-swatch { width: 0.6rem; height: 0.6rem; border-radius: 50%; align-self: center; }
   a.ach-run { scroll-margin-top: 1rem; }
@@ -140,7 +142,28 @@ const summary = (best, since, sinceTs) => htl.html`<div class="card ach-summary"
     <b>${r.category.fmt(r.value)}</b>
     <span class="ach-sub">${!since ? shortDate(r.run.ts) : !moved ? "no change" : before ? `from ${r.category.fmt(before.value)}` : "new"}</span>
   </a>`;
-})}${routesRow(best, since)}</div>`;
+})}${foilDryRows(best, since, sinceTs)}${routesRow(best, since)}</div>`;
+
+// First dry run on each foil: one line with the count, then a sub-line per
+// foil (oldest first), quiet for foils that already had one before `since`.
+const foilDryRows = (best, since, sinceTs) => {
+  const firsts = d3.sort([...best.values()].filter(r => r.category.key === "foil_dry"), r => r.run.ts);
+  if (!firsts.length) return "";
+  const c = firsts[0].category;
+  const added = firsts.filter(r => !since || r.run.ts >= sinceTs);
+  const latest = firsts.at(-1);
+  return htl.html`<div class=${`row${added.length ? "" : " quiet"}`}>
+    <span class="ach-swatch" style=${`background: ${c.color}`}></span>
+    <span class="name">${c.label}</span>
+    <b>${firsts.length} foil${firsts.length === 1 ? "" : "s"}</b>
+    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : added.length ? `${added.length} new` : "no change"}</span>
+  </div>${firsts.map(r => {
+    const moved = !since || r.run.ts >= sinceTs;
+    return htl.html`<a class=${`row sub${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
+      <span></span><span class="name">${r.group}</span><b></b><span class="ach-sub">${shortDate(r.run.ts)}</span>
+    </a>`;
+  })}`;
+};
 
 // New routes don't get a line each; this counts them instead, linking to
 // the newest.
