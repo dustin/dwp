@@ -14,6 +14,8 @@ const bpm = v => `${Math.round(v)} bpm`;
 // paddle would otherwise win.
 const fullRun = d => d.distance_km >= 10;
 const days = v => `${v} day${v === 1 ? "" : "s"}`;
+const years = v => `${v} year${v === 1 ? "" : "s"}`;
+const shortDate = d3.timeFormat("%b %-d, %Y");
 const milestones = [100, 250, 500, ...d3.range(1000, 100001, 500)];
 
 export const categories = [
@@ -44,24 +46,50 @@ export const categories = [
   // Tracked per region: open-ocean runs would otherwise swamp the rest.
   {key: "max_dist", label: "Furthest from land", color: "#9c6b4e", group: d => d.region,
    value: d => d.max_distance, score: v => Math.round(v / 10), fmt: km},
-  // Consecutive days with at least one dry run (other runs that day don't
-  // break it). The day's first dry run is the one that extends the streak.
   // Consecutive days with at least one run.
   {key: "streak", label: "Downwind streak", color: "#17becf", ties: false,
    value: (d, ctx) => ctx.streak.get(d), score: v => v, fmt: days},
+  // Consecutive days with at least one dry run (other runs that day don't
+  // break it). The day's first dry run is the one that extends the streak.
   {key: "dry_streak", label: "Dry run streak", color: "#b07aa1", ties: false,
    value: (d, ctx) => ctx.dryStreak.get(d), score: v => v, fmt: days},
   // Not a best, a milestone: the run that carried the odometer past it.
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
    score: v => v, fmt: v => `${d3.format(",")(v)} km`},
+  // Events rather than bests: they show as badges on the run but stay out
+  // of the summaries, and never count as beaten. `note` is the hover text.
+  {key: "anniversary", label: "Anniversary", color: "#f28e2b", ties: false, event: true,
+   value: (d, ctx) => yearsSince(ctx.first, d.ts), score: v => v, fmt: years,
+   note: (r, ctx) => `First run after ${years(r.value)} of downwinding (since ${shortDate(ctx.first)})`},
+  {key: "dry_anniversary", label: "Dry anniversary", color: "#e15759", ties: false, event: true,
+   value: (d, ctx) => yearsSince(ctx.firstDry, d.ts), score: v => v, fmt: years,
+   note: (r, ctx) => `First run ${years(r.value)} after my first dry run (${shortDate(ctx.firstDry)})`},
+  {key: "foil_dry", label: "First dry run", color: "#59a14f", ties: false, event: true,
+   group: d => d.foil, eligible: d => d.dry, value: () => 1, score: v => v, fmt: () => "",
+   note: r => `First dry run on the ${r.group}`},
+  {key: "route", label: "New route", color: "#76b7b2", ties: false, event: true,
+   group: d => d.start_beach === d.end_beach ? d.start_beach : `${d.start_beach} → ${d.end_beach}`,
+   value: () => 1, score: v => v, fmt: () => "", note: r => `First run ${r.group.includes("→") ? "" : "at "}${r.group}`},
 ];
+
+// Whole years from the day of `start` to `t`.
+function yearsSince(start, t) {
+  if (!start) return null;
+  const day = d3.timeDay(start);
+  let n = d3.timeYear.count(day, t);
+  if (d3.timeYear.offset(day, n) > t) n--;
+  return n;
+}
 
 // Walk runs in time order, tracking the best so far in each category.
 // Newest first. Each record links to the record it beat or matched
 // (prevRecord) and, once beaten, the record that beat it (beatenBy).
 export function computeAchievements(allRuns) {
-  const ctx = {streak: streaks(allRuns), dryStreak: streaks(allRuns.filter(d => d.dry))};
+  const ctx = {
+    streak: streaks(allRuns), dryStreak: streaks(allRuns.filter(d => d.dry)),
+    first: d3.min(allRuns, d => d.ts), firstDry: d3.min(allRuns.filter(d => d.dry), d => d.ts),
+  };
   const best = new Map();
   const out = [];
   for (const run of d3.sort(allRuns.filter(d => d.has_track), d => d.ts)) {
@@ -77,6 +105,7 @@ export function computeAchievements(allRuns) {
       const delta = prev == null ? 1 : c.score(v) - c.score(prev);
       if (delta > 0 || (delta === 0 && c.ties !== false)) {
         const r = {category: c, group, value: v, prev, matched: delta === 0, run, prevRecord};
+        if (c.note) r.note = c.note(r, ctx);
         records.push(r);
         if (delta > 0) {
           if (prevRecord) prevRecord.beatenBy = r;

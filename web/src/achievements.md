@@ -38,7 +38,7 @@ toc: false
 
 # Achievements
 
-Every run that beat or matched the previous best in at least one category, newest first.
+Every run that beat or matched the previous best in at least one category, or marked a first or an anniversary, newest first.
 
 ```js
 import * as d3 from "npm:d3";
@@ -75,6 +75,7 @@ const recordRef = r => `${r.category.fmt(r.value)} on ${shortDate(r.run.ts)} (${
 // Hover text: what this record replaced and how long that stood, and what
 // happened to this one after.
 const badgeTitle = (r, current) => {
+  if (r.category.event) return r.note;
   const lines = [];
   const p = r.prevRecord;
   if (p) lines.push(r.matched
@@ -94,10 +95,10 @@ const badgeTitle = (r, current) => {
 
 const badge = r => {
   const {category: c, group, value, prev, matched} = r;
-  const current = holds(r);
+  const current = !c.event && holds(r);
   return htl.html`<span class=${`ach-badge${matched ? " matched" : ""}`} style=${`--badge: ${c.color}`}
     title=${badgeTitle(r, current)}>
-  ${current ? htl.html`<span class="ach-star">★</span>` : ""}${c.label}${group ? ` (${group})` : ""} <b>${c.fmt(value)}</b>${prev != null ? htl.html`<span class="ach-prev">${matched ? "matched" : `was ${c.fmt(prev)}`}</span>` : ""}</span>`;
+  ${current ? htl.html`<span class="ach-star">★</span>` : ""}${c.label}${group ? ` (${group})` : ""} ${c.event && !c.fmt(value) ? "" : htl.html`<b>${c.fmt(value)}</b>`}${prev != null && !c.event ? htl.html`<span class="ach-prev">${matched ? "matched" : `was ${c.fmt(prev)}`}</span>` : ""}</span>`;
 };
 
 const card = ({run, records}) => htl.html`<a class="card ach-run" id=${`run-${run.id}`} href=${`/run.html?id=${run.id}`}>
@@ -122,7 +123,7 @@ const snapshots = (() => {
   return out;
 })();
 const bestAsOf = ts => [...snapshots].reverse().find(s => s.ts <= ts)?.best ?? new Map();
-const ordered = best => categories.flatMap(c => d3.sort([...best.values()].filter(r => r.category === c), r => r.group));
+const ordered = best => categories.filter(c => !c.event).flatMap(c => d3.sort([...best.values()].filter(r => r.category === c), r => r.group));
 const shortDate = d3.timeFormat("%b %-d, %Y");
 
 // One line per category: the best, and when (linking to that run's card).
