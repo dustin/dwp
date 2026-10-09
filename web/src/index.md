@@ -19,6 +19,7 @@ import {responsiveRunsTable, responsive} from "./components/runs-table.js";
 import {computeOdometerCrossings} from "./components/odometer.js";
 import {runCalendar, isReverse} from "./components/calendar.js";
 import {computeAchievements} from "./components/achievements.js";
+import {lazy, lazyResize} from "./components/lazy.js";
 
 const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
 
@@ -368,7 +369,7 @@ const outings = d3.rollups(runCsv,
 
 <div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
   <div class="card">${
-    resize((width) => Plot.plot({
+    lazyResize((width) => Plot.plot({
                         title: "Outings",
                         color: { domain: regions, range: regions.map(r => regionColor(r)), legend: true },
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
@@ -380,7 +381,7 @@ const outings = d3.rollups(runCsv,
                       )
   }</div>
   <div class="card">${
-    resize((width) => Plot.plot({
+    lazyResize((width) => Plot.plot({
                         title: "Outings (Duration)",
                         color: { domain: regions, range: regions.map(r => regionColor(r)), legend: true },
                         width, x: { interval: Plot.utcInterval("month"), label: "" },
@@ -404,7 +405,7 @@ const outings = d3.rollups(runCsv,
   <span><svg width="12" height="12"><circle cx="6" cy="6" r="6" fill="var(--theme-foreground-faint)"/><path d="M6,1.2L7.1,4.5L10.6,4.5L7.8,6.6L8.8,9.9L6,7.9L3.2,9.9L4.2,6.6L1.4,4.5L4.9,4.5Z" fill="white"/></svg> dry run</span>
   <span class="muted">dot size = distance</span>
 </div>
-${runCalendar(runCsv, regionColor)}
+${lazy(() => runCalendar(runCsv, regionColor), {height: 700})}
 </div>
 
 <style>
@@ -443,7 +444,7 @@ where once I paddled up for real, I stayed up until I was done.
 So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
 <div class="card">${
-responsiveRunsTable(Inputs, htl, beachColor, runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
+lazy(() => responsiveRunsTable(Inputs, htl, beachColor, runCsv.filter(d => d.dry).sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -457,7 +458,7 @@ responsiveRunsTable(Inputs, htl, beachColor, runCsv.filter(d => d.dry).sort((a, 
       "foil"
     ],
     linkHref: d => `/run.html?id=${d.id}`
-  })
+  }), {height: 500})
 }</div>
 
 ## Distances
@@ -472,7 +473,7 @@ ${Plot.legend({color: regionColorSpec})}
 
 <div class="grid grid-cols-2" style="grid-auto-rows: 504px;">
   <div class="card">${
-    resize(tl.tlRegion(runCsv, "Total Distance Traveled per Session", {y: {label: "km"}},
+    lazyResize(tl.tlRegion(runCsv, "Total Distance Traveled per Session", {y: {label: "km"}},
                  "ts", "distance_km" ,
                  regionColorSpec,
                  {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
@@ -480,7 +481,7 @@ ${Plot.legend({color: regionColorSpec})}
                                 ].join(' '))})) }
   </div>
   <div class="card">${
-    resize(tl.tlRegion(runCsv, "Maximum Distance from Land", {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
+    lazyResize(tl.tlRegion(runCsv, "Maximum Distance from Land", {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
                  "ts", "max_distance",
                  regionColorSpec,
                  {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
@@ -489,7 +490,7 @@ ${Plot.legend({color: regionColorSpec})}
     )
   }</div>
   <div class="card">${
-    resize(tl.tlRegion(runCsv, "Longest Segment on Foil",
+    lazyResize(tl.tlRegion(runCsv, "Longest Segment on Foil",
       {y: { label: "km", tickFormat: d => (d/1000).toFixed(0) } },
       "longest_segment_start", "longest_segment_distance", regionColorSpec,
                  {title: d => ([fmt.date(d.longest_segment_start) + ":", "from", d.start_beach, "to",
@@ -500,7 +501,7 @@ ${Plot.legend({color: regionColorSpec})}
     ))
     }</div>
     <div class="card">${
-      resize(tl.tlRegion(runCsv, "Distance to First Paddle Up", {y: { label: "meters" , domain: [0, 2000] }, clip: true },
+      lazyResize(tl.tlRegion(runCsv, "Distance to First Paddle Up", {y: { label: "meters" , domain: [0, 2000] }, clip: true },
         "ts", "distance_to_first_paddle_up",
         regionColorSpec,
                  {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
@@ -512,7 +513,7 @@ ${Plot.legend({color: regionColorSpec})}
   }</div>
 
   <div class="card">${
-    resize(tl.tlRegion(runCsv, "Percentage of Distance on Foil",
+    lazyResize(tl.tlRegion(runCsv, "Percentage of Distance on Foil",
         {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
         "ts", "pct_dist_on_foil", regionColorSpec,
                  {title: d => ([fmt.date(d.ts) + ":", "from", d.start_beach, "to",
@@ -524,7 +525,7 @@ ${Plot.legend({color: regionColorSpec})}
   }</div>
 
   <div class="card">${
-    resize(tl.tlRegion(runCsv, "Percentage of Time on Foil",
+    lazyResize(tl.tlRegion(runCsv, "Percentage of Time on Foil",
                  {y: { label: "percent", tickFormat: d => (d * 100).toFixed(0), domain: [0, 1] }},
                  "ts", "pct_time_on_foil",
                  regionColorSpec,
@@ -581,7 +582,7 @@ function odometerCard(d) {
 ```
 
 <div class="card">${
-responsive(htl, Inputs.table(odometerCrossings, {
+lazy(() => responsive(htl, Inputs.table(odometerCrossings, {
   columns: ["milestone_km", "linked_ts", "region", "start_beach", "end_beach", "foil", "into_run_km"],
   header: {
     milestone_km: "Odometer (km)",
@@ -601,7 +602,7 @@ responsive(htl, Inputs.table(odometerCrossings, {
     into_run_km: d => `${d.into.toFixed(2)} km / ${d.total.toFixed(2)} km (${((d.into / d.total) * 100).toFixed(0)}%)`
   },
   select: false,
-}), htl.html`<div class="runs-cards">${odometerCrossings.map(odometerCard)}</div>`)
+}), htl.html`<div class="runs-cards">${odometerCrossings.map(odometerCard)}</div>`), {height: 500})
 }</div>
 
 ## Paddling
@@ -613,7 +614,7 @@ something very different than it does now.
 <div class="card">
 
 ```js
-tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
+lazy(() => tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
       "ts", "paddle_up_count",
       {stroke: beachColorNamed("start_beach")},
       {fill: "foil",
@@ -621,7 +622,7 @@ tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
                       d.end_beach, "paddled up",
                       d.paddle_up_count, "times using the", d.foil
                      ].join(' '))
-      })(width)
+      })(width))
 ```
 
 </div>
@@ -650,7 +651,7 @@ const weekSpeed = Array.from(
 <div class="card">
 
 ```js
-Plot.plot({
+lazy(() => Plot.plot({
   width,
   x: {type: "utc"}, y: { label: "kph" },
   marks: [
@@ -661,7 +662,7 @@ Plot.plot({
        opacity: 0.3, tip: true,
        })
   ]
-})
+}))
 ```
 
 </div>
@@ -693,7 +694,7 @@ const hrs_avg = Array.from(
 <div class="card">
 
 ```js
-      Plot.plot({
+      lazy(() => Plot.plot({
         title: 'Lowest Heart Rate on Foil',
         width,
         x: {type: "utc"},
@@ -705,7 +706,7 @@ const hrs_avg = Array.from(
                      opacity: 0.3, tip: true}),
           regress("week", "min_hr", hrs_min)
         ]
-      })
+      }))
 ```
 
 </div>
@@ -713,7 +714,7 @@ const hrs_avg = Array.from(
 <div class="card">
 
 ```js
-      Plot.plot({
+      lazy(() => Plot.plot({
         title: 'Average Heart Rate on Foil',
         width,
         x: {type: "utc"},
@@ -725,7 +726,7 @@ const hrs_avg = Array.from(
                      opacity: 0.3, tip: true}),
           regress("week", "min_hr", hrs_avg)
         ]
-      })
+      }))
 ```
 
 </div>
@@ -745,7 +746,7 @@ const someCrashes = crashes.filter(d => d.ts > recently);
 
 Below is a density map of recent crashes to identify hot spots.
 
-<div class="card">${resize(width => renderCrashes(width, someCrashes))}</div>
+<div class="card">${lazyResize(width => renderCrashes(width, someCrashes), {height: 600})}</div>
 
 ## Starts and Ends
 
@@ -754,14 +755,14 @@ This shows where I start and end my runs.
 If you hover over a
 beach's arc, it'll highlight the places I've gone from that beach.
 
-<div class="card">${resize(width => renderChord(width, runCsv))}</div>
+<div class="card">${lazyResize(width => renderChord(width, runCsv), {height: 700})}</div>
 
 ## All Runs
 
 Click through to view details.
 
 <div class="card">${
-responsiveRunsTable(Inputs, htl, beachColor, runCsv.sort((a, b) => b.ts - a.ts), {
+lazy(() => responsiveRunsTable(Inputs, htl, beachColor, runCsv.sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -777,5 +778,5 @@ responsiveRunsTable(Inputs, htl, beachColor, runCsv.sort((a, b) => b.ts - a.ts),
       "foil"
     ],
     linkHref: d => `/run.html?id=${d.id}`
-  })
+  }), {height: 500})
 }</div>
