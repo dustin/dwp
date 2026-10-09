@@ -140,7 +140,24 @@ const summary = (best, since, sinceTs) => htl.html`<div class="card ach-summary"
     <b>${r.category.fmt(r.value)}</b>
     <span class="ach-sub">${!since ? shortDate(r.run.ts) : !moved ? "no change" : before ? `from ${r.category.fmt(before.value)}` : "new"}</span>
   </a>`;
-})}</div>`;
+})}${routesRow(best, since)}</div>`;
+
+// New routes don't get a line each; this counts them instead, linking to
+// the newest.
+const routesRow = (best, since) => {
+  const routes = b => [...b.values()].filter(r => r.category.key === "route");
+  const all = routes(best);
+  if (!all.length) return "";
+  const latest = d3.greatest(all, r => r.run.ts);
+  const added = since ? all.length - routes(since).length : null;
+  const moved = !since || added > 0;
+  return htl.html`<a class=${`row${moved ? "" : " quiet"}`} href=${moved ? `#run-${latest.run.id}` : null}>
+    <span class="ach-swatch" style=${`background: ${latest.category.color}`}></span>
+    <span class="name">Distinct routes</span>
+    <b>${all.length}</b>
+    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : moved ? `${added} new` : "no change"}</span>
+  </a>`;
+};
 
 // Where each best stood at the end of the year, against the start of it.
 const yearSummary = year => {
