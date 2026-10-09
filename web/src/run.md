@@ -9,6 +9,7 @@ import {renderRun, findCallouts, createBuoySwellMarker, findFastest1kSegment} fr
 import {beachColorScale} from "./components/beaches.js";
 import {responsiveRunsTable} from "./components/runs-table.js";
 import {responsiveSplitsTable} from "./components/splits-table.js";
+import {lazy, lazyResize} from "./components/lazy.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
@@ -258,7 +259,7 @@ const foilingSpeeds = runCsv.map(d => d.speed).filter(d => d > FOIL_THRESHOLD_KP
 
 <div class="card">${
 wind && wind.length > 0
-  ? resize((width) => Plot.plot({
+  ? lazyResize((width) => Plot.plot({
       title: "Wind",
       color: { legend: true },
       width,
@@ -294,7 +295,7 @@ wind && wind.length > 0
   // Swell comes from the Pauwela buoy, which only describes the North Shore.
   buoySite(runMeta) == null ? "" : html`<div class="card">${
 swellPrimary && swellPrimary.length > 0
-  ? resize((width) => Plot.plot({
+  ? lazyResize((width) => Plot.plot({
       title: "Swell",
       color: { legend: true },
       width,
@@ -335,17 +336,17 @@ swellPrimary && swellPrimary.length > 0
 <div class="grid grid-cols-2">
   <div class="card">${
   midRunPartitions.length > 0
-    ? resize(renderPartitionCompass(midRunPartitions, {
+    ? lazyResize(renderPartitionCompass(midRunPartitions, {
         title: `Swell Direction — ${fmt.clock(spectrumSampleTime(midRunSpectrumReading[0].ts, reportTimes(swell)))}`
       }))
     : ""
   }</div>
-  <div class="card">${resize(renderSpectrumHistogram(midRunSpectrumReading, {
+  <div class="card">${lazyResize(renderSpectrumHistogram(midRunSpectrumReading, {
     title: `Spectral Energy — ${fmt.clock(spectrumSampleTime(midRunSpectrumReading[0].ts, reportTimes(swell)))}`,
     partitions: midRunPartitions
   }))}</div>
 </div>
-<div class="card">${resize(renderPartitionBubbles(spectralPartitions(swellSpectrum), {
+<div class="card">${lazyResize(renderPartitionBubbles(spectralPartitions(swellSpectrum), {
   title: "Wave Partitions (faded: the hours before the run)",
   run: {start: runMeta.ts, end: new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000)}
 }))}</div>`
@@ -381,11 +382,11 @@ const splits = tl.computeSplits(runCsv);
 ```
 
 ```js
-noTrack ? html`<p>No GPS track, so no splits.</p>` : responsiveSplitsTable(Inputs, htl, splits)
+noTrack ? html`<p>No GPS track, so no splits.</p>` : lazy(() => responsiveSplitsTable(Inputs, htl, splits), {height: 500})
 ```
 
 <div class="card">${
-  noTrack ? html`<p>No GPS track, so no speed by km.</p>` : resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no speed by km.</p>` : lazyResize((width) => Plot.plot({
       title: "Speed",
       color: { legend: true },
       width, x: { interval: 1, label: "km" },
@@ -400,7 +401,7 @@ noTrack ? html`<p>No GPS track, so no splits.</p>` : responsiveSplitsTable(Input
 }</div>
 
 <div class="card">${
-  noTrack ? html`<p>No GPS track, so no pace by km.</p>` : resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no pace by km.</p>` : lazyResize((width) => Plot.plot({
       title: "Pace",
       color: { legend: true },
       clip: true,
@@ -416,7 +417,7 @@ noTrack ? html`<p>No GPS track, so no splits.</p>` : responsiveSplitsTable(Input
 }</div>
 
 <div class="card">${
-  noTrack ? html`<p>No GPS track, so no heart rate by km.</p>` : resize((width) => Plot.plot({
+  noTrack ? html`<p>No GPS track, so no heart rate by km.</p>` : lazyResize((width) => Plot.plot({
       title: "Heart Rate",
       color: { legend: true },
       width, x: { interval: 1, label: "km" },
@@ -432,7 +433,7 @@ noTrack ? html`<p>No GPS track, so no splits.</p>` : responsiveSplitsTable(Input
 
 <div class="card">${
 noTrack ? html`<p>No GPS track, so no heart rate over time.</p>` :
-resize((width) => {
+lazyResize((width) => {
   const maxSpeed = d3.max([...onFoil, ...offFoil], d => d.speed);
   const maxHr = d3.max(runCsv, d => d.hr);
   const y2 = d3.scaleLinear([0, maxHr], [0, maxSpeed]);
@@ -506,7 +507,7 @@ const compareFuns = {
 ```
 
 <div class="card">${
-responsiveRunsTable(Inputs, htl, beachColor, allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts), {
+lazy(() => responsiveRunsTable(Inputs, htl, beachColor, allRuns.filter(d => d.id != thisId && compareFuns[compares](d)).sort((a, b) => b.ts - a.ts), {
     columns: [
       "date",
       "linkedDate",
@@ -522,5 +523,5 @@ responsiveRunsTable(Inputs, htl, beachColor, allRuns.filter(d => d.id != thisId 
       "foil"
     ],
     linkHref: d => `/compare.html?id1=${thisId}&id2=${d.id}`
-  })
+  }), {height: 500})
 }</div>
