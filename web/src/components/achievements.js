@@ -13,6 +13,7 @@ const bpm = v => `${Math.round(v)} bpm`;
 // Runs shorter than this can't set the lightest-wind record, which a short
 // paddle would otherwise win.
 const fullRun = d => d.distance_km >= 10;
+const days = v => `${v} day${v === 1 ? "" : "s"}`;
 const milestones = [100, 250, 500, ...d3.range(1000, 100001, 500)];
 
 export const categories = [
@@ -45,8 +46,11 @@ export const categories = [
    value: d => d.max_distance, score: v => Math.round(v / 10), fmt: km},
   // Consecutive days with at least one dry run (other runs that day don't
   // break it). The day's first dry run is the one that extends the streak.
+  // Consecutive days with at least one run.
+  {key: "streak", label: "Downwind streak", color: "#17becf", ties: false,
+   value: (d, ctx) => ctx.streak.get(d), score: v => v, fmt: days},
   {key: "dry_streak", label: "Dry run streak", color: "#b07aa1", ties: false,
-   value: (d, ctx) => ctx.dryStreak.get(d), score: v => v, fmt: v => `${v} day${v === 1 ? "" : "s"}`},
+   value: (d, ctx) => ctx.dryStreak.get(d), score: v => v, fmt: days},
   // Not a best, a milestone: the run that carried the odometer past it.
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
@@ -57,7 +61,7 @@ export const categories = [
 // Newest first. Each record links to the record it beat or matched
 // (prevRecord) and, once beaten, the record that beat it (beatenBy).
 export function computeAchievements(allRuns) {
-  const ctx = {dryStreak: dryStreaks(allRuns)};
+  const ctx = {streak: streaks(allRuns), dryStreak: streaks(allRuns.filter(d => d.dry))};
   const best = new Map();
   const out = [];
   for (const run of d3.sort(allRuns.filter(d => d.has_track), d => d.ts)) {
@@ -85,11 +89,12 @@ export function computeAchievements(allRuns) {
   return out.reverse();
 }
 
-// The dry streak (in days) as of each day's first dry run.
-function dryStreaks(allRuns) {
+// The streak of consecutive days with a run (in days) as of each day's
+// first run.
+function streaks(runs) {
   const streaks = new Map();
   let lastDay = null, streak = 0;
-  for (const run of d3.sort(allRuns.filter(d => d.dry), d => d.ts)) {
+  for (const run of d3.sort(runs, d => d.ts)) {
     const day = d3.timeDay(run.ts);
     if (+day === +lastDay) continue;
     streak = lastDay && +d3.timeDay.offset(lastDay, 1) === +day ? streak + 1 : 1;
