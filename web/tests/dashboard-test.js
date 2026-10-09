@@ -88,7 +88,14 @@ function attachErrorListeners(pg, bucket) {
   });
 
   pg.on('requestfailed', request => {
-    bucket.push(`Request failed: ${request.url()}`);
+    const reason = request.failure()?.errorText ?? 'unknown';
+    // Third-party fetches (Mapbox tiles/styles) get cancelled when the map
+    // re-renders or the page closes; that isn't a site error.
+    if (reason === 'net::ERR_ABORTED' && !request.url().startsWith(BASE_URL)) {
+      console.log(`  (ignoring aborted third-party request: ${request.url()})`);
+      return;
+    }
+    bucket.push(`Request failed (${reason}): ${request.url()}`);
   });
 }
 
