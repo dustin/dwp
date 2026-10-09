@@ -619,7 +619,7 @@ something very different than it does now.
 <div class="card">
 
 ```js
-lazy(() => tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
+lazyResize(width => tl.tl(runCsv, "Paddle Ups", {color: { legend: true}},
       "ts", "paddle_up_count",
       {stroke: beachColorNamed("start_beach")},
       {fill: "foil",
@@ -656,7 +656,7 @@ const weekSpeed = Array.from(
 <div class="card">
 
 ```js
-lazy(() => Plot.plot({
+lazyResize(width => Plot.plot({
   width,
   x: {type: "utc"}, y: { label: "kph" },
   marks: [
@@ -699,7 +699,7 @@ const hrs_avg = Array.from(
 <div class="card">
 
 ```js
-      lazy(() => Plot.plot({
+      lazyResize(width => Plot.plot({
         title: 'Lowest Heart Rate on Foil',
         width,
         x: {type: "utc"},
@@ -719,7 +719,7 @@ const hrs_avg = Array.from(
 <div class="card">
 
 ```js
-      lazy(() => Plot.plot({
+      lazyResize(width => Plot.plot({
         title: 'Average Heart Rate on Foil',
         width,
         x: {type: "utc"},

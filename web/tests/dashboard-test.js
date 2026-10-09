@@ -99,6 +99,25 @@ function attachErrorListeners(pg, bucket) {
   });
 }
 
+// Sections below the fold render only when scrolled near (components/lazy.js),
+// so walk down the page until nothing new appears. This also exercises those
+// sections for errors before the full-page screenshot.
+async function renderLazySections(pg) {
+  for (let i = 0; i < 50; i++) {
+    const atBottom = await pg.evaluate(() => {
+      window.scrollBy(0, window.innerHeight);
+      return window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1;
+    });
+    await pg.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
+    await pg.waitForTimeout(300);
+    if (atBottom && (await pg.evaluate(
+      () => window.scrollY + window.innerHeight >= document.documentElement.scrollHeight - 1
+    ))) break;
+  }
+  await pg.evaluate(() => window.scrollTo(0, 0));
+  await pg.waitForTimeout(500);
+}
+
 async function runTests() {
   const browser = await chromium.launch({
     headless: true,
@@ -134,6 +153,7 @@ async function runTests() {
 
   // Wait a bit for any graphs to render
   await page.waitForTimeout(2000);
+  await renderLazySections(page);
 
   // Save screenshot and HTML of index page
   await page.screenshot({ path: `${outputDir}/index-page.png`, fullPage: true });
@@ -173,6 +193,7 @@ async function runTests() {
     try {
       await linkPage.goto(link, { waitUntil: 'networkidle', timeout: 10000 });
       await linkPage.waitForTimeout(2000);
+      await renderLazySections(linkPage);
 
       // Save screenshot of subpage
       const sanitizedUrl = (prefix ? `${prefix}_` : '') + link.replace(/[^a-z0-9]/gi, '_');
