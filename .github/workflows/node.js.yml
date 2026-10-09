@@ -32,10 +32,16 @@ jobs:
           echo "export const MAPBOX_TOKEN = '$MAPBOX_TOKEN';" >> src/token.js
       - name: Build
         run: npm run build
-      # nginx serves these with gzip_static instead of compressing each
+      # nginx serves these with gzip_static/brotli_static instead of compressing each
       # request, and at the best level rather than its default of 1.
       - name: Precompress
-        run: find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.csv' -o -name '*.json' -o -name '*.svg' \) -size +1k -exec gzip -9 -k -f -n {} +
+        run: |
+          find dist -type f \( -name '*.html' -o -name '*.js' -o -name '*.css' -o -name '*.csv' -o -name '*.json' -o -name '*.svg' \) -size +1k > precompress.txt
+          xargs gzip -9 -k -f -n < precompress.txt
+          node -e 'const fs = require("fs"), z = require("zlib");
+            for (const f of fs.readFileSync("precompress.txt", "utf8").split("\n").filter(Boolean))
+              fs.writeFileSync(f + ".br", z.brotliCompressSync(fs.readFileSync(f), {params: {[z.constants.BROTLI_PARAM_QUALITY]: 11}}));'
+          rm precompress.txt
       - name: Upload build artifact
         uses: actions/upload-artifact@v7
         with:
