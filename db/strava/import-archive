@@ -26,8 +26,10 @@ Triage, per activity:
     review.
 
 Each import is the same as add-run: gpx_filter.py, then import.sql with
-DWP_RIDER, DWP_BOARD and DWP_FOIL. import.sql replaces any of the
-rider's runs that overlap, so rerunning is safe.
+DWP_RIDER, DWP_BOARD and DWP_FOIL. Sessions that overlap one of the
+rider's runs already in the lake are skipped (--reimport redoes them;
+import.sql replaces the overlapping run). A run that fails to import is
+reported at the end instead of stopping the batch.
 
 Run it from db's nix dev shell (python3, duckdb, rclone).
 """
@@ -330,13 +332,31 @@ def write_gpx(pts, t0, t1, path):
         fh.write("</trkseg></trk></gpx>\n")
 
 
+def existing_runs(rider):
+    """(start, end) epoch seconds of the rider's runs already in the lake."""
+    if not rider.replace("-", "").isalnum():
+        die(f"odd rider name: {rider}")
+    q = (f"use lake; select ts, ts + duration_sec from dwlist "
+         f"where rider = '{rider}' and ts is not null and duration_sec is not null")
+    out = subprocess.run(["duckdb", "--init", "init.sql", "-noheader", "-csv", "-c", q],
+                         cwd=LAKE_DIR, check=True, capture_output=True, text=True).stdout
+    return [tuple(map(float, line.split(","))) for line in out.splitlines()
+            if line and line[0].isdigit()]
+
+
 def import_run(gpx_path, args, tmp):
+    """Import one trimmed track; False if any step failed."""
     csv_path = os.path.join(tmp, "activity.csv")
-    gpx_filter.main([gpx_path, "-o", csv_path])
+    try:
+        gpx_filter.main([gpx_path, "-o", csv_path])
+    except Exception as e:  # noqa: BLE001 - report and move on to the next run
+        print(f"gpx_filter failed: {e}", file=sys.stderr)
+        return False
     env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil, DWP_RIDER=args.rider,
                DWP_BOARD=args.board, DWP_NEW_FOIL="1")
     with open(os.path.join(DB_DIR, "import.sql")) as sql:
-        run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+        r = subprocess.run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+    return r.returncode == 0
 
 
 def main(argv=None):
@@ -354,6 +374,8 @@ def main(argv=None):
                     help="activity ids from review to import as well")
     ap.add_argument("--exclude", nargs="*", default=[],
                     help="activity ids to leave out")
+    ap.add_argument("--reimport", action="store_true",
+                    help="also import sessions that overlap a run already in the lake")
     args = ap.parse_args(argv)
 
     out = args.output or os.path.join(
@@ -398,13 +420,28 @@ def main(argv=None):
         return
     todo = [r for r in picked
             if (r["v"] == "downwind" or r["id"] in args.include) and r["id"] not in args.exclude]
+    if not args.reimport:
+        have = existing_runs(args.rider)
+        new = [r for r in todo
+               if not any(s < r["w_end"] and r["w_start"] < e for s, e in have)]
+        print(f"{len(todo) - len(new)} already imported, {len(new)} to go "
+              "(--reimport to redo them)", file=sys.stderr)
+        todo = new
+    failed = []
     with tempfile.TemporaryDirectory(prefix="dwp-strava-") as tmp:
         for i, r in enumerate(todo, 1):
             print(f"[{i}/{len(todo)}] {local(r['w_start'])} {r['name']}", file=sys.stderr)
             gpx = os.path.join(tmp, f"{r['id']}.gpx")
             write_gpx(tracks[r["id"]], r["w_start"], r["w_end"], gpx)
-            import_run(gpx, args, tmp)
-    run(["./upload-runs.sh"], cwd=DB_DIR)
+            if not import_run(gpx, args, tmp):
+                failed.append(r)
+    if len(failed) < len(todo):
+        run(["./upload-runs.sh"], cwd=DB_DIR)
+    if failed:
+        print(f"{len(failed)} failed:", file=sys.stderr)
+        for r in failed:
+            print(f"  {r['id']} {local(r['w_start'])} {r['name']}", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
