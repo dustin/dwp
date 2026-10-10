@@ -11,6 +11,7 @@
 #   rider=<rider>/runs.csv          the run list (plus crashes.csv and
 #   rider=<rider>/crashes.csv       run_buoy.csv), short cache: they change
 #   rider=<rider>/run_buoy.csv      with every import
+#   rider=<rider>/together.csv      other riders' runs that went with each
 #   rider=<rider>/dwid=<id>/data.csv  one run's track
 #
 # Dustin's lists are also copied into web/rider/data/, which the site falls
@@ -54,7 +55,7 @@ for rider in $riders; do
         cp $dwlists/runs.csv $dwlists/crashes.csv $dwlists/run_buoy.csv $webdata/
     fi
     mkdir -p "$dwruns/rider=$rider"
-    for f in runs crashes run_buoy; do
+    for f in runs crashes run_buoy together; do
         gzip -9 -n -c $dwlists/$f.csv > "$dwruns/rider=$rider/$f.csv"
     done
 done

@@ -110,17 +110,16 @@ export function riderFile(name, bundled, who = rider) {
 // site.
 export const withRider = (runs, who) => runs.map(r => ({ ...r, rider: who }));
 
-// Another rider's run that overlaps `meta` in time and starts nearby: the
-// two rode together. Returns the best match or undefined.
-export function rodeWith(meta, others, maxStartKm = 2) {
-  const end = m => +m.ts + 1000 * m.duration_sec;
-  const km = (a, b) => Math.hypot((a.start_lat - b.start_lat) * 111, (a.start_lon - b.start_lon) * 104);
-  let best, bestOverlap = 0;
-  for (const o of others) {
-    const overlap = Math.min(end(meta), end(o)) - Math.max(+meta.ts, +o.ts);
-    if (overlap > bestOverlap && !(km(meta, o) > maxStartKm)) [best, bestOverlap] = [o, overlap];
-  }
-  return best;
+// Other riders' runs that went with this rider's (together.csv, from
+// db/export-lists.sql), as a map from run id to {other_rider, other_id}.
+// Empty until the rider's export includes the file.
+let togetherP = null;
+export function fetchTogether() {
+  togetherP ??= riderFile('together.csv')
+    .csv({ typed: true })
+    .then(rows => new Map(rows.map(r => [r.id, r])))
+    .catch(() => new Map());
+  return togetherP;
 }
 
 export function runDataURL(meta) {

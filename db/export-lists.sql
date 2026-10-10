@@ -1,4 +1,5 @@
--- One rider's run list, crashes and buoy snapshots, for the web.
+-- One rider's run list, crashes, buoy snapshots and rides with other
+-- riders, for the web.
 --
 -- upload-runs.sh runs this once per rider with the rider variable set:
 --
@@ -117,6 +118,30 @@ copy (
   left join nearest_report nr using (dwid)
   order by r.dwid, s.freq
 ) to '/Users/dustin/stuff/dwlists/run_buoy.csv';
+
+-- Rode together
+--
+-- Other riders' runs that went with each of this rider's runs: same start
+-- beach, overlapping in time by at least ten minutes. The web reads this to
+-- link a run to the cross-rider comparison (compare.html?r2=...), instead of
+-- fetching every rider's list to look for overlaps.
+
+copy (
+  select
+    a.id,
+    b.rider as other_rider,
+    b.id as other_id,
+    round(least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts)) as overlap_sec
+  from dwlist a
+  join dwlist b
+    on b.rider <> a.rider
+   and b.start_pos = a.start_pos
+   and b.ts < a.ts + a.duration_sec
+   and a.ts < b.ts + b.duration_sec
+  where a.rider = getvariable('rider')
+    and least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts) >= 600
+  order by a.ts, overlap_sec desc
+) to '/Users/dustin/stuff/dwlists/together.csv';
 
 -- The List
 
