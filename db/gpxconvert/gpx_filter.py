@@ -73,7 +73,8 @@ Pipeline stages, in order:
      they judge *context/support*, not raw magnitude, and so
      correctly let genuine fast conditions through untouched.
   7b. Glitch clamp:         points within a few samples of a fix
-     flagged as bad (stages 1-2, 4a, 4b) are capped at the fastest unaffected speed
+     flagged as bad (stages 1-2, 4a, 4b, or a lone leg far faster
+     than the legs either side) are capped at the fastest unaffected speed
      nearby, so the edges of a crash burst (where windows straddle the
      jump) can't leak into speed_final.
   8. Best sustained speed:   the headline "top speed" figure, computed
@@ -566,10 +567,31 @@ def sanity_ceiling(speeds: list[float], pre_flanks: list[float | None],
 #
 # A rider can't go faster during a crash than just before or after it.
 # So every point within `buffer` samples of a point flagged as a bad fix
-# (stage 1-2 position or stage 4a/4b Hampel) is capped
+# (stage 1-2 position, stage 4a/4b Hampel, or a lone leg spike) is capped
 # at the fastest speed_final among unaffected points within `context_s`
 # seconds on either side. Values under that cap, and every point away
 # from a glitch, are left alone.
+def leg_spikes(speeds: list[float], legs: int, ratio: float, min_abs_kmh: float
+               ) -> list[bool]:
+    """Single fix-to-fix legs far faster than the legs on both sides.
+
+    A crash often leaves one fix thrown ahead of the rider: one leg at
+    50-65 km/h between legs in the 20s, with the next few seconds slowing
+    to a stop. The Hampel passes can miss it when the slow-down that
+    follows drags their local baseline around, so this is the plain
+    version: faster than `ratio` times the median of the `legs` legs
+    before and of the `legs` legs after, by at least `min_abs_kmh`.
+    """
+    n = len(speeds)
+    out = [False] * n
+    for i in range(legs, n - legs):
+        before = statistics.median(speeds[i - legs:i])
+        after = statistics.median(speeds[i + 1:i + 1 + legs])
+        ref = max(before, after)
+        out[i] = speeds[i] > ratio * ref and speeds[i] - ref >= min_abs_kmh
+    return out
+
+
 def glitch_clamp(times: list[datetime], speeds: list[float], flagged: list[bool],
                  buffer: int, context_s: float) -> tuple[list[float], list[bool]]:
     n = len(speeds)
@@ -766,7 +788,8 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], d
         speed_plateau, pre_flanks, post_flanks, args.absolute_max_speed_kmh)
     # Only the stages that judge a fix itself bad trigger the clamp; the
     # accel and plateau tests also fire on the top of real, smooth peaks.
-    glitch = [c.position_outlier or leg_hampel_flag[i] or hampel_flag[i]
+    spike = leg_spikes(leg_speed, args.spike_legs, args.spike_ratio, args.spike_min_abs_kmh)
+    glitch = [c.position_outlier or leg_hampel_flag[i] or hampel_flag[i] or spike[i]
               for i, c in enumerate(cleaned)]
     speed_final, clamp_flag = glitch_clamp(times, speed_sane, glitch,
                                            args.glitch_buffer, args.glitch_context_s)
@@ -802,6 +825,7 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], d
             "plateau_outlier": plateau_flag[i],
             "speed_final_kmh": round(speed_final[i], 3),
             "sanity_capped": sanity_flag[i],
+            "leg_spike": spike[i],
             "glitch_clamped": clamp_flag[i],
             "distance_cumulative_m": round(dist[i], 2),
             "leg_speed_raw_kmh": round(leg_speed[i], 3),
@@ -903,6 +927,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
                       help="Samples either side of any flagged point to cap (default: 3; 0 disables)")
     g5b.add_argument("--glitch-context-s", type=float, default=10.0,
                       help="Cap at the fastest unaffected speed within this many seconds (default: 10.0)")
+    g5b.add_argument("--spike-legs", type=int, default=3,
+                      help="Legs on each side a lone leg spike is compared with (default: 3)")
+    g5b.add_argument("--spike-ratio", type=float, default=1.6,
+                      help="A leg spike is this many times the faster side's median... (default: 1.6)")
+    g5b.add_argument("--spike-min-abs-kmh", type=float, default=15.0,
+                      help="...and at least this much faster (default: 15.0)")
 
     g6 = ap.add_argument_group("Stage 8: sustained top speed")
     g6.add_argument("--sustained-window-s", type=float, default=2.0,
