@@ -29,7 +29,8 @@ Each import is the same as add-run: gpx_filter.py, then import.sql with
 DWP_RIDER, DWP_BOARD and DWP_FOIL. Sessions that overlap one of the
 rider's runs already in the lake are skipped (--reimport redoes them;
 import.sql replaces the overlapping run). A run that fails to import is
-reported at the end instead of stopping the batch.
+retried (--retries, default 3); one that still fails is reported at
+the end instead of stopping the batch.
 
 Run it from db's nix dev shell (python3, duckdb, rclone).
 """
@@ -43,6 +44,7 @@ import statistics
 import subprocess
 import sys
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 import zipfile
 from datetime import datetime, timezone
@@ -374,6 +376,8 @@ def main(argv=None):
                     help="activity ids from review to import as well")
     ap.add_argument("--exclude", nargs="*", default=[],
                     help="activity ids to leave out")
+    ap.add_argument("--retries", type=int, default=3,
+                    help="times to retry a run that fails to import (default: 3)")
     ap.add_argument("--reimport", action="store_true",
                     help="also import sessions that overlap a run already in the lake")
     args = ap.parse_args(argv)
@@ -433,7 +437,13 @@ def main(argv=None):
             print(f"[{i}/{len(todo)}] {local(r['w_start'])} {r['name']}", file=sys.stderr)
             gpx = os.path.join(tmp, f"{r['id']}.gpx")
             write_gpx(tracks[r["id"]], r["w_start"], r["w_end"], gpx)
-            if not import_run(gpx, args, tmp):
+            for attempt in range(1, args.retries + 2):
+                if import_run(gpx, args, tmp):
+                    break
+                if attempt <= args.retries:
+                    print(f"failed, retrying ({attempt}/{args.retries})", file=sys.stderr)
+                    time.sleep(5 * attempt)
+            else:
                 failed.append(r)
     if len(failed) < len(todo):
         run(["./upload-runs.sh"], cwd=DB_DIR)
