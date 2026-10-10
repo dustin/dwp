@@ -104,7 +104,7 @@ function riderCard({slug, name, runs}) {
   ${tideCard(tidesNow)}
 </div>
 
-## Riders
+## Riders <a class="riders-compare" href="versus.html">Compare two riders →</a>
 
 <div class="grid grid-cols-4">
   ${riders.filter(r => r.runs.length).map(riderCard)}
@@ -214,5 +214,6 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   a.nav-card.buoy-card { flex-direction: row; gap: 0.75rem; }
   .buoy-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
   .buoy-spark { flex: 1; min-height: 34px; }
+  .riders-compare { font-size: 0.9rem; font-weight: 400; margin-left: 0.6rem; }
   .rider-host { margin-top: auto; padding-top: 0.4rem; font-size: 0.8rem; color: var(--theme-foreground-focus); }
 </style>
