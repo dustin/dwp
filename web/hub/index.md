@@ -90,7 +90,7 @@ function riderCard({slug, name, runs}) {
       <div class="nav-lead">${latest.start_beach}${latest.end_beach !== latest.start_beach ? ` → ${latest.end_beach}` : ""}</div>
       <div class="nav-muted">Last run ${fmt.relativeTime(latest.ts)} · ${latest.distance_km.toFixed(1)} km</div>
       <div class="nav-muted">${year.length} runs · ${fmt.comma(Math.round(d3.sum(year, d => d.distance_km)))} km this year</div>`
-    : htl.html`<div class="nav-muted">No runs yet</div>`}
+    : ""}
     <div class="rider-host">${slug}.downwind.pro</div>
   </a>`;
 }
@@ -107,7 +107,7 @@ function riderCard({slug, name, runs}) {
 ## Riders
 
 <div class="grid grid-cols-4">
-  ${riders.map(riderCard)}
+  ${riders.filter(r => r.runs.length).map(riderCard)}
 </div>
 
 <style>
