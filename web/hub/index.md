@@ -53,16 +53,16 @@ function windCard({name, rows}) {
 }
 
 function buoyCard(b) {
-  if (!b?.primary) return htl.html`<div class="card"><h2>Pauwela buoy</h2><div class="nav-muted">No recent report</div></div>`;
-  return htl.html`<div class="card buoy-card">
+  if (!b?.primary) return htl.html`<a class="card nav-card" href="buoy.html"><h2>Pauwela buoy <span class="nav-card-arrow">→</span></h2><div class="nav-muted">No recent report</div></a>`;
+  return htl.html`<a class="card nav-card buoy-card" href="buoy.html">
     <div class="buoy-main">
-      <h2>Pauwela buoy <span class="nav-age">${fmt.relativeTime(b.primaryTs)}</span></h2>
+      <h2>Pauwela buoy <span class="nav-age">${fmt.relativeTime(b.primaryTs)} <span class="nav-card-arrow">→</span></span></h2>
       <div class="nav-lead">${b.primary.height.toFixed(1)}′ @ ${b.primary.period.toFixed(0)}s ${compassPoint(b.primary.direction)}${
         b.primary.surflineKJ == null ? "" : htl.html` <span class="nav-age">${b.primary.surflineKJ.toFixed(0)} kJ</span>`}</div>
       <div class="buoy-spark">${resize((width, height) => renderSpectrumSparkline(b.spectrum, {width: Math.min(width, 220), height: Math.max(34, height)}))}</div>
     </div>
     <div class="buoy-side">${renderMiniRose(b.spectrum)}</div>
-  </div>`;
+  </a>`;
 }
 
 function tideCard(ex) {
@@ -211,7 +211,7 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
     border-color: color-mix(in srgb, var(--theme-foreground-focus) 25%, transparent); }
   a.nav-card:hover { border-color: var(--theme-foreground-focus); }
   .nav-card-arrow { color: var(--theme-foreground-focus); }
-  .buoy-card { display: flex; gap: 0.75rem; }
+  a.nav-card.buoy-card { flex-direction: row; gap: 0.75rem; }
   .buoy-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
   .buoy-spark { flex: 1; min-height: 34px; }
   .rider-host { margin-top: auto; padding-top: 0.4rem; font-size: 0.8rem; color: var(--theme-foreground-focus); }
