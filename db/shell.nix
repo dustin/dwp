@@ -6,7 +6,7 @@ mkShell {
   buildInputs = [
     pkgs-unstable.duckdb
     rclone
-    python3
+    (python3.withPackages (ps: [ ps.shapely ]))  # shapely: strava/import-archive
     tzdata  # for gpx_filter's zoneinfo
   ];
   shellHook = ''
