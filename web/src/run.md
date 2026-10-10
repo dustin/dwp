@@ -18,9 +18,9 @@ import {partitionReading, spectralPartitions} from "./components/spectral-partit
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 
-const allRuns = await fetchMeta(() => FileAttachment('data/runs.csv'));
+const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv')));
 
 const beachColor = beachColorScale(allRuns);
 

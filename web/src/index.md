@@ -11,7 +11,7 @@ import {renderChord} from "./components/chord.js";
 import {renderCrashes} from "./components/crash-map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, dryLimit, runDataURL} from "./components/data.js";
+import {fetchMeta, riderFile, dryLimit, runDataURL} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
 import {foilColorScale} from "./components/foils.js";
@@ -22,7 +22,7 @@ import {computeAchievements} from "./components/achievements.js";
 import {lazy, lazyResize} from "./components/lazy.js";
 import {prefetchPage} from "./components/prefetch.js";
 
-const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
+const runCsv = await fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv')));
 
 const latestRun = runCsv[runCsv.findIndex(d => d.ts === d3.max(runCsv, d => d.ts))];
 
@@ -739,7 +739,7 @@ const hrs_avg = Array.from(
 ## Crash Density
 
 ```js
-const crashes = (await FileAttachment("data/crashes.csv").csv({typed: true})).map(d => ({
+const crashes = (await riderFile('crashes.csv', FileAttachment("data/crashes.csv")).csv({typed: true})).map(d => ({
     ...d,
     ts: new Date(d.ts),
     }));

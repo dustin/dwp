@@ -45,11 +45,11 @@ Every run that beat or matched the previous best in at least one category, or ma
 ```js
 import * as d3 from "npm:d3";
 import * as fmt from "./components/formatters.js";
-import {fetchMeta} from "./components/data.js";
+import {fetchMeta, riderFile} from "./components/data.js";
 import {beachColorScale} from "./components/beaches.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
-const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
+const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
 const beachColor = beachColorScale(allRuns);
 ```
 

@@ -132,14 +132,14 @@ pager: false
 </style>
 
 ```js
-import {fetchMeta, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRun, fetchWind, fetchSwell} from "./components/data.js";
 import {compareTrackViewer} from "./components/compare-track-viewer.js";
 import {findCallouts, findFastest1kSegment} from "./components/map.js";
 import {compareColorizers} from "./components/color.js";
 import {summarizeSwellPartition, formatIndividualSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import * as fmt from "./components/formatters.js";
 
-const allRuns = await fetchMeta(() => FileAttachment("data/runs.csv"));
+const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
 const runMetaMap = allRuns.reduce((m, r) => { m[r.id] = r; return m; }, {});
 
 const urlParams = new URLSearchParams(location.search);

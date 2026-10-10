@@ -21,7 +21,7 @@ import {compareColorizers} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 import {primarySwell} from "./components/swell.js";
 import {fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
 import {buoyComparison} from "./components/buoy-snapshot.js";
@@ -31,7 +31,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const id1 = urlParams.get("id1");
 const id2 = urlParams.get("id2");
 
-const allRunsP = fetchMeta(() => FileAttachment('data/runs.csv')).then(data => data.reduce((m, r) => {
+const allRunsP = fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv'))).then(data => data.reduce((m, r) => {
   m[r.id] = r
   return m;
 }, {}));

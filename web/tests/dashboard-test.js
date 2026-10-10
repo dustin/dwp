@@ -34,11 +34,16 @@ function requiredLinks() {
 //   https://d2qwe1xndvncw9.cloudfront.net/wind/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_partition/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_spectrum/site%3D<site>/day%3D<day>/data.csv
-// The track CSV (/runs/...) is deliberately excluded -- a missing track is
-// a real failure.
+//   https://d2qwe1xndvncw9.cloudfront.net/runs/rider%3D<rider>/(runs|crashes|run_buoy).csv
+// (the last until the rider's lists are on the CDN; data.js riderFile falls
+// back to the bundled copies).
+// The track CSV (/runs/.../data.csv) is deliberately excluded -- a missing
+// track is a real failure.
 function isOptionalDataRequest(url) {
-  return /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition|swell_spectrum)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
-    url
+  return (
+    /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition|swell_spectrum)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
+      url
+    ) || /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/runs\/rider%3D[a-z0-9-]+\/(runs|crashes|run_buoy)\.csv$/.test(url)
   );
 }
 

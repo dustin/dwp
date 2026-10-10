@@ -12,6 +12,11 @@ import.sql resolves DWP_FOIL to the one known foil it names (688 means
 F4 Hammerhead 688), and fails the import if it names none or several.
 For a foil you haven't used before, pass --new-foil and its full name.
 
+The run is Dustin's unless --rider names someone else (the subdomain
+their runs are served on, e.g. --rider walter). Foils are matched among
+that rider's runs, and the board defaults to the one on their latest run
+(--board to set it).
+
 Run it from db's nix dev shell, which has python3, tzdata, duckdb and
 rclone.
 """
@@ -52,6 +57,9 @@ def main(argv=None):
     ap.add_argument("-m", "--message", help="jj commit message (prompted for if omitted)")
     ap.add_argument("--new-foil", action="store_true",
                     help="the foil is new: record its name exactly as given")
+    ap.add_argument("--rider", default="dustin",
+                    help="whose run this is (default: dustin)")
+    ap.add_argument("--board", help="board to record (default: the rider's latest)")
     ap.add_argument("--push", action="store_true", help="jj push after committing")
     args = ap.parse_args(argv)
 
@@ -71,6 +79,7 @@ def main(argv=None):
         gpx_filter.main([args.gpx, "-o", csv_path])
         # import.sql reads these with getenv().
         env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
+                   DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
         with open(os.path.join(DB_DIR, "import.sql")) as sql:
             run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)

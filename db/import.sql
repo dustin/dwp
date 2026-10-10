@@ -2,18 +2,31 @@ use lake;
 
 begin;
 
+-- The CSV path, rider and foil come from the environment; add-run sets
+-- them. DWP_RIDER is whose run this is (migrate-riders.sql); everything
+-- below that looks at existing runs only looks at that rider's.
+SET VARIABLE rider = CASE
+  WHEN coalesce(getenv('DWP_RIDER'), '') = ''
+    THEN error('set DWP_RIDER to the rider, e.g. DWP_RIDER=dustin')
+  ELSE getenv('DWP_RIDER')
+END;
 call lake.set_commit_message('dustin', 'import DW run from filtered csv');
-
--- The CSV path and foil come from the environment; add-run sets both.
 SET VARIABLE csv_path = coalesce(nullif(getenv('DWP_CSV'), ''), '/tmp/activity.csv');
 SET VARIABLE tz = 'Pacific/Honolulu';
-SET VARIABLE board = 'Kalama Gator  95.0 lt';
+-- DWP_BOARD if given, else the board on the rider's latest run.
+SET VARIABLE board = coalesce(
+  nullif(getenv('DWP_BOARD'), ''),
+  (SELECT board FROM dwlist
+   WHERE rider = getvariable('rider') AND board IS NOT NULL
+   ORDER BY ts DESC LIMIT 1),
+  CASE WHEN getvariable('rider') = 'dustin' THEN 'Kalama Gator  95.0 lt' END);
 
 -- Resolve DWP_FOIL (any case-insensitive piece of a foil name, e.g. 688)
--- to the one foil in dwlist it names. An exact name always wins. With
+-- to the one foil in the rider's dwlist rows it names. An exact name always wins. With
 -- DWP_NEW_FOIL set, DWP_FOIL is a foil not used before, taken as is.
 SET VARIABLE foil = (
-  WITH known AS (SELECT DISTINCT foil FROM dwlist WHERE foil IS NOT NULL),
+  WITH known AS (SELECT DISTINCT foil FROM dwlist
+                 WHERE foil IS NOT NULL AND rider = getvariable('rider')),
   hits AS (
     SELECT foil FROM known
     WHERE contains(lower(foil), lower(getenv('DWP_FOIL')))
@@ -62,13 +75,16 @@ FROM read_csv_auto(getvariable('csv_path'));
 -- shifted by a few seconds. Since no two real runs ever start
 -- within a few minutes of each other or overlap in time, any
 -- existing run whose (buffered) time range overlaps the new run's
--- range must be the same run, so we match on that instead.
+-- range must be the same run, so we match on that instead. Only the same
+-- rider's runs, though: two riders on the same downwind overlap all the
+-- time.
 CREATE TEMP TABLE new_run_range AS
 SELECT min(ts) AS start_ts, max(ts) AS end_ts FROM run_points;
 
 CREATE TEMP TABLE existing_run AS
 SELECT dwid
 FROM dws
+WHERE dwid IN (SELECT id FROM dwlist WHERE rider = getvariable('rider'))
 GROUP BY dwid
 HAVING min(ts) - INTERVAL '5 minutes' <= (SELECT end_ts FROM new_run_range)
    AND max(ts) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range)
@@ -77,7 +93,8 @@ UNION
 -- it on its summary times instead, and the real track replaces it.
 SELECT id
 FROM dwlist l
-WHERE NOT EXISTS (SELECT 1 FROM dws WHERE dws.dwid = l.id)
+WHERE l.rider = getvariable('rider')
+  AND NOT EXISTS (SELECT 1 FROM dws WHERE dws.dwid = l.id)
   AND to_timestamp(l.ts) - INTERVAL '5 minutes' <= (SELECT end_ts FROM new_run_range)
   AND to_timestamp(l.ts + l.duration_sec) + INTERVAL '5 minutes' >= (SELECT start_ts FROM new_run_range);
 
@@ -94,9 +111,10 @@ DROP TABLE new_run_range;
 CREATE TEMP TABLE new_run AS
 SELECT gen_random_uuid() AS dwid;
 
-INSERT INTO dwlist (id, sport, board, foil)
+INSERT INTO dwlist (id, rider, sport, board, foil)
 SELECT
   dwid,
+  getvariable('rider'),
   'Downwind',
   getvariable('board'),
   getvariable('foil')

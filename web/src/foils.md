@@ -8,10 +8,10 @@ toc: true
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta} from "./components/data.js";
+import {fetchMeta, riderFile} from "./components/data.js";
 import {foilList, foilColorScale} from "./components/foils.js";
 
-const runCsv = await fetchMeta(() => FileAttachment('data/runs.csv'));
+const runCsv = await fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv')));
 const latestRun = runCsv[runCsv.findIndex(d => d.ts === d3.max(runCsv, d => d.ts))];
 
 const foils = foilList(runCsv);

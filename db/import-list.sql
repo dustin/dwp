@@ -1,4 +1,4 @@
--- Update the list from a Waterspeed export
+-- Update the list from a Waterspeed export (Dustin's runs only)
 
 use lake;
 
@@ -25,10 +25,10 @@ merge into dwlist as l
         duration_sec = ups.duration_sec, distance_km = ups.distance_km,
         feeling = ups.feeling, board = ups.board, foil = ups.foil
   when not matched then insert (
-    id, filename, sport, ts, date, time,
+    id, rider, filename, sport, ts, date, time,
       max_speed_kmh, avg_speed_kmh, duration_sec, distance_km,
       feeling, board, foil
-  ) VALUES ( uuidv7(), ups.filename, 'Downwind', ups.ts, ups.date, ups.time,
+  ) VALUES ( uuidv7(), 'dustin', ups.filename, 'Downwind', ups.ts, ups.date, ups.time,
       ups.max_speed_kmh, ups.avg_speed_kmh, ups.duration_sec, ups.distance_km,
       ups.feeling, ups.board, ups.foil
   );

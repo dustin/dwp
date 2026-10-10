@@ -23,6 +23,8 @@ use lake;
 
 begin;
 
+SET VARIABLE rider = 'dustin';   -- whose run this is (migrate-riders.sql)
+
 call lake.set_commit_message('dustin', 'enter DW run by hand (no track)');
 
 -- Max HR normally comes from the track, so dwlist has had nowhere to keep it.
@@ -55,10 +57,12 @@ SELECT CASE
     THEN error('end_time must be after start_time')
 END AS checks;
 
--- Never overwrite a run that has a real track.
+-- Never overwrite a run that has a real track. Only this rider's runs
+-- count: someone else on the same downwind is a different run.
 SELECT CASE WHEN EXISTS (
   SELECT 1
   FROM dws
+  WHERE dwid IN (SELECT id FROM dwlist WHERE rider = getvariable('rider'))
   GROUP BY dwid
   HAVING min(ts) - INTERVAL '5 minutes' <= getvariable('end_time')
      AND max(ts) + INTERVAL '5 minutes' >= getvariable('start_time')
@@ -66,17 +70,19 @@ SELECT CASE WHEN EXISTS (
 
 -- Replace an earlier hand-entered version of this run.
 DELETE FROM dwlist l
-WHERE NOT EXISTS (SELECT 1 FROM dws WHERE dws.dwid = l.id)
+WHERE l.rider = getvariable('rider')
+  AND NOT EXISTS (SELECT 1 FROM dws WHERE dws.dwid = l.id)
   AND to_timestamp(l.ts) - INTERVAL '5 minutes' <= getvariable('end_time')
   AND to_timestamp(l.ts + l.duration_sec) + INTERVAL '5 minutes' >= getvariable('start_time');
 
 INSERT INTO dwlist (
-  id, ts, date, time, distance_km, duration_sec, avg_speed_kmh, max_speed_kmh,
+  id, rider, ts, date, time, distance_km, duration_sec, avg_speed_kmh, max_speed_kmh,
   sport, board, foil, description, start_pos, end_pos,
   paddle_up_count, avg_foiling_hr, max_hr
 )
 SELECT
   gen_random_uuid(),
+  getvariable('rider'),
   epoch(getvariable('start_time')),
   (getvariable('start_time') AT TIME ZONE getvariable('tz'))::DATE,
   (getvariable('start_time') AT TIME ZONE getvariable('tz'))::TIME,
@@ -101,6 +107,6 @@ SELECT date, time, round(distance_km, 2) AS km, duration_sec,
        round(avg_speed_kmh, 1) AS avg_kmh, round(max_speed_kmh, 1) AS max_kmh,
        paddle_up_count, start_beach, end_beach
 FROM dwlist_resolved
-WHERE ts = epoch(getvariable('start_time'));
+WHERE ts = epoch(getvariable('start_time')) AND rider = getvariable('rider');
 
 commit;

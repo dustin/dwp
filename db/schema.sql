@@ -21,6 +21,7 @@ CREATE TABLE dws(
 
 CREATE TABLE dwlist(
   id UUID,
+  rider VARCHAR, -- whose run this is: the subdomain, e.g. 'dustin' (migrate-riders.sql)
   ts DOUBLE, -- originally timestamp_from_1970
   date DATE,
   "time" TIME,
