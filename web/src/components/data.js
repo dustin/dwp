@@ -79,7 +79,8 @@ export const rider = (() => {
 // db/upload-runs.sh): runs.csv, crashes.csv and run_buoy.csv beside the
 // tracks at dwid=<id>/data.csv. Before that layout existed, tracks were at
 // runs/dwid=<id>/data.csv and the lists were bundled with the site.
-const riderBase = `https://${DATAHOST}/runs/rider%3D${rider}/`;
+const baseFor = who => `https://${DATAHOST}/runs/rider%3D${who}/`;
+const riderBase = baseFor(rider);
 const legacyBase = `https://${DATAHOST}/runs/`;
 let trackBase = legacyBase;
 
@@ -87,15 +88,16 @@ let trackBase = legacyBase;
 // the pages expect from a FileAttachment (`.csv({typed})`). If the CDN
 // copy can't be had, Dustin's site uses `bundled`, the copy built into
 // the site (web/src/data/), and keeps reading tracks from the old layout.
-export function riderFile(name, bundled) {
+// `who` reads another rider's file (the root page's rider picker).
+export function riderFile(name, bundled, who = rider) {
   return {
     async csv({ typed = false } = {}) {
       try {
-        const rows = await d3.csv(riderBase + name, typed ? d3.autoType : undefined);
-        trackBase = riderBase;
+        const rows = await d3.csv(baseFor(who) + name, typed ? d3.autoType : undefined);
+        if (who === rider) trackBase = riderBase;
         return rows;
       } catch (e) {
-        if (rider === 'dustin' && bundled) return bundled.csv({ typed });
+        if (who === 'dustin' && bundled) return bundled.csv({ typed });
         throw e;
       }
     },
@@ -257,6 +259,26 @@ export async function fetchWind(meta) {
     }))
     .catch(err => [])
     .then(allRows => inRange(meta, allRows));
+}
+
+// The last `hours` of a wind station's readings, oldest first.
+export async function fetchRecentWind(site, hours = 6) {
+  const end = new Date();
+  const start = new Date(end.getTime() - hours * 3600 * 1000);
+  const rows = (
+    await Promise.all(
+      enumerateDays(start, end).map(day =>
+        fetchCsvForDay('wind', site, day, row => ({
+          ts: new Date(row.ts),
+          wavg: +row.wavg,
+          wdir: +row.wdir,
+          wgust: +row.wgust,
+          wlull: +row.wlull,
+        }))
+      )
+    )
+  ).flat();
+  return rows.filter(d => d.ts >= start && d.ts <= end).sort((a, b) => d3.ascending(a.ts, b.ts));
 }
 
 export function toRelative(series, tsKey = 'ts', outKey = 't') {
