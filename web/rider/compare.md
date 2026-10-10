@@ -18,7 +18,7 @@ toc: true
 ```js
 import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
 import {compareColorizers, FOIL_THRESHOLD_KPH} from "./components/color.js";
-import {windRoseOrigin, windRoseScale, addWindRose} from "./components/wind-rose.js";
+import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, riderFile, rider, RIDERS, withRider, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
@@ -46,6 +46,9 @@ const together = r1 !== r2;
 const cap = s => s[0].toUpperCase() + s.slice(1);
 const label1 = together ? cap(r1) : fmt.timestamp(meta1.ts);
 const label2 = together ? cap(r2) : fmt.timestamp(meta2.ts);
+const theFoil = (m, cls) => /^unknown/.test(m.foil)
+  ? html`an <span class=${cls}>unknown foil</span>`
+  : html`the <span class=${cls}>${m.foil}</span>`;
 
 const runMeta1 = meta1;
 const runMeta2 = meta2;
@@ -60,7 +63,7 @@ const buoyFetches = [runMeta1, runMeta2].map(m =>
 
 # ${together ? html`<span class="run1">${label1}</span> and <span class="run2">${label2}</span> on ${fmt.date(runMeta1.ts)}, ${runMeta1.start_beach} → ${runMeta1.end_beach}` : html`Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>`}
 
-${html`<a href="comparetrack.html?id1=${id1}&id2=${id2}">Open map</a>`}
+<div>On ${theFoil(runMeta1, "run1")} and ${theFoil(runMeta2, "run2")} · ${html`<a href="comparetrack.html?id1=${id1}&id2=${id2}">Open map</a>`}</div>
 
 ${Object.assign(html`<button title="Swap which run is first (and which color each gets)">⇄ Swap</button>`, {
   // A new page load with id1/id2 exchanged; Back undoes it.
@@ -138,6 +141,13 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
 <div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], callouts, {
   colorizers: colorizers,
   additionalMarks: ({ d3, svg, width, height }) => {
+    // Riders out together had the same wind, so one rose does.
+    if (together) {
+      const scale = windRoseScale(width);
+      const { centerX, centerY } = windRoseOrigin(16, 130, 0, scale);
+      addWindRose(d3, svg, wind1, {x: centerX, y: centerY, title: "Wind (avg)", scheme: WIND_SPEED_COLORS, scale});
+      return;
+    }
     aRose(d3, svg, width, height, wind1, 1, colorizers[0], 0);
     aRose(d3, svg, width, height, wind2, 2, colorizers[1], 300)
   },
@@ -202,15 +212,6 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
       <span class="run1">${known(runMeta1.max_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
       /<br/>
       <span class="run2">${known(runMeta2.max_distance, d => `${(d / 1000).toFixed(2)} km`)}</span>
-    </span>
-  </div>
-
-  <div class="card">
-    <h2>Foil</h2>
-    <span class="big">
-      <span class="run1">${runMeta1.foil}</span>
-      /<br/>
-      <span class="run2">${runMeta2.foil}</span>
     </span>
   </div>
 
@@ -325,39 +326,23 @@ const swellymax = Math.max(
 ) * 1.1;
 ```
 
-<div class="grid grid-cols-2">
-
-<div class="card">${
-  wind1 && wind2 && wind1.length > 0 && wind2.length > 0
-    ? resize((width) => {
-        return Plot.plot({
-          title: `Wind Speed (${label1})`,
-          width,
-          color: { legend: false },
-          y: { domain: [0, windymax], label: "knots" },
-          x: { tickFormat: d => fmt.seconds(d / 1000) },
-          marks: tl.makeWindMarks(wind1, wind2, 0, "wind1", colorizers),
-        });
-      })
-    : html`<p>No wind data found for this run.</p>`
-}</div>
-
-<div class="card">${
-  wind1 && wind2 && wind1.length > 0 && wind2.length > 0
-    ? resize((width) => {
-        return Plot.plot({
-          title: `Wind Speed (${label2})`,
-          width,
-          color: { legend: false },
-          y: { domain: [0, windymax], label: "knots" },
-          x: { tickFormat: d => fmt.seconds(d / 1000) },
-          marks: tl.makeWindMarks(wind2, wind1, 1, "wind2", colorizers),
-        });
-      })
-    : html`<p>No wind data found for this run.</p>`
-}</div>
-
-</div>
+```js
+// Same run, same wind: the charts would just repeat each other.
+const windChart = (w, other, idx, label) => w?.length > 0 && other?.length > 0
+  ? resize(width => Plot.plot({
+      title: `Wind Speed (${label})`,
+      width,
+      color: { legend: false },
+      y: { domain: [0, windymax], label: "knots" },
+      x: { tickFormat: d => fmt.seconds(d / 1000) },
+      marks: tl.makeWindMarks(w, other, idx, `wind${idx + 1}`, colorizers),
+    }))
+  : html`<p>No wind data found for this run.</p>`;
+if (!together) display(html`<div class="grid grid-cols-2">
+  <div class="card">${windChart(wind1, wind2, 0, label1)}</div>
+  <div class="card">${windChart(wind2, wind1, 1, label2)}</div>
+</div>`);
+```
 
 <div>${
   // Swell height comes from the Pauwela buoy (North Shore only), and each
