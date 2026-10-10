@@ -17,7 +17,19 @@ export default {
   // ],
 
   // Content to add to the head of the page, e.g. for a favicon:
-  head: '<link rel="icon" href="observable.png" type="image/png" sizes="32x32">',
+  // The bare downwind.pro is the shared landing page (home.md): its home
+  // redirects there, and every rider page goes to the same path on
+  // dustin.downwind.pro so old links keep working. MagTag and tides stay
+  // put (the MagTag fetches its card from here). Inline so it runs before
+  // the page loads anything.
+  head: `<link rel="icon" href="observable.png" type="image/png" sizes="32x32">
+<script>(function () {
+  var h = location.hostname, p = location.pathname, rest = location.search + location.hash;
+  if (h !== 'downwind.pro' && h !== 'www.downwind.pro') return;
+  if (p === '/' || p === '/index.html') return location.replace('/home.html' + rest);
+  if (/^\\/(home|magtag|tides)\\.html$/.test(p) || !/\\.html$/.test(p)) return;
+  location.replace('https://dustin.downwind.pro' + p + rest);
+})();</script>`,
 
   // The path to the source root.
   root: "src",
