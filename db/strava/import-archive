@@ -376,6 +376,8 @@ def main(argv=None):
                     help="activity ids from review to import as well")
     ap.add_argument("--exclude", nargs="*", default=[],
                     help="activity ids to leave out")
+    ap.add_argument("--only", nargs="*", default=[],
+                    help="import just these activity ids (implies --reimport)")
     ap.add_argument("--retries", type=int, default=3,
                     help="times to retry a run that fails to import (default: 3)")
     ap.add_argument("--reimport", action="store_true",
@@ -422,9 +424,13 @@ def main(argv=None):
 
     if not args.do_import:
         return
-    todo = [r for r in picked
-            if (r["v"] == "downwind" or r["id"] in args.include) and r["id"] not in args.exclude]
-    if not args.reimport:
+    if args.only:
+        todo = [r for r in picked if r["id"] in args.only]
+    else:
+        todo = [r for r in picked
+                if (r["v"] == "downwind" or r["id"] in args.include)
+                and r["id"] not in args.exclude]
+    if not args.reimport and not args.only:
         have = existing_runs(args.rider)
         new = [r for r in todo
                if not any(s < r["w_end"] and r["w_start"] < e for s, e in have)]
@@ -436,7 +442,13 @@ def main(argv=None):
         for i, r in enumerate(todo, 1):
             print(f"[{i}/{len(todo)}] {local(r['w_start'])} {r['name']}", file=sys.stderr)
             gpx = os.path.join(tmp, f"{r['id']}.gpx")
-            write_gpx(tracks[r["id"]], r["w_start"], r["w_end"], gpx)
+            pts = tracks[r["id"]]
+            if len({p[3] for p in pts if p[3] is not None}) == 1:
+                # A stuck sensor: one value for the whole run (seen as
+                # 76 bpm throughout). Better no HR than a flat line.
+                print("heart rate never changes, dropping it", file=sys.stderr)
+                pts = [p[:3] + (None,) for p in pts]
+            write_gpx(pts, r["w_start"], r["w_end"], gpx)
             for attempt in range(1, args.retries + 2):
                 if import_run(gpx, args, tmp):
                     break
