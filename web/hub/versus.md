@@ -203,7 +203,7 @@ const n = v => fmt.comma(v);
 </div>
 
 <div class="card">
-  <h2>Records <span class="nav-age">bests from the achievements page</span></h2>
+  <h2>Records</h2>
   <div class="vs-head records-head"><span style=${`color:${colorA}`}>${A.name}</span><span></span><span style=${`color:${colorB}`}>${B.name}</span></div>
   <div class="records-cols">
     ${recordCategories.map(recordRow)}
