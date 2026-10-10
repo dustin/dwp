@@ -100,9 +100,10 @@ const runHref = (who, d) => `https://${who.slug}.downwind.pro/run.html?id=${d.id
 const colorA = "var(--theme-foreground-focus)", colorB = "#e8743b";
 ```
 
-# ${A.name} vs ${B.name}
-
-<div class="pickers">${pickAInput}<span class="vs">vs</span>${pickBInput}</div>
+```js
+display(htl.html`<h1><span style=${{color: colorA}}>${A.name}</span> vs <span style=${{color: colorB}}>${B.name}</span></h1>`);
+display(htl.html`<div class="pickers"><span class="picker" style=${{"--rider": colorA}}>${pickAInput}</span><span class="vs">vs</span><span class="picker" style=${{"--rider": colorB}}>${pickBInput}</span></div>`);
+```
 
 ```js
 // One stat, both riders: the values either side of the label, the higher one
@@ -249,12 +250,63 @@ const n = v => fmt.comma(v);
   </div>
 </div>
 
+
+<div class="card">
+  <h2>Who went when <span class="nav-age">last 12 months</span></h2>
+  <div class="cal-key"><span><i class="cal-a"></i>${A.name}</span><span><i class="cal-b"></i>${B.name}</span><span><i class="cal-a-b"></i>Both</span></div>
+  ${resize(width => {
+    // One cell per day: the left half lit if rider A went, the right half if
+    // B did. Weeks run across on a wide screen and down on a phone.
+    const end = d3.timeDay(now), start = d3.timeWeek(d3.timeDay.offset(end, -364));
+    const kmBy = runs => d3.rollup(runs, v => d3.sum(v, d => d.distance_km), d => +d3.timeDay(d.ts));
+    const kmA = kmBy(A.runs), kmB = kmBy(B.runs);
+    const days = d3.timeDays(start, d3.timeDay.offset(end, 1)).map(day => ({
+      day, week: d3.timeWeek.count(start, day), dow: day.getDay(), a: kmA.get(+day), b: kmB.get(+day)
+    }));
+    const weeks = d3.max(days, d => d.week) + 1;
+    const across = width >= 640;
+    const cell = across ? Math.min(22, Math.floor((width - 30) / weeks)) : Math.min(40, Math.floor((width - 50) / 7));
+    const title = d => `${d3.timeFormat("%a %b %-d, %Y")(d.day)}\n${A.name}: ${d.a ? `${d.a.toFixed(1)} km` : "–"}\n${B.name}: ${d.b ? `${d.b.toFixed(1)} km` : "–"}`;
+    // Cell edges in week/weekday units; `half` is 0 for A's half, 1 for B's.
+    const pos = half => across
+      ? {x1: d => d.week + 0.06 + half * 0.44, x2: d => d.week + 0.5 + half * 0.44, y1: d => d.dow + 0.06, y2: d => d.dow + 0.94}
+      : {y1: d => d.week + 0.06, y2: d => d.week + 0.94, x1: d => d.dow + 0.06 + half * 0.44, x2: d => d.dow + 0.5 + half * 0.44};
+    const whole = across
+      ? {x1: d => d.week + 0.06, x2: d => d.week + 0.94, y1: d => d.dow + 0.06, y2: d => d.dow + 0.94}
+      : {y1: d => d.week + 0.06, y2: d => d.week + 0.94, x1: d => d.dow + 0.06, x2: d => d.dow + 0.94};
+    const monthTicks = days.filter(d => d.day.getDate() === 1).map(d => d.week + 0.5);
+    const monthLabel = w => d3.timeFormat("%b")(d3.timeWeek.offset(start, Math.floor(w) + 1));
+    const dowAxis = {domain: [0, 7], ticks: d3.range(7).map(i => i + 0.5), tickFormat: i => "SMTWTFS"[Math.floor(i)], tickSize: 0, label: null};
+    const weekAxis = {domain: [0, weeks], ticks: monthTicks, tickFormat: monthLabel, tickSize: 0, label: null};
+    return Plot.plot({
+      width: across ? 30 + cell * weeks : 50 + cell * 7,
+      height: across ? cell * 7 + 24 : cell * weeks + 10,
+      marginLeft: across ? 24 : 40, marginRight: across ? 6 : 10, marginTop: across ? 0 : 20, marginBottom: across ? 22 : 0,
+      x: across ? weekAxis : {...dowAxis, axis: "top"},
+      y: across ? {...dowAxis, reverse: true} : {...weekAxis, reverse: true},
+      marks: [
+        Plot.rect(days, {...whole, fill: "var(--theme-foreground-faintest)", title}),
+        Plot.rect(days.filter(d => d.a), {...pos(0), fill: colorA, title}),
+        Plot.rect(days.filter(d => d.b), {...pos(1), fill: colorB, title}),
+        Plot.rect(days.filter(d => +d.day === +end), {...whole, fill: "none", stroke: "var(--theme-foreground)"})
+      ]
+    });
+  })}
+  <div class="vs-foot">${(() => {
+    const dA = new Set(A.runs.filter(d => d.ts >= d3.timeDay.offset(now, -365)).map(d => +d3.timeDay(d.ts)));
+    const dB = new Set(B.runs.filter(d => d.ts >= d3.timeDay.offset(now, -365)).map(d => +d3.timeDay(d.ts)));
+    const both = [...dA].filter(d => dB.has(d)).length;
+    return `${dA.size} days ${A.name} · ${dB.size} days ${B.name} · ${both} days both`;
+  })()}</div>
+</div>
+
 <style>
   h1 { margin-bottom: 0.3rem; }
   h2 { margin: 0 0 0.5rem; display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; }
   .nav-age { color: var(--theme-foreground-muted); font-size: 0.8rem; font-weight: 400; }
   .pickers { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 1rem; }
   .pickers form { width: auto; margin: 0; }
+  .picker select { color: var(--rider); font-weight: 600; border: 2px solid var(--rider); border-radius: 4px; }
   .pickers .vs { color: var(--theme-foreground-muted); }
   .vs-head, .vs-row { display: grid; grid-template-columns: 1fr 11rem 1fr; gap: 0.8rem; align-items: center; }
   .vs-head { font-weight: 600; font-size: 0.85rem; margin-bottom: 0.2rem; }
@@ -274,8 +326,14 @@ const n = v => fmt.comma(v);
   .vs-b .vs-bar span { background: #e8743b; }
   .vs-sub { border-bottom: none; padding: 0 0 0.3rem; font-size: 0.7rem; color: var(--theme-foreground-muted); }
   .vs-foot { margin-top: 0.5rem; font-size: 0.75rem; color: var(--theme-foreground-muted); text-align: center; }
-  .records-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); column-gap: 2.5rem; }
+  .records-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(26rem, 100%), 1fr)); column-gap: 2.5rem; }
   .records-head { display: none; }
+  .cal-key { display: flex; gap: 1rem; font-size: 0.8rem; color: var(--theme-foreground-muted); margin-bottom: 0.5rem; }
+  .cal-key span { display: inline-flex; align-items: center; gap: 0.35rem; }
+  .cal-a { background: var(--theme-foreground-focus); }
+  .cal-b { background: #e8743b; }
+  .cal-a-b { background: linear-gradient(90deg, var(--theme-foreground-focus) 50%, #e8743b 50%); }
+  .cal-key i { display: inline-block; width: 0.8rem; height: 0.8rem; border-radius: 2px; }
   .spots { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
   .spots-who { font-weight: 600; margin-bottom: 0.3rem; }
   .spot-row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; border-bottom: 1px solid var(--theme-foreground-faintest); }
