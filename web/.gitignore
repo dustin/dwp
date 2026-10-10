@@ -4,3 +4,4 @@ node_modules
 test-output
 rider/token.js
 hub/token.js
+.observablehq/
