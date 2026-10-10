@@ -7,6 +7,7 @@ toc: false
 ```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, RIDERS} from "./components/data.js";
+import {categories, computeAchievements} from "./components/achievements.js";
 
 // ?a=dustin&b=walter picks the two riders; the pickers below rewrite the URL
 // in place so the comparison can be shared.
@@ -45,6 +46,33 @@ const thisYear = now.getFullYear();
 const since90 = d3.timeDay.offset(d3.timeDay(now), -90);
 const route = d => d.end_beach && d.end_beach !== d.start_beach ? `${d.start_beach} → ${d.end_beach}` : d.start_beach;
 
+// The rider's standing best in each achievement category (the same ones the
+// rider site's achievements page tracks), as {value, run}. Per-region
+// categories collapse to the best anywhere; milestones and events are left
+// out since they aren't bests.
+const recordCategories = categories.filter(c => !c.event && c.key !== "odometer");
+function bestRecords(runs) {
+  const records = computeAchievements(runs).flatMap(a => a.records).filter(r => !r.matched);
+  return new Map(recordCategories.map(c => [c.key,
+    d3.greatest(records.filter(r => r.category === c), r => c.score(r.value))]));
+}
+
+function averages(runs) {
+  const hr = runs.filter(d => d.avg_foiling_hr > 0), minHr = runs.filter(d => d.min_foiling_hr > 0);
+  const foiled = runs.filter(d => d.duration_on_foil > 0);
+  return {
+    speed: d3.mean(runs, d => d.avg_speed_kmh),
+    foilSpeed: 3.6 * d3.sum(foiled, d => d.distance_on_foil) / d3.sum(foiled, d => d.duration_on_foil),
+    topSpeed: d3.mean(runs, d => d.max_speed_kmh),
+    km: d3.mean(runs, d => d.distance_km),
+    onFoil: d3.sum(runs, d => d.distance_on_foil) / 1000 / d3.sum(runs, d => d.distance_km),
+    segment: d3.mean(runs, d => d.longest_segment_distance),
+    paddleUps: d3.mean(runs, d => d.paddle_up_count),
+    hr: d3.mean(hr, d => d.avg_foiling_hr), minHr: d3.mean(minHr, d => d.min_foiling_hr),
+    wind: d3.mean(runs.filter(d => d.avg_wavg != null), d => d.avg_wavg)
+  };
+}
+
 function summarize(slug, runs) {
   const year = runs.filter(d => d.ts.getFullYear() === thisYear);
   const recent = runs.filter(d => d.ts >= since90);
@@ -59,11 +87,9 @@ function summarize(slug, runs) {
     year: {n: year.length, km: d3.sum(year, d => d.distance_km), h: d3.sum(year, d => d.duration_sec) / 3600},
     recent: {n: recent.length, km: d3.sum(recent, d => d.distance_km),
       days: new Set(recent.map(d => +d3.timeDay(d.ts))).size},
-    records: {
-      max_speed_kmh: best("max_speed_kmh"), max_speed_1k: best("max_speed_1k"),
-      longest_segment_distance: best("longest_segment_distance"), distance_km: best("distance_km"),
-      max_distance: best("max_distance")
-    },
+    longestRun: best("distance_km"),
+    records: bestRecords(runs),
+    avg: averages(runs),
     spots: spots.slice(0, 5), spotCount: spots.length
   };
 }
@@ -81,9 +107,9 @@ const colorA = "var(--theme-foreground-focus)", colorB = "#e8743b";
 ```js
 // One stat, both riders: the values either side of the label, the higher one
 // highlighted, and a bar under each scaled to the larger of the two.
-function versusRow(label, a, b, format, {lower = false} = {}) {
+function versusRow(label, a, b, format, {lower = false, neutral = false} = {}) {
   const ok = v => v != null && !isNaN(v);
-  const win = !ok(a) || !ok(b) || a === b ? 0 : (lower ? a < b : a > b) ? -1 : 1;
+  const win = neutral || !ok(a) || !ok(b) || a === b ? 0 : (lower ? a < b : a > b) ? -1 : 1;
   const max = Math.max(ok(a) ? a : 0, ok(b) ? b : 0) || 1;
   const pct = v => ok(v) ? (lower ? Math.min(...[a, b].filter(ok)) / v : v / max) * 100 : 0;
   const cell = (v, side, w) => htl.html`<div class=${`vs-val vs-${side} ${win === w ? "vs-win" : ""}`}>
@@ -92,17 +118,21 @@ function versusRow(label, a, b, format, {lower = false} = {}) {
   return htl.html`<div class="vs-row">${cell(a, "a", -1)}<div class="vs-label">${label}</div>${cell(b, "b", 1)}</div>`;
 }
 
-function recordRow(label, field, format, opts) {
-  const ra = A.records[field], rb = B.records[field];
-  const link = (who, r) => r ? htl.html`<a href=${runHref(who, r)}>${format(r[field])}</a>` : "–";
-  const row = versusRow(label, ra?.[field], rb?.[field], format, opts);
+// One achievement category, both riders' bests linked to the runs that set them.
+function recordRow(c) {
+  const ra = A.records.get(c.key), rb = B.records.get(c.key);
+  const link = (who, r) => r ? htl.html`<a href=${runHref(who, r.run)}>${c.fmt(r.value)}</a>` : "–";
+  // A category's score says which way is better (lower heart rate, say).
+  const row = versusRow(c.label, ra?.value, rb?.value, c.fmt, {lower: c.score(1000) < c.score(100)});
   // Swap the plain values for links to the record runs.
   row.querySelector(".vs-a span").replaceWith(link(A, ra));
   row.querySelector(".vs-b span").replaceWith(link(B, rb));
-  const sub = (r) => r ? `${route(r)} · ${d3.timeFormat("%b %-d, %Y")(r.ts)}` : "";
+  const sub = r => r ? `${route(r.run)} · ${d3.timeFormat("%b %-d, %Y")(r.run.ts)}` : "";
   return htl.html`<div>${row}<div class="vs-row vs-sub"><div class="vs-a">${sub(ra)}</div><div></div><div class="vs-b">${sub(rb)}</div></div></div>`;
 }
 
+const kph = v => `${v.toFixed(1)} kph`;
+const bpm = v => `${Math.round(v)} bpm`;
 const km = v => `${fmt.comma(Math.round(v))} km`;
 const km1 = v => `${v.toFixed(1)} km`;
 const hrs = v => `${fmt.comma(Math.round(v))} h`;
@@ -116,8 +146,6 @@ const n = v => fmt.comma(v);
     ${versusRow("Runs", A.total.n, B.total.n, n)}
     ${versusRow("Distance", A.total.km, B.total.km, km)}
     ${versusRow("Time on water", A.total.h, B.total.h, hrs)}
-    ${versusRow("Average run", A.total.avgKm, B.total.avgKm, km1)}
-    ${versusRow("On foil", A.total.onFoil, B.total.onFoil, v => `${(v * 100).toFixed(0)}%`)}
     ${versusRow("Paddle ups", A.total.paddleUps, B.total.paddleUps, n)}
     ${versusRow("Routes ridden", A.spotCount, B.spotCount, n)}
     <div class="vs-foot">Since ${A.first ? fmt.mmYYYY(A.first.ts) : "–"} · since ${B.first ? fmt.mmYYYY(B.first.ts) : "–"}</div>
@@ -137,12 +165,18 @@ const n = v => fmt.comma(v);
 
 <div class="grid grid-cols-2">
   <div class="card">
-    <h2>Records</h2>
-    ${recordRow("Max speed", "max_speed_kmh", v => `${v.toFixed(1)} kph`)}
-    ${recordRow("Best 1k pace", "max_speed_1k", v => fmt.paceNoUnit(v))}
-    ${recordRow("Longest foiling segment", "longest_segment_distance", v => `${(v / 1000).toFixed(1)} km`)}
-    ${recordRow("Longest run", "distance_km", km1)}
-    ${recordRow("Furthest from land", "max_distance", v => `${(v / 1000).toFixed(1)} km`)}
+    <h2>Average run</h2>
+    <div class="vs-head"><span style=${`color:${colorA}`}>${A.name}</span><span></span><span style=${`color:${colorB}`}>${B.name}</span></div>
+    ${versusRow("Distance", A.avg.km, B.avg.km, km1)}
+    ${versusRow("Speed", A.avg.speed, B.avg.speed, kph)}
+    ${versusRow("Foiling speed", A.avg.foilSpeed, B.avg.foilSpeed, kph)}
+    ${versusRow("Top speed", A.avg.topSpeed, B.avg.topSpeed, kph)}
+    ${versusRow("On foil", A.avg.onFoil, B.avg.onFoil, v => `${(v * 100).toFixed(0)}%`)}
+    ${versusRow("Longest foil", A.avg.segment, B.avg.segment, v => `${(v / 1000).toFixed(1)} km`)}
+    ${versusRow("Paddle ups", A.avg.paddleUps, B.avg.paddleUps, v => v.toFixed(1), {lower: true})}
+    ${versusRow("Foiling HR", A.avg.hr, B.avg.hr, bpm, {lower: true})}
+    ${versusRow("Min foiling HR", A.avg.minHr, B.avg.minHr, bpm, {lower: true})}
+    ${versusRow("Wind", A.avg.wind, B.avg.wind, v => `${v.toFixed(0)} kn`, {neutral: true})}
   </div>
   <div class="card">
     <h2>Distance by month <span class="nav-age">last 12 months</span></h2>
@@ -165,6 +199,19 @@ const n = v => fmt.comma(v);
         ]
       });
     })}
+  </div>
+</div>
+
+<div class="card">
+  <h2>Records <span class="nav-age">bests from the achievements page</span></h2>
+  <div class="vs-head records-head"><span style=${`color:${colorA}`}>${A.name}</span><span></span><span style=${`color:${colorB}`}>${B.name}</span></div>
+  <div class="records-cols">
+    ${recordCategories.map(recordRow)}
+    ${(() => {
+      const row = versusRow("Longest run", A.longestRun?.distance_km, B.longestRun?.distance_km, km1);
+      const sub = r => r ? `${route(r)} · ${d3.timeFormat("%b %-d, %Y")(r.ts)}` : "";
+      return htl.html`<div>${row}<div class="vs-row vs-sub"><div class="vs-a">${sub(A.longestRun)}</div><div></div><div class="vs-b">${sub(B.longestRun)}</div></div></div>`;
+    })()}
   </div>
 </div>
 
@@ -227,6 +274,8 @@ const n = v => fmt.comma(v);
   .vs-b .vs-bar span { background: #e8743b; }
   .vs-sub { border-bottom: none; padding: 0 0 0.3rem; font-size: 0.7rem; color: var(--theme-foreground-muted); }
   .vs-foot { margin-top: 0.5rem; font-size: 0.75rem; color: var(--theme-foreground-muted); text-align: center; }
+  .records-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(26rem, 1fr)); column-gap: 2.5rem; }
+  .records-head { display: none; }
   .spots { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; }
   .spots-who { font-weight: 600; margin-bottom: 0.3rem; }
   .spot-row { display: flex; justify-content: space-between; gap: 0.5rem; font-size: 0.85rem; padding: 0.15rem 0; border-bottom: 1px solid var(--theme-foreground-faintest); }
