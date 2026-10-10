@@ -4,6 +4,7 @@
 #
 #   ./upload-runs.sh            tracks from the last 14 days, all run lists
 #   DWP_FULL=1 ./upload-runs.sh every track (after a CDN rebuild)
+#   ./upload-runs.sh <dwid>...  just these runs' tracks (any age), all run lists
 #
 # The CDN layout, under s3:db.downwind.pro/runs/:
 #
@@ -32,6 +33,10 @@ consolidate() {
     gzip -9v data.csv
     mv data.csv.gz data.csv
 }
+
+# Run ids on the command line replace the 14-day window (export-runs.sql).
+DWP_RUNS=$(echo "$*" | tr ' ' ',')
+export DWP_RUNS
 
 cd $lake
 duckdb --init init.sql < $db/export-runs.sql
