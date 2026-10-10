@@ -123,8 +123,8 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 
 ## On the water
 
-<div class="grid grid-cols-2">
-  <div class="card">
+<div class="grid grid-cols-4">
+  <div class="card grid-colspan-2">
     <h2>Recent sessions</h2>
     <div class="feed">${allRuns.slice(0, 8).map(d => htl.html`<a class="feed-row" href=${runLink(d)}>
       <span class="feed-when">${fmt.relativeTime(d.ts)}</span>
@@ -139,9 +139,11 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
     ${resize(width => {
       const byDay = d3.rollup(recent90, v => ({km: d3.sum(v, d => d.distance_km), n: v.length, riders: new Set(v.map(d => d.riderName))}), d => +d3.timeDay(d.ts));
       const days = d3.timeDays(since90, d3.timeDay.offset(today, 1)).map(day => ({day, ...(byDay.get(+day) ?? {km: 0, n: 0, riders: new Set()})}));
-      const cell = Math.min(22, Math.floor((width - 30) / 14));
+      // Square cells: size them from the width, then size the plot from the cells.
+      const weeks = d3.timeWeek.count(d3.timeWeek(since90), today) + 1;
+      const cell = Math.max(10, Math.min(22, Math.floor((width - 24) / weeks)));
       return Plot.plot({
-        width, height: cell * 7 + 30, marginLeft: 30, marginTop: 4, marginBottom: 22, padding: 0.12,
+        width: 24 + cell * weeks, height: 4 + cell * 7 + 22, marginLeft: 24, marginRight: 0, marginTop: 4, marginBottom: 22, padding: 0.12,
         x: {type: "band", axis: "bottom", tickSize: 0, tickFormat: (w, i) => i % 4 ? "" : d3.timeFormat("%b %-d")(d3.timeWeek.offset(d3.timeWeek(since90), w)), label: null},
         y: {type: "band", domain: d3.range(7), tickFormat: d => "SMTWTFS"[d], label: null, tickSize: 0},
         color: {type: "linear", domain: [0, 40], range: ["#c6dbef", "#08519c"], clamp: true},
@@ -159,9 +161,6 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
       });
     })}
   </div>
-</div>
-
-<div class="grid grid-cols-2">
   <div class="card">
     <h2>Popular routes <span class="nav-age">last 90 days</span></h2>
     ${resize(width => {
