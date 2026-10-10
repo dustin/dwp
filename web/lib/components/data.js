@@ -104,8 +104,28 @@ export function riderFile(name, bundled, who = rider) {
   };
 }
 
+// A run tagged with another rider (see withRider) reads from that rider's
+// layout.
+// Marks runs as `who`'s, so fetchRun finds their tracks from any rider's
+// site.
+export const withRider = (runs, who) => runs.map(r => ({ ...r, rider: who }));
+
+// Another rider's run that overlaps `meta` in time and starts nearby: the
+// two rode together. Returns the best match or undefined.
+export function rodeWith(meta, others, maxStartKm = 2) {
+  const end = m => +m.ts + 1000 * m.duration_sec;
+  const km = (a, b) => Math.hypot((a.start_lat - b.start_lat) * 111, (a.start_lon - b.start_lon) * 104);
+  let best, bestOverlap = 0;
+  for (const o of others) {
+    const overlap = Math.min(end(meta), end(o)) - Math.max(+meta.ts, +o.ts);
+    if (overlap > bestOverlap && !(km(meta, o) > maxStartKm)) [best, bestOverlap] = [o, overlap];
+  }
+  return best;
+}
+
 export function runDataURL(meta) {
-  return `${trackBase}dwid%3D${meta.id}/data.csv`;
+  const base = meta.rider && meta.rider !== rider ? baseFor(meta.rider) : trackBase;
+  return `${base}dwid%3D${meta.id}/data.csv`;
 }
 
 export async function fetchRun(meta) {
@@ -115,7 +135,7 @@ export async function fetchRun(meta) {
   const load = url => d3.csv(url, d3.autoType);
   const url = runDataURL(meta);
   const legacy = `${legacyBase}dwid%3D${meta.id}/data.csv`;
-  return load(url).catch(e => (url === legacy || rider !== 'dustin' ? Promise.reject(e) : load(legacy))).then(data =>
+  return load(url).catch(e => (url === legacy || (meta.rider ?? rider) !== 'dustin' ? Promise.reject(e) : load(legacy))).then(data =>
     d3.sort(
       data.map(d => ({ ...d, odometer: d.distance + 1000 * meta.odometer_km, ts: new Date(d.tsi * 1000) })),
       d => d.tsi

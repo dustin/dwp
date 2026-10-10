@@ -21,7 +21,7 @@ import {compareColorizers} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
+import {fetchMeta, riderFile, rider, RIDERS, withRider, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 import {primarySwell} from "./components/swell.js";
 import {fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
 import {buoyComparison} from "./components/buoy-snapshot.js";
@@ -31,26 +31,34 @@ const urlParams = new URLSearchParams(window.location.search);
 const id1 = urlParams.get("id1");
 const id2 = urlParams.get("id2");
 
-const allRunsP = fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv'))).then(data => data.reduce((m, r) => {
-  m[r.id] = r
-  return m;
-}, {}));
+// r1/r2 name each run's rider (default: this site's), so two riders who
+// rode together can be compared.
+const r1 = RIDERS.includes(urlParams.get("r1")) ? urlParams.get("r1") : rider;
+const r2 = RIDERS.includes(urlParams.get("r2")) ? urlParams.get("r2") : rider;
+const runsOf = who => fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv'), who))
+  .then(data => withRider(data, who));
+const [runs1, runs2] = await Promise.all([runsOf(r1), r2 === r1 ? null : runsOf(r2)]);
+const byId = rows => Object.fromEntries(rows.map(r => [r.id, r]));
+const meta1 = byId(runs1)[id1], meta2 = byId(runs2 ?? runs1)[id2];
+const csvFetches = [meta1, meta2].map(fetchRun);
+// Two riders: name them; one rider: tell the runs apart by date.
+const together = r1 !== r2;
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const label1 = together ? cap(r1) : fmt.timestamp(meta1.ts);
+const label2 = together ? cap(r2) : fmt.timestamp(meta2.ts);
 
-const runMetaMap = await allRunsP;
-const csvFetches = [runMetaMap[id1], runMetaMap[id2]].map(fetchRun);
+const runMeta1 = meta1;
+const runMeta2 = meta2;
 
-const runMeta1 = runMetaMap[id1];
-const runMeta2 = runMetaMap[id2];
-
-const windFetches = [id1, id2].map(i => fetchWind(runMetaMap[i]).then(toRelative));
-const swellFetches = [id1, id2].map(i => fetchSwell(runMetaMap[i]).then(primarySwell).then(toRelative));
+const windFetches = [meta1, meta2].map(m => fetchWind(m).then(toRelative));
+const swellFetches = [meta1, meta2].map(m => fetchSwell(m).then(primarySwell).then(toRelative));
 // Buoy conditions at each run's midpoint (null where there's no buoy data).
 const buoyFetches = [runMeta1, runMeta2].map(m =>
   hasBuoyData(m) ? fetchBuoySnapshot(runMidpoint(m), buoySite(m)) : Promise.resolve(null)
 );
 ```
 
-# Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>
+# ${together ? html`<span class="run1">${label1}</span> and <span class="run2">${label2}</span> on ${fmt.date(runMeta1.ts)}, ${runMeta1.start_beach} → ${runMeta1.end_beach}` : html`Comparing a run on <span class="run1">${fmt.date(runMeta1.ts)}</span> to a run on <span class="run2">${fmt.date(runMeta2.ts)}</span>`}
 
 ${html`<a href="comparetrack.html?id1=${id1}&id2=${id2}">Open map</a>`}
 
@@ -60,6 +68,10 @@ ${Object.assign(html`<button title="Swap which run is first (and which color eac
     const params = new URLSearchParams(location.search);
     params.set("id1", id2);
     params.set("id2", id1);
+    if (together) {
+      params.set("r1", r2);
+      params.set("r2", r1);
+    }
     location.assign(`${location.pathname}?${params}${location.hash}`);
   }
 })}
@@ -68,6 +80,27 @@ ${Object.assign(html`<button title="Swap which run is first (and which color eac
 const [runCsv1, runCsv2] = await Promise.all(csvFetches);
 
 const colorizers = compareColorizers(runCsv1, runCsv2);
+
+// Riding together: at each moment both were recording, how much further
+// down the course rider 1 was. Progress is each position projected onto
+// the line from rider 1's first point to their last, so GPS distance
+// differences between devices (and wiggles) don't count.
+const gap = (() => {
+  if (!together) return [];
+  const pts = runCsv1.filter(d => d.lat != null);
+  if (pts.length < 2) return [];
+  const [s0, s1] = [pts[0], pts[pts.length - 1]];
+  const kx = 111320 * Math.cos(s0.lat * Math.PI / 180), ky = 110540;
+  const ux = (s1.lon - s0.lon) * kx, uy = (s1.lat - s0.lat) * ky;
+  const len = Math.hypot(ux, uy);
+  const along = d => ((d.lon - s0.lon) * kx * ux + (d.lat - s0.lat) * ky * uy) / len;
+  const bis = d3.bisector(d => d.ts).left;
+  const other = runCsv2.filter(d => d.lat != null);
+  return pts.filter((d, i) => i % 5 === 0).flatMap(d => {
+    const i = bis(other, d.ts);
+    return i > 0 && i < other.length ? [{ts: d.ts, gap: along(d) - along(other[i])}] : [];
+  });
+})();
 // Stats that come from the GPS track are empty for a run entered by hand.
 const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
 
@@ -225,6 +258,22 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
 
 </div>
 
+<div>${together ? html`<h2>Who's Ahead</h2>
+<div class="card">${resize(width => Plot.plot({
+  title: `Distance ${label1} is ahead of ${label2} (negative: behind)`,
+  width, height: 240,
+  x: {type: "time", label: null},
+  y: {label: "meters", grid: true},
+  marks: [
+    Plot.ruleY([0]),
+    Plot.areaY(gap, {x: "ts", y: d => Math.max(0, d.gap), fill: "hsl(140, 80%, 45%)", fillOpacity: 0.3}),
+    Plot.areaY(gap, {x: "ts", y: d => Math.min(0, d.gap), fill: "hsl(30, 85%, 55%)", fillOpacity: 0.3}),
+    Plot.lineY(gap, {x: "ts", y: "gap", strokeWidth: 1.5}),
+    Plot.tip(gap, Plot.pointerX({x: "ts", y: "gap",
+      title: d => `${fmt.timestamp(d.ts)}\n${d.gap >= 0 ? label1 : label2} ahead by ${Math.abs(d.gap).toFixed(0)} m`}))
+  ]
+}))}</div>` : ""}</div>
+
 ## Speed
 
 <div class="card">${
@@ -270,7 +319,7 @@ const swellymax = Math.max(
   wind1 && wind2 && wind1.length > 0 && wind2.length > 0
     ? resize((width) => {
         return Plot.plot({
-          title: `Wind Speed (${fmt.timestamp(runMeta1.ts)})`,
+          title: `Wind Speed (${label1})`,
           width,
           color: { legend: false },
           y: { domain: [0, windymax], label: "knots" },
@@ -285,7 +334,7 @@ const swellymax = Math.max(
   wind1 && wind2 && wind1.length > 0 && wind2.length > 0
     ? resize((width) => {
         return Plot.plot({
-          title: `Wind Speed (${fmt.timestamp(runMeta2.ts)})`,
+          title: `Wind Speed (${label2})`,
           width,
           color: { legend: false },
           y: { domain: [0, windymax], label: "knots" },
@@ -306,7 +355,7 @@ const swellymax = Math.max(
   swell1 && swell2 && swell1.length > 0 && swell2.length > 0
     ? resize((width) => {
         return Plot.plot({
-          title: `Swell Height (${fmt.timestamp(runMeta1.ts)})`,
+          title: `Swell Height (${label1})`,
           width,
           color: { legend: false },
           y: { domain: [0, swellymax], label: "feet" },
@@ -320,7 +369,7 @@ const swellymax = Math.max(
   swell1 && swell2 && swell1.length > 0 && swell2.length > 0
     ? resize((width) => {
         return Plot.plot({
-          title: `Swell Height (${fmt.timestamp(runMeta2.ts)})`,
+          title: `Swell Height (${label2})`,
           width,
           color: { legend: false },
           y: { domain: [0, swellymax], label: "feet" },
@@ -388,7 +437,7 @@ const maxHRY = Math.max(
 <div class="grid grid-cols-2">
 <div class="card">${
 resize((width) => Plot.plot({
-      title: `Speed (${fmt.timestamp(runMeta1.ts)})`,
+      title: `Speed (${label1})`,
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxSplitY] },
       marks: [
@@ -403,7 +452,7 @@ resize((width) => Plot.plot({
 }</div>
 <div class="card">${
   resize((width) => Plot.plot({
-      title: `Speed (${fmt.timestamp(runMeta2.ts)})`,
+      title: `Speed (${label2})`,
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxSplitY] },
       marks: [
@@ -422,7 +471,7 @@ resize((width) => Plot.plot({
 
 <div class="card">${
 resize((width) => Plot.plot({
-      title: `Pace (${fmt.timestamp(runMeta1.ts)})`,
+      title: `Pace (${label1})`,
       color: { legend: true },
       clip: true,
       width, x: { interval: 1, label: "km" }, y: { domain: [1, maxPaceY] },
@@ -437,7 +486,7 @@ resize((width) => Plot.plot({
 }</div>
 <div class="card">${
   resize((width) => Plot.plot({
-      title: `Pace (${fmt.timestamp(runMeta2.ts)})`,
+      title: `Pace (${label2})`,
       color: { legend: true },
       clip: true,
       width, x: { interval: 1, label: "km" }, y: { domain: [1, maxPaceY] },
@@ -457,7 +506,7 @@ resize((width) => Plot.plot({
 
 <div class="card">${
 resize((width) => Plot.plot({
-      title: `Heart Rate (${fmt.timestamp(runMeta1.ts)})`,
+      title: `Heart Rate (${label1})`,
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxHRY] },
       marks: [
@@ -472,7 +521,7 @@ resize((width) => Plot.plot({
 }</div>
 <div class="card">${
   resize((width) => Plot.plot({
-      title: `Heart Rate (${fmt.timestamp(runMeta2.ts)})`,
+      title: `Heart Rate (${label2})`,
       color: { legend: true },
       width, x: { interval: 1, label: "km" }, y: { domain: [0, maxHRY] },
       marks: [
