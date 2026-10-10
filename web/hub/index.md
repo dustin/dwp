@@ -39,7 +39,7 @@ function windCard({name, rows}) {
   if (!last) return htl.html`<div class="card"><h2>${name} wind</h2><div class="nav-muted">No recent readings</div></div>`;
   return htl.html`<div class="card wind-card">
     <h2>${name} wind <span class="nav-age">${fmt.relativeTime(last.ts)}</span></h2>
-    <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span> gusting ${last.wgust.toFixed(0)} · ${compassPoint(last.wdir)}</div>
+    <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span> gusting ${last.wgust.toFixed(0)} · ${compassPoint(last.wdir)} ${Math.round(last.wdir)}°</div>
     ${resize(width => Plot.plot({
       width, height: 70, margin: 2, marginBottom: 16, x: {type: "time", ticks: 3, tickFormat: fmt.clock, label: null}, y: {axis: null, domain: [0, Math.max(30, d3.max(rows, d => d.wgust))]},
       marks: [
