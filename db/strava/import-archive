@@ -29,12 +29,13 @@ Each import is the same as add-run: gpx_filter.py, then import.sql with
 DWP_RIDER, DWP_BOARD and DWP_FOIL. import.sql replaces any of the
 rider's runs that overlap, so rerunning is safe.
 
-Run it from db's nix dev shell (python3 with shapely, duckdb, rclone).
+Run it from db's nix dev shell (python3, duckdb, rclone).
 """
 
 import argparse
 import csv
 import math
+import re
 import os
 import statistics
 import subprocess
@@ -45,8 +46,6 @@ import zipfile
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
-import shapely
-from shapely.geometry import Point
 
 csv.field_size_limit(sys.maxsize)  # coastline WKT is megabytes
 DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -58,7 +57,7 @@ import gpx_filter  # noqa: E402
 
 GPX = "{http://www.topografix.com/GPX/1/1}"
 HR = "{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}hr"
-LAND_BUFFER_DEG = 0.00025  # ~25 m, so a fix on the sand still counts as land
+LAND_BUFFER_M = 25  # so a fix on the sand still counts as land
 
 
 def die(msg):
@@ -74,15 +73,79 @@ def run(cmd, cwd=None, env=None, stdin=None):
 
 
 def load_shapes(name, col):
-    """(name, geometry) rows from one of db's parquet files, via the duckdb CLI."""
+    """(name, rings) rows from one of db's parquet files, via the duckdb CLI.
+
+    Each ring is a list of (x, y) in local metres (see xy)."""
     q = (f"install spatial; load spatial; "
          f"copy (select {col}, ST_AsText(geom) as wkt from '{name}') to '/dev/stdout' (format csv)")
     out = subprocess.run(["duckdb", "-c", q], cwd=DB_DIR, check=True,
                          capture_output=True, text=True).stdout
-    return [(r[col], shapely.from_wkt(r["wkt"])) for r in csv.DictReader(out.splitlines())]
+    rows = []
+    for r in csv.DictReader(out.splitlines()):
+        rings = [[xy(float(lat), float(lon)) for lon, lat in
+                  (pair.split() for pair in ring.split(","))]
+                 for ring in re.findall(r"\(([^()]+)\)", r["wkt"])]
+        rows.append((r[col], rings))
+    return rows
 
 
 # --- geometry -------------------------------------------------------------
+
+# Everything here is Maui-sized, so a flat projection centred on 21N is
+# plenty: x and y in metres.
+COS_LAT = math.cos(math.radians(21))
+
+
+def xy(lat, lon):
+    return (lon * 111320.0 * COS_LAT, lat * 110574.0)
+
+
+def seg_dist(p, a, b):
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    L = dx * dx + dy * dy
+    t = 0.0 if L == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / L))
+    return math.hypot(p[0] - ax - t * dx, p[1] - ay - t * dy)
+
+
+class Shapes:
+    """Polygons with a grid of their edges, for inside tests and distances."""
+
+    def __init__(self, rings, cell=200.0):
+        self.cell = cell
+        self.grid = {}   # (i, j) -> edges whose bbox touches that cell
+        self.rows = {}   # j -> edges spanning that row of cells, for ray casting
+        for ring in rings:
+            for a, b in zip(ring, ring[1:] + ring[:1]):
+                i0, i1 = sorted((int(a[0] // cell), int(b[0] // cell)))
+                j0, j1 = sorted((int(a[1] // cell), int(b[1] // cell)))
+                for j in range(j0, j1 + 1):
+                    self.rows.setdefault(j, []).append((a, b))
+                    for i in range(i0, i1 + 1):
+                        self.grid.setdefault((i, j), []).append((a, b))
+
+    def inside(self, p):
+        """Even-odd ray cast to the east; holes count correctly."""
+        x, y = p
+        n = 0
+        for (ax, ay), (bx, by) in self.rows.get(int(y // self.cell), ()):
+            if (ay > y) != (by > y) and x < ax + (y - ay) * (bx - ax) / (by - ay):
+                n += 1
+        return n % 2 == 1
+
+    def near(self, p, r):
+        """Whether any edge is within r metres (r up to one cell)."""
+        i, j = int(p[0] // self.cell), int(p[1] // self.cell)
+        return any(seg_dist(p, a, b) <= r
+                   for di in (-1, 0, 1) for dj in (-1, 0, 1)
+                   for a, b in self.grid.get((i + di, j + dj), ()))
+
+    def distance(self, p):
+        """Metres to the nearest edge, 0 inside. Fine for small shapes."""
+        if self.inside(p):
+            return 0.0
+        return min(seg_dist(p, a, b) for edges in self.rows.values() for a, b in edges)
+
 
 def hav(a, b):
     la1, lo1, la2, lo2 = map(math.radians, (a[0], a[1], b[0], b[1]))
@@ -159,7 +222,8 @@ def summarize(act, pts, land, beaches):
     row.update(start=pts[0][0], end=pts[-1][0],
                watch=sum(p[3] is not None for p in pts) > len(pts) / 2)
     sub = every(pts, 5)
-    water = [not land.contains(Point(p[2], p[1])) for p in sub]
+    water = [not (land.inside(q) or land.near(q, LAND_BUFFER_M))
+             for q in (xy(p[1], p[2]) for p in sub)]
     if not any(water):
         return row
     i0 = water.index(True)
@@ -181,9 +245,8 @@ def summarize(act, pts, land, beaches):
             fast += q[0] - p[0]
 
     def beach(pt):
-        g = Point(pt[1], pt[0])
-        n, s = min(beaches, key=lambda nb: nb[1].distance(g))
-        return n, round(s.distance(g) * 104000)  # degrees to ~m at 21N
+        q = xy(*pt)
+        return min(((n, round(b.distance(q))) for n, b in beaches), key=lambda nb: nb[1])
 
     sb, sbm = beach(a)
     eb, ebm = beach(b)
@@ -296,10 +359,9 @@ def main(argv=None):
     out = args.output or os.path.join(
         os.path.dirname(os.path.abspath(args.archive)), "candidates.csv")
     acts, read = open_archive(args.archive, args.activities_csv)
-    land = shapely.union_all([g for _, g in load_shapes("coastline.parquet", "isle")])
-    land = land.buffer(LAND_BUFFER_DEG)
-    shapely.prepare(land)
-    beaches = load_shapes("beaches.parquet", "name")
+    land = Shapes([ring for _, rings in load_shapes("coastline.parquet", "isle")
+                   for ring in rings])
+    beaches = [(n, Shapes(rings, cell=1e6)) for n, rings in load_shapes("beaches.parquet", "name")]
 
     rows, tracks = [], {}
     for i, act in enumerate(acts, 1):
