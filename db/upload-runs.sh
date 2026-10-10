@@ -12,13 +12,13 @@
 #   rider=<rider>/run_buoy.csv      with every import
 #   rider=<rider>/dwid=<id>/data.csv  one run's track
 #
-# Dustin's lists are also copied into web/src/data/, which the site falls
+# Dustin's lists are also copied into web/rider/data/, which the site falls
 # back to when the CDN copy can't be fetched.
 
 lake=$HOME/stuff/duck
 dwruns=/Users/dustin/stuff/dwruns/
 dwlists=/Users/dustin/stuff/dwlists/
-webdata=$(cd "$(dirname "$0")/../web/src/data" && pwd)
+webdata=$(cd "$(dirname "$0")/../web/rider/data" && pwd)
 db=$(cd "$(dirname "$0")" && pwd)
 
 consolidate() {

@@ -1,5 +1,5 @@
 // run-backend-availability-test.js
-// For every run id in src/data/runs.csv, verify the backend actually has a
+// For every run id in rider/data/runs.csv, verify the backend actually has a
 // published track file. This catches runs that are listed in the CSV but
 // whose track data was never uploaded (or was later removed).
 //
@@ -14,10 +14,10 @@ import { csvParse } from 'd3-dsv';
 
 const DATAHOST = process.env.DATAHOST || 'd2qwe1xndvncw9.cloudfront.net';
 const CONCURRENCY = Number(process.env.CONCURRENCY || 20);
-const RUNS_CSV = path.join(process.cwd(), 'src/data/runs.csv');
+const RUNS_CSV = path.join(process.cwd(), 'rider/data/runs.csv');
 
 function runDataURL(id) {
-  return `https://${DATAHOST}/runs/dwid%3D${id}/data.csv`;
+  return `https://${DATAHOST}/runs/rider%3Ddustin/dwid%3D${id}/data.csv`;
 }
 
 // Run a pool of `limit` concurrent workers over `items`, calling `fn` on each.

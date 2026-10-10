@@ -66,7 +66,7 @@ ORDER BY
 -- the nearest spectrum (one row per frequency bin) and the nearest NDBC
 -- standard report (swell_partition rank 1), each within 3 hours. A run with
 -- neither still gets one row of nulls, so the page can tell "no buoy data"
--- from "not exported yet". Mirrors fetchBuoySnapshot in web/src/components/data.js.
+-- from "not exported yet". Mirrors fetchBuoySnapshot in web/lib/components/data.js.
 
 copy (
   with runs as (
@@ -74,7 +74,7 @@ copy (
     from dwlist_resolved
     where region = 'Maui North Shore'
       and rider = getvariable('rider')
-      -- BUOY_DATA_START in web/src/components/data.js
+      -- BUOY_DATA_START in web/lib/components/data.js
       and to_timestamp(ts) >= TIMESTAMPTZ '2026-07-22 00:00:00-10'
   ),
   slots as (select distinct ts from swell_spectrum where site = 'pauwela'),

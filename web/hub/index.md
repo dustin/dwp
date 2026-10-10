@@ -24,14 +24,14 @@ const tidesNow = (async () => {
   return Object.fromEntries(await Promise.all(stations.map(async s => [s, await fetchExtremes(s, start, end)])));
 })().catch(() => null);
 const riders = Promise.all(RIDER_NAMES.map(async ([slug, name]) => {
-  const runs = await fetchMeta(() => riderFile("runs.csv", slug === "dustin" ? FileAttachment("data/runs.csv") : null, slug)).catch(() => []);
+  const runs = await fetchMeta(() => riderFile("runs.csv", null, slug)).catch(() => []);
   return {slug, name, runs};
 }));
 ```
 
 ```js
 function riderHref(slug) {
-  return location.hostname.endsWith("downwind.pro") ? `https://${slug}.downwind.pro/` : `index.html?rider=${slug}`;
+  return `https://${slug}.downwind.pro/`;
 }
 
 function windCard({name, rows}) {

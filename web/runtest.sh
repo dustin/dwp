@@ -25,7 +25,7 @@ npm run build
 echo "Starting nginx server..."
 podman run -d \
   --name dashboard-server \
-  -v ./dist:/usr/share/nginx/html:ro \
+  -v ./dist/rider:/usr/share/nginx/html:ro \
   -p "$PORT":80 \
   docker.io/nginx:alpine
 
@@ -41,7 +41,7 @@ podman run --rm \
   --network host \
   -v ./tests:/tests:ro \
   -v ./test-output:/tests/test-output:rw \
-  -v ./src/data:/tests/data:ro \
+  -v ./rider/data:/tests/data:ro \
   mcr.microsoft.com/playwright:v1.63.0-jammy \
   sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright d3-dsv && BASE_URL=$BASE_URL RUNS_CSV=/tests/data/runs.csv node dashboard-test.js"
 

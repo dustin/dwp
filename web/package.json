@@ -2,10 +2,13 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "clean": "rimraf src/.observablehq/cache",
-    "build": "observable build",
-    "dev": "observable preview --host=localhost --port=3001",
-    "deploy": "observable deploy",
+    "clean": "rimraf rider/.observablehq/cache hub/.observablehq/cache",
+    "build": "npm run build:rider && npm run build:hub",
+    "build:rider": "observable build -c rider.config.js",
+    "build:hub": "observable build -c hub.config.js",
+    "dev": "npm run dev:rider",
+    "dev:rider": "observable preview -c rider.config.js --host=localhost --port=3001",
+    "dev:hub": "observable preview -c hub.config.js --host=localhost --port=3002",
     "observable": "observable"
   },
   "dependencies": {

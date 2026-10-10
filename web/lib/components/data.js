@@ -87,7 +87,7 @@ let trackBase = legacyBase;
 // One of the rider's list files from the CDN, in the shape fetchMeta and
 // the pages expect from a FileAttachment (`.csv({typed})`). If the CDN
 // copy can't be had, Dustin's site uses `bundled`, the copy built into
-// the site (web/src/data/), and keeps reading tracks from the old layout.
+// the site (web/rider/data/), and keeps reading tracks from the old layout.
 // `who` reads another rider's file (the root page's rider picker).
 export function riderFile(name, bundled, who = rider) {
   return {

@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { csvParse } from 'd3-dsv';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-const RUNS_CSV = process.env.RUNS_CSV || path.join(process.cwd(), 'src/data/runs.csv');
+const RUNS_CSV = process.env.RUNS_CSV || path.join(process.cwd(), 'rider/data/runs.csv');
 // How many of the newest runs to always test, so a bad recent import shows
 // up right away instead of whenever the random sample happens to hit it.
 const RECENT_RUNS = Number(process.env.RECENT_RUNS || 3);

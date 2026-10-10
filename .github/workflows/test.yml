@@ -40,7 +40,7 @@ jobs:
         id: build-cache
         with:
           path: ./web/dist
-          key: build-${{ runner.os }}-${{ hashFiles('web/src/**/*', 'web/public/**/*') }}
+          key: build-${{ runner.os }}-${{ hashFiles('web/rider/**/*', 'web/hub/**/*', 'web/lib/**/*', 'web/*.config.js') }}
 
       # Install dependencies if cache miss
       - name: Install dependencies
@@ -82,8 +82,10 @@ jobs:
         env:
           MAPBOX_TOKEN: ${{ secrets.MAPBOX_TOKEN }}
         run: |
-          echo "// Mapbox token" > src/token.js
-          echo "export const MAPBOX_TOKEN = '$MAPBOX_TOKEN';" >> src/token.js
+          for site in rider hub; do
+            echo "// Mapbox token" > $site/token.js
+            echo "export const MAPBOX_TOKEN = '$MAPBOX_TOKEN';" >> $site/token.js
+          done
 
       # Build site if cache miss
       - name: Build site
@@ -94,7 +96,7 @@ jobs:
         run: |
           PORT="${PORT:-3000}"
           echo "BASE_URL=http://localhost:$PORT" >> "$GITHUB_ENV"
-          npx http-server dist -p "$PORT" --silent &
+          npx http-server dist/rider -p "$PORT" --silent &
           echo $! > .server_pid
           sleep 3
 
