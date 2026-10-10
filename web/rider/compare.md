@@ -225,6 +225,15 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
   </div>
 
   <div class="card">
+    <h2>Best 1k Pace</h2>
+    <span class="big">
+      <span class="run1">${known(runMeta1.max_speed_1k, fmt.pace)}</span>
+      /<br/>
+      <span class="run2">${known(runMeta2.max_speed_1k, fmt.pace)}</span>
+    </span>
+  </div>
+
+  <div class="card">
     <h2>Average Foiling Speed</h2>
     <span class="big">
       <span class="run1">${known(foilSpeed1, d => `${fmt.speed(d)} (${fmt.pace(d)})`)}</span>
@@ -239,15 +248,6 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
       <span class="run1">${runMeta1.max_speed_kmh.toFixed(2)} kph</span>
       /<br/>
       <span class="run2">${runMeta2.max_speed_kmh.toFixed(2)} kph</span>
-    </span>
-  </div>
-
-  <div class="card">
-    <h2>Best 1k Pace</h2>
-    <span class="big">
-      <span class="run1">${known(runMeta1.max_speed_1k, fmt.pace)}</span>
-      /<br/>
-      <span class="run2">${known(runMeta2.max_speed_1k, fmt.pace)}</span>
     </span>
   </div>
 
