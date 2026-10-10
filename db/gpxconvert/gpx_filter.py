@@ -72,6 +72,10 @@ Pipeline stages, in order:
      stages 1-6 are what should actually be doing the work, since
      they judge *context/support*, not raw magnitude, and so
      correctly let genuine fast conditions through untouched.
+  7b. Glitch clamp:         points within a few samples of a fix
+     flagged as bad (stages 1-2, 4a, 4b) are capped at the fastest unaffected speed
+     nearby, so the edges of a crash burst (where windows straddle the
+     jump) can't leak into speed_final.
   8. Best sustained speed:   the headline "top speed" figure, computed
      as the best average speed over any span of the track lasting at
      least a configurable window (default 2s), using cumulative
@@ -549,6 +553,52 @@ def sanity_ceiling(speeds: list[float], pre_flanks: list[float | None],
 
 
 # ----------------------------------------------------------------
+# Stage 7b: nothing near a glitch is faster than the speeds around it
+# ----------------------------------------------------------------
+
+# Crashes with the device in the water produce bursts of fixes the
+# receiver extrapolates or loses outright: several seconds at 80-90 km/h
+# in a straight line, then a jump back. Stages 1-6 flag most of the
+# burst, but the points at its edges keep values computed from windows
+# that straddle the jump (a 2s trailing window that ends just past it,
+# a flagged point whose substitute came from flagged neighbours), and
+# those leak 50-60 km/h into speed_final.
+#
+# A rider can't go faster during a crash than just before or after it.
+# So every point within `buffer` samples of a point flagged as a bad fix
+# (stage 1-2 position or stage 4a/4b Hampel) is capped
+# at the fastest speed_final among unaffected points within `context_s`
+# seconds on either side. Values under that cap, and every point away
+# from a glitch, are left alone.
+def glitch_clamp(times: list[datetime], speeds: list[float], flagged: list[bool],
+                 buffer: int, context_s: float) -> tuple[list[float], list[bool]]:
+    n = len(speeds)
+    near = [False] * n
+    for i, f in enumerate(flagged):
+        if f:
+            for k in range(max(0, i - buffer), min(n, i + buffer + 1)):
+                near[k] = True
+    out = speeds[:]
+    clamped = [False] * n
+    for i in range(n):
+        if not near[i]:
+            continue
+        cap = None
+        lo = hi = i
+        while lo > 0 and (times[i] - times[lo - 1]).total_seconds() <= context_s:
+            lo -= 1
+        while hi < n - 1 and (times[hi + 1] - times[i]).total_seconds() <= context_s:
+            hi += 1
+        for k in range(lo, hi + 1):
+            if not near[k] and (cap is None or speeds[k] > cap):
+                cap = speeds[k]
+        if cap is not None and speeds[i] > cap:
+            out[i] = cap
+            clamped[i] = True
+    return out, clamped
+
+
+# ----------------------------------------------------------------
 # Cumulative distance, from cleaned (position-filtered) points
 # ----------------------------------------------------------------
 
@@ -712,8 +762,14 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], d
     speed_plateau, plateau_flag, pre_flanks, post_flanks = plateau_despike(
         times, speed_accel, args.plateau_flank_lo_s, args.plateau_flank_hi_s,
         args.plateau_spike_kmh, args.plateau_match_kmh)
-    speed_final, sanity_flag = sanity_ceiling(
+    speed_sane, sanity_flag = sanity_ceiling(
         speed_plateau, pre_flanks, post_flanks, args.absolute_max_speed_kmh)
+    # Only the stages that judge a fix itself bad trigger the clamp; the
+    # accel and plateau tests also fire on the top of real, smooth peaks.
+    glitch = [c.position_outlier or leg_hampel_flag[i] or hampel_flag[i]
+              for i, c in enumerate(cleaned)]
+    speed_final, clamp_flag = glitch_clamp(times, speed_sane, glitch,
+                                           args.glitch_buffer, args.glitch_context_s)
 
     dist = cumulative_distance(cleaned)
     position_distrust = [c.position_outlier or hampel_flag[i] or leg_hampel_flag[i]
@@ -746,6 +802,7 @@ def run_pipeline(gpx_path: str, args: argparse.Namespace) -> tuple[list[dict], d
             "plateau_outlier": plateau_flag[i],
             "speed_final_kmh": round(speed_final[i], 3),
             "sanity_capped": sanity_flag[i],
+            "glitch_clamped": clamp_flag[i],
             "distance_cumulative_m": round(dist[i], 2),
             "leg_speed_raw_kmh": round(leg_speed[i], 3),
             "leg_hampel_outlier": leg_hampel_flag[i],
@@ -840,6 +897,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     g5 = ap.add_argument_group("Stage 7: sanity ceiling")
     g5.add_argument("--absolute-max-speed-kmh", type=float, default=65.0,
                      help="Last-resort ceiling for physically-impossible values; should rarely fire (default: 65.0)")
+
+    g5b = ap.add_argument_group("Stage 7b: glitch neighbourhood clamp")
+    g5b.add_argument("--glitch-buffer", type=int, default=3,
+                      help="Samples either side of any flagged point to cap (default: 3; 0 disables)")
+    g5b.add_argument("--glitch-context-s", type=float, default=10.0,
+                      help="Cap at the fastest unaffected speed within this many seconds (default: 10.0)")
 
     g6 = ap.add_argument_group("Stage 8: sustained top speed")
     g6.add_argument("--sustained-window-s", type=float, default=2.0,
