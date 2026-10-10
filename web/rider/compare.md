@@ -17,7 +17,7 @@ toc: true
 
 ```js
 import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
-import {compareColorizers} from "./components/color.js";
+import {compareColorizers, FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
@@ -103,6 +103,9 @@ const gap = (() => {
 })();
 // Stats that come from the GPS track are empty for a run entered by hand.
 const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
+// Mean speed over the points on foil, as on the run page.
+const foilSpeed = csv => d3.mean(csv, d => (d.speed > FOIL_THRESHOLD_KPH ? d.speed : undefined));
+const [foilSpeed1, foilSpeed2] = [runCsv1, runCsv2].map(foilSpeed);
 
 const fastestSegments = [
   findFastest1kSegment(runCsv1),
@@ -217,6 +220,15 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
       <span class="run1">${runMeta1.paddle_up_count || 0}</span>
       /<br/>
       <span class="run2">${runMeta2.paddle_up_count || 0}</span>
+    </span>
+  </div>
+
+  <div class="card">
+    <h2>Average Foiling Speed</h2>
+    <span class="big">
+      <span class="run1">${known(foilSpeed1, d => `${fmt.speed(d)} (${fmt.pace(d)})`)}</span>
+      /<br/>
+      <span class="run2">${known(foilSpeed2, d => `${fmt.speed(d)} (${fmt.pace(d)})`)}</span>
     </span>
   </div>
 
