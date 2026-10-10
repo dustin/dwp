@@ -307,7 +307,7 @@ function tideRows(ex) {
     </div>
   </a>` : navCard("buoy.html", "Pauwela Buoy", htl.html`
     <div class="nav-muted">Swell spectrum and partitions off Maui's North Shore</div>`)}
-  ${navCard("https://downwind.pro/tides.html", "Tides", tidesNow ? htl.html`<div class="nav-rows">${tideRows(tidesNow)}</div>` : htl.html`
+  ${navCard("tides.html", "Tides", tidesNow ? htl.html`<div class="nav-rows">${tideRows(tidesNow)}</div>` : htl.html`
     <div class="nav-muted">Today's tides at my spots</div>`)}
 </div>
 
