@@ -5,7 +5,7 @@ toc: true
 ---
 
 ```js
-import {renderRun, findFastest1kSegment} from "./components/map.js";
+import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js";
 import {createColorizer, FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
@@ -44,6 +44,7 @@ const wind = await fetchWind(first);
 <div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}</div>
 
 <style>
+  .no-callouts .callouts { display: none; }
   .riders { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin: .5rem 0 1rem; }
   .rider b { color: var(--c); }
   .multi { display: grid; gap: .1rem; font-size: 1.15rem; font-weight: 600; margin-top: .3rem; }
@@ -51,7 +52,22 @@ const wind = await fetchWind(first);
   .multi .v.best::after { content: " ★"; font-size: .8em; }
 </style>
 
-<div class="card">${resize(width => renderRun(width, csvs, [], {
+```js
+// Each rider's own callouts, ringed in their color and named. Lifetime
+// odometer milestones are about one rider, not the run, so they're left out.
+const fastest = csvs.map(findFastest1kSegment);
+const callouts = riders.flatMap((r, i) =>
+  findCallouts(r.meta, r.csv, [fastest[i]])
+    .filter(c => !["💯", "🎉"].includes(c.icon))
+    .map(c => ({...c, color: r.color, text: `${r.name}: ${c.text}`})));
+// Hiding them is just a class on the card, so the map keeps its zoom.
+const annotations = Inputs.toggle({label: "Annotations", value: true});
+annotations.addEventListener("input", () =>
+  document.getElementById("together-map").classList.toggle("no-callouts", !annotations.value));
+display(annotations);
+```
+
+<div class="card" id="together-map">${resize(width => renderRun(width, csvs, callouts, {
   colorizers,
   additionalMarks: ({d3, svg}) => {
     // Out together, so one rose.
@@ -59,7 +75,7 @@ const wind = await fetchWind(first);
     const {centerX, centerY} = windRoseOrigin(16, 130, 0, scale);
     addWindRose(d3, svg, wind, {x: centerX, y: centerY, title: "Wind (avg)", scheme: WIND_SPEED_COLORS, scale});
   },
-  fastestSegments: csvs.map(findFastest1kSegment),
+  fastestSegments: fastest,
 }))}</div>
 
 ## At a Glance

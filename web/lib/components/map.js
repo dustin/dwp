@@ -467,10 +467,13 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
       const pathData = `M${startX},${startY} Q${controlX},${controlY} ${endX},${endY}`;
 
       // Update arrow path
-      group.select('.callout-arrow').attr('d', pathData);
+      // A callout's `color` (whose run it's on, when there are several) rings
+      // the icon and colors the arrow.
+      group.select('.callout-arrow').attr('d', pathData).attr('stroke', d.color ?? '#333');
 
       // Update icon position
-      group.select('.callout-icon-bg').attr('cx', d.iconX).attr('cy', d.iconY);
+      group.select('.callout-icon-bg').attr('cx', d.iconX).attr('cy', d.iconY)
+        .attr('stroke', d.color ?? '#333').attr('stroke-width', d.color ? 3 : 1.5);
 
       group.select('.callout-icon').attr('x', d.iconX).attr('y', d.iconY).text(d.icon);
 
