@@ -67,7 +67,7 @@ const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
 // walter.downwind.pro shows Walter's. downwind.pro itself, localhost and
 // unknown names show Dustin's for now. ?rider=walter overrides it, for
 // trying one rider's data anywhere.
-export const RIDERS = ['dustin', 'walter'];
+export const RIDERS = ['dustin', 'walter', 'jeff'];
 export const rider = (() => {
   const asked = new URLSearchParams(location.search).get('rider');
   if (RIDERS.includes(asked)) return asked;

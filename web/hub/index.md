@@ -12,7 +12,7 @@ import {fetchMeta, riderFile, fetchRecentWind, fetchBuoySnapshot} from "./compon
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"]];
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 
 const windNow = Promise.all(WIND_SITES.map(([site, name]) =>
