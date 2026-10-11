@@ -14,6 +14,8 @@ Listens in one room, to the Matrix users --user maps to riders:
     takes its full name after "new": "new Axis Spitfire 1180".
   * "!sync" runs strava/sync run for the sender's rider. An --admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
+  * "!last" summarizes the sender's latest run, "!last walter" Walter's.
+    Imports reply with the same summary.
   * "!help" says the above.
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
@@ -37,6 +39,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
@@ -44,7 +48,8 @@ PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it as your run; "
         "without a caption I'll ask. \"-\" for the foil reuses your last one "
         "from that beach; \"new Axis Spitfire 1180\" records a foil you haven't "
-        "used before. !sync runs your Strava sync.")
+        "used before. !last shows your latest run (!last walter for someone else's); "
+        "!sync runs your Strava sync.")
 RIDER = re.compile(r"[a-z][a-z0-9-]*")
 
 
@@ -127,17 +132,76 @@ def run(cmd, env=None):
     return r.returncode == 0, r.stdout
 
 
-def runs(rider):
-    """The rider's runs in the lake: {id: row}."""
-    sql = ("use lake; select id::varchar as id, foil, distance_km, max_speed_kmh "
-           f"from dwlist where rider = '{rider}'")
-    r = subprocess.run(["duckdb", "--init", "init.sql", "-json", "-c", sql], cwd=LAKE_DIR,
-                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+def query(sql):
+    """Rows of a query against the lake, as dicts."""
+    r = subprocess.run(["duckdb", "--init", "init.sql", "-json", "-c", "use lake; " + sql],
+                       cwd=LAKE_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                       text=True)
     out = r.stdout[r.stdout.find("["):] if "[" in r.stdout else "[]"
     try:
-        return {row["id"]: row for row in json.loads(out)}
+        return json.loads(out)
     except json.JSONDecodeError:
-        return {}
+        return []
+
+
+def runs(rider):
+    """The rider's run ids."""
+    return {row["id"] for row in query(
+        f"select id::varchar as id from dwlist where rider = '{rider}'")}
+
+
+# --- run summaries ----------------------------------------------------------
+
+DRY_LIMIT = 0.97  # dryLimit in web/lib/components/data.js
+HST = ZoneInfo("Pacific/Honolulu")
+
+
+def latest(rider, dwid=None):
+    """A run's summary fields: dwid's, else the rider's latest."""
+    which = f"id = '{dwid}'" if dwid else f"rider = '{rider}' order by ts desc limit 1"
+    rows = query(
+        "select id::varchar as id, ts, start_beach, end_beach, foil, distance_km, "
+        "distance_on_foil, duration_on_foil, avg_foiling_hr, min_foiling_hr, max_speed_1k, "
+        f"longest_segment_distance from dwlist_resolved where {which}")
+    return rows[0] if rows else None
+
+
+def dur(sec):
+    h, m = divmod(round(sec / 60), 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
+
+
+def pace(kmh):
+    m, s = divmod(round(3600 / kmh), 60)
+    return f"{m}:{s:02d}/km"
+
+
+def summary(r, rider):
+    """(text, html) describing run r."""
+    when = datetime.fromtimestamp(r["ts"], HST)
+    head = (f"{r['start_beach']} → {r['end_beach']} · "
+            f"{when:%a %b} {when.day} {when:%-I:%M%p}".replace("AM", "am").replace("PM", "pm"))
+    lines = []
+    foil_m, foil_s = r.get("distance_on_foil"), r.get("duration_on_foil")
+    if foil_m and foil_s:
+        lines.append(f"🏄 {foil_m / 1000:.1f} km on foil in {dur(foil_s)}")
+        lines.append(f"⚡ {foil_m / foil_s * 3.6:.1f} km/h foiling"
+                     + (f" · best km {pace(r['max_speed_1k'])}" if r.get("max_speed_1k") else ""))
+    elif r.get("distance_km"):
+        lines.append(f"📏 {r['distance_km']:.1f} km")
+    if r.get("avg_foiling_hr"):
+        lines.append(f"❤️ {r['avg_foiling_hr']:.0f} avg · {r['min_foiling_hr']:.0f} min bpm")
+    if foil_m and r.get("longest_segment_distance") is not None:
+        frac = r["longest_segment_distance"] / foil_m
+        lines.append("★ dry!" if frac > DRY_LIMIT
+                     else f"💦 not dry: longest flight {frac:.0%} of foiling")
+    if r.get("foil"):
+        lines.append(f"🪽 {r['foil']}")
+    url = f"https://{rider}.downwind.pro/run.html?id={r['id']}"
+    text = "\n".join([head, *lines, url])
+    html = "<br>".join([f'<a href="{url}"><b>{escape(head)}</b></a>',
+                        *map(escape, lines)])
+    return text, html
 
 
 def tail(out, n=15):
@@ -166,18 +230,13 @@ def import_gpx(mx, room, event_id, path, foil, rider):
             mx.notice(room, f"❌ add-run failed:\n{tail(out)}", reply_to=event_id,
                       html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>")
         return False
-    new = [r for i, r in runs(rider).items() if i not in before]
-    if len(new) != 1:
+    new = runs(rider) - before
+    r = latest(rider, new.pop()) if len(new) == 1 else None
+    if not r:
         mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
         return True
-    r = new[0]
-    url = f"https://{rider}.downwind.pro/run.html?id={r['id']}"
-    stats = " · ".join(s for s in (
-        r.get("foil"),
-        r.get("distance_km") and f"{r['distance_km']:.1f} km",
-        r.get("max_speed_kmh") and f"max {r['max_speed_kmh']:.1f} km/h") if s)
-    mx.notice(room, f"✅ {stats}\n{url}", reply_to=event_id,
-              html=f'✅ <a href="{url}">{escape(stats or "imported")}</a>')
+    text, html = summary(r, rider)
+    mx.notice(room, "✅ " + text, reply_to=event_id, html="✅ " + html)
     return True
 
 
@@ -265,6 +324,14 @@ class Bot:
             else:
                 self.mx.notice(room, "!sync takes rider names, like !sync walter",
                                reply_to=eid)
+        elif text.startswith("!last"):
+            who = text.split()[1:2] or [rider]
+            r = latest(who[0]) if RIDER.fullmatch(who[0]) else None
+            if r:
+                body, html = summary(r, who[0])
+                self.mx.notice(room, body, reply_to=eid, html=html)
+            else:
+                self.mx.notice(room, f"No runs for {who[0]}.", reply_to=eid)
         elif text.startswith("!help"):
             self.mx.notice(room, HELP, reply_to=eid)
         elif sender in self.pending and FOIL.match(text):
