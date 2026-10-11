@@ -2,15 +2,17 @@
 """Import runs (and kick Strava syncs) from a Matrix room.
 
     ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
-        --owner @dustin:sallings.org
+        --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter \
+        --admin @dustin:sallings.org
 
-Listens in one room and only to its owner:
+Listens in one room, to the Matrix users --user maps to riders:
 
-  * a .gpx file, captioned with a foil ("585"), is imported with
-    add-run, then the reply links the new run. Sent without a caption,
+  * a .gpx file, captioned with a foil ("585"), is imported with add-run
+    as the sender's run, then the reply links it. Sent without a caption,
     the bot asks for the foil; answer with one, or "-" for the rider's
     last foil from that start beach.
-  * "!sync" runs strava/sync run; "!sync walter" just Walter.
+  * "!sync" runs strava/sync run for the sender's rider. An --admin's
+    "!sync" syncs every rider, and "!sync walter" just Walter.
   * "!help" says the above.
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
@@ -38,9 +40,10 @@ import urllib.request
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
-HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it; "
+HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it as your run; "
         "without a caption I'll ask. \"-\" for the foil reuses your last one "
-        "from that beach. !sync runs the Strava sync (!sync walter for one rider).")
+        "from that beach. !sync runs your Strava sync.")
+RIDER = re.compile(r"[a-z][a-z0-9-]*")
 
 
 def log(msg):
@@ -200,7 +203,7 @@ FOIL = re.compile(r"^(-|[\w .'-]{1,40})$")
 class Bot:
     def __init__(self, mx, args):
         self.mx, self.args = mx, args
-        self.pending = None  # (event_id, gpx path, received at)
+        self.pending = {}  # sender -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
 
     def handle(self, ev):
@@ -213,7 +216,8 @@ class Bot:
         if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
                 c["m.relates_to"].get("rel_type") == "m.replace":
             return
-        eid = ev["event_id"]
+        eid, sender = ev["event_id"], ev["sender"]
+        rider = self.args.users[sender]
         if is_gpx(c):
             fd, path = tempfile.mkstemp(suffix=".gpx", dir=self.tmp)
             try:
@@ -224,12 +228,12 @@ class Bot:
                 return
             foil = caption(c)
             if foil and FOIL.match(foil):
-                import_gpx(self.mx, room, eid, path, foil, self.args.rider)
+                import_gpx(self.mx, room, eid, path, foil, rider)
                 os.unlink(path)
             else:
-                if self.pending:  # a newer file replaces one still waiting
-                    os.unlink(self.pending[1])
-                self.pending = (eid, path, time.time())
+                if sender in self.pending:  # a newer file replaces one still waiting
+                    os.unlink(self.pending[sender][1])
+                self.pending[sender] = (eid, path, time.time())
                 self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
                                      "one from that beach)", reply_to=eid)
             return
@@ -238,18 +242,22 @@ class Bot:
         text = c.get("body", "").strip()
         if text.startswith("!sync"):
             riders = text.split()[1:]
-            if all(re.fullmatch(r"[a-z][a-z0-9-]*", r) for r in riders):
+            if sender not in self.args.admin:
+                if riders and riders != [rider]:
+                    self.mx.notice(room, "You can only sync yourself.", reply_to=eid)
+                    return
+                riders = [rider]
+            if all(RIDER.fullmatch(r) for r in riders):
                 strava_sync(self.mx, room, eid, riders)
             else:
                 self.mx.notice(room, "!sync takes rider names, like !sync walter",
                                reply_to=eid)
         elif text.startswith("!help"):
             self.mx.notice(room, HELP, reply_to=eid)
-        elif self.pending and time.time() - self.pending[2] < PENDING_TTL \
-                and FOIL.match(text):
-            gpx_eid, path, _ = self.pending
-            self.pending = None
-            import_gpx(self.mx, room, gpx_eid, path, text, self.args.rider)
+        elif sender in self.pending and FOIL.match(text):
+            gpx_eid, path, at = self.pending.pop(sender)
+            if time.time() - at < PENDING_TTL:
+                import_gpx(self.mx, room, gpx_eid, path, text, rider)
             os.unlink(path)
 
 
@@ -274,13 +282,21 @@ def main(argv=None):
     ap.add_argument("--homeserver", required=True,
                     help="server name (e.g. sallings.org) or client API URL")
     ap.add_argument("--room", required=True, help="room id, e.g. !abc:matrix.org")
-    ap.add_argument("--owner", required=True,
-                    help="the only Matrix user it listens to, e.g. @dustin:matrix.org")
-    ap.add_argument("--rider", default="dustin", help="whose runs GPX files are")
+    ap.add_argument("--user", action="append", required=True, metavar="MXID=RIDER",
+                    help="a Matrix user it listens to, and whose runs their GPX files "
+                         "are, e.g. @dustin:sallings.org=dustin (repeatable)")
+    ap.add_argument("--admin", action="append", default=[], metavar="MXID",
+                    help="a user whose !sync may name any rider (repeatable)")
     ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
                     help="the bot account's access token")
     ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
     args = ap.parse_args(argv)
+    args.users = {}
+    for u in args.user:
+        mxid, _, rider = u.partition("=")
+        if not mxid.startswith("@") or not RIDER.fullmatch(rider):
+            ap.error(f"--user wants @someone:server=rider, not {u}")
+        args.users[mxid] = rider
 
     with open(os.path.expanduser(args.token_file)) as fh:
         mx = Matrix(client_url(args.homeserver), fh.read().strip())
@@ -290,7 +306,7 @@ def main(argv=None):
     bot = Bot(mx, args)
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
-    log(f"{me} listening to {args.owner} in {args.room}")
+    log(f"{me} listening to {', '.join(args.users)} in {args.room}")
     filt = json.dumps({"room": {"rooms": [args.room], "timeline": {"limit": 50},
                                 "state": {"lazy_load_members": True}},
                        "presence": {"not_types": ["*"]},
@@ -317,7 +333,7 @@ def main(argv=None):
         if not first:  # the first sync only finds where "now" is
             timeline = rooms.get("join", {}).get(args.room, {}).get("timeline", {})
             for ev in timeline.get("events", []):
-                if ev.get("sender") == args.owner:
+                if ev.get("sender") in args.users:
                     try:
                         bot.handle(ev)
                     except Exception as e:  # keep listening whatever one message does

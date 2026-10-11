@@ -10,7 +10,9 @@
 #     dbDir = "/Users/dustin/prog/dwp/db";
 #     homeserver = "sallings.org";
 #     room = "!abc:sallings.org";
-#     owner = "@dustin:sallings.org";
+#     users."@dustin:sallings.org" = "dustin";
+#     users."@walter:matrix.org" = "walter";
+#     admins = [ "@dustin:sallings.org" ];
 #     tokenFile = config.sops.secrets.dwp-matrix-token.path;
 #   };
 #
@@ -25,10 +27,10 @@ let
     "${cfg.dbDir}/matrix-bot"
     "--homeserver" cfg.homeserver
     "--room" cfg.room
-    "--owner" cfg.owner
-    "--rider" cfg.rider
     "--token-file" cfg.tokenFile
-  ];
+  ]
+  ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users)
+  ++ lib.concatMap (mxid: [ "--admin" mxid ]) cfg.admins;
 in
 {
   options.services.dwp-matrix-bot = with lib; {
@@ -45,15 +47,15 @@ in
     };
     homeserver = mkOption { type = types.str; example = "sallings.org"; };
     room = mkOption { type = types.str; example = "!abc:sallings.org"; };
-    owner = mkOption {
-      type = types.str;
-      example = "@dustin:sallings.org";
-      description = "The only Matrix user the bot takes orders from.";
+    users = mkOption {
+      type = types.attrsOf types.str;
+      example = { "@dustin:sallings.org" = "dustin"; };
+      description = "Matrix users the bot listens to, each mapped to the rider their GPX files import as.";
     };
-    rider = mkOption {
-      type = types.str;
-      default = "dustin";
-      description = "Whose runs the GPX files it's sent are.";
+    admins = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = "Users whose !sync can name any rider (others sync only themselves).";
     };
     tokenFile = mkOption {
       type = types.str;
