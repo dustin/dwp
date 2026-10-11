@@ -49,7 +49,7 @@ import {fetchMeta, riderFile} from "./components/data.js";
 import {beachColorScale} from "./components/beaches.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 const beachColor = beachColorScale(allRuns);
 ```
 

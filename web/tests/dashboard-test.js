@@ -1,20 +1,20 @@
 // dashboard-test.js
 // Simple test to verify dashboard loads and links work without errors
 
-import fs from 'fs';
-import path from 'path';
 import { chromium } from 'playwright';
 import { csvParse } from 'd3-dsv';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-const RUNS_CSV = process.env.RUNS_CSV || path.join(process.cwd(), 'rider/data/runs.csv');
+const RUNS_CSV = process.env.RUNS_CSV || 'https://d2qwe1xndvncw9.cloudfront.net/runs/rider%3Ddustin/runs.csv';
 // How many of the newest runs to always test, so a bad recent import shows
 // up right away instead of whenever the random sample happens to hit it.
 const RECENT_RUNS = Number(process.env.RECENT_RUNS || 3);
 
 // Pages that are always tested, in addition to the random sample below.
-function requiredLinks() {
-  const rows = csvParse(fs.readFileSync(RUNS_CSV, 'utf8'));
+async function requiredLinks() {
+  const res = await fetch(RUNS_CSV);
+  if (!res.ok) throw new Error(`${RUNS_CSV}: ${res.status}`);
+  const rows = csvParse(await res.text());
   const recent = rows
     .filter(r => r.id)
     .sort((a, b) => Number(b.ts) - Number(a.ts))
@@ -34,16 +34,13 @@ function requiredLinks() {
 //   https://d2qwe1xndvncw9.cloudfront.net/wind/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_partition/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_spectrum/site%3D<site>/day%3D<day>/data.csv
-//   https://d2qwe1xndvncw9.cloudfront.net/runs/rider%3D<rider>/(runs|crashes|run_buoy).csv
-// (the last until the rider's lists are on the CDN; data.js riderFile falls
-// back to the bundled copies).
 // The track CSV (/runs/.../data.csv) is deliberately excluded -- a missing
 // track is a real failure.
 function isOptionalDataRequest(url) {
   return (
     /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition|swell_spectrum)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
       url
-    ) || /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/runs\/rider%3D[a-z0-9-]+\/(runs|crashes|run_buoy)\.csv$/.test(url)
+    )
   );
 }
 
@@ -234,7 +231,7 @@ async function runTests() {
   const level2Links = []; // Collect links from level 1 pages for second level
 
   // Always test buoys, foils, and the most recent runs.
-  const required = requiredLinks();
+  const required = await requiredLinks();
   console.log(`Testing ${required.length} required pages (buoy, foils, ${RECENT_RUNS} most recent runs)`);
   for (const link of required) {
     if (testedUrls.has(link)) continue;

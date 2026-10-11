@@ -35,7 +35,7 @@ const id2 = urlParams.get("id2");
 // rode together can be compared.
 const r1 = RIDERS.includes(urlParams.get("r1")) ? urlParams.get("r1") : rider;
 const r2 = RIDERS.includes(urlParams.get("r2")) ? urlParams.get("r2") : rider;
-const runsOf = who => fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv'), who))
+const runsOf = who => fetchMeta(() => riderFile('runs.csv', who))
   .then(data => withRider(data, who));
 const [runs1, runs2] = await Promise.all([runsOf(r1), r2 === r1 ? null : runsOf(r2)]);
 const byId = rows => Object.fromEntries(rows.map(r => [r.id, r]));

@@ -12,7 +12,7 @@ import {fetchMeta, riderFile, fetchRun} from "./components/data.js";
 import {beachColorScale} from "./components/beaches.js";
 import {runsTableOptions} from "./components/runs-table.js";
 
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv')));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 
 const beachColor = beachColorScale(allRuns);
 

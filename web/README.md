@@ -36,4 +36,4 @@ Pushing to `main` builds both and deploys `dist/hub` to `/var/www/dwp/` and `dis
 
 ## Tests
 
-`tests/dashboard-test.js` loads the rider site and follows its links (`BASE_URL`, default `http://localhost:3000`). `runtest.sh` builds, serves `dist/rider` with nginx and runs it. `tests/run-backend-availability-test.js` checks that every run in `rider/data/runs.csv` has a track on the CDN.
+`tests/dashboard-test.js` loads the rider site and follows its links (`BASE_URL`, default `http://localhost:3000`). `runtest.sh` builds, serves `dist/rider` with nginx and runs it. `tests/run-backend-availability-test.js` checks that every run in the CDN's runs.csv has a track there.

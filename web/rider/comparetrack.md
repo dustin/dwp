@@ -139,7 +139,7 @@ import {compareColorizers} from "./components/color.js";
 import {summarizeSwellPartition, formatIndividualSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import * as fmt from "./components/formatters.js";
 
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 const runMetaMap = allRuns.reduce((m, r) => { m[r.id] = r; return m; }, {});
 
 const urlParams = new URLSearchParams(location.search);

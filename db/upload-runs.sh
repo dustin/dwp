@@ -13,14 +13,10 @@
 #   rider=<rider>/run_buoy.csv      with every import
 #   rider=<rider>/together.csv      other riders' runs that went with each
 #   rider=<rider>/dwid=<id>/data.csv  one run's track
-#
-# Dustin's lists are also copied into web/rider/data/, which the site falls
-# back to when the CDN copy can't be fetched.
 
 lake=$HOME/stuff/duck
 dwruns=/Users/dustin/stuff/dwruns/
 dwlists=/Users/dustin/stuff/dwlists/
-webdata=$(cd "$(dirname "$0")/../web/rider/data" && pwd)
 db=$(cd "$(dirname "$0")" && pwd)
 
 consolidate() {
@@ -51,9 +47,6 @@ for rider in $riders; do
     echo "Lists for $rider"
     cd $lake
     duckdb --init init.sql -cmd "set variable rider = '$rider';" < $db/export-lists.sql
-    if [ "$rider" = dustin ]; then
-        cp $dwlists/runs.csv $dwlists/crashes.csv $dwlists/run_buoy.csv $webdata/
-    fi
     mkdir -p "$dwruns/rider=$rider"
     for f in runs crashes run_buoy together; do
         gzip -9 -n -c $dwlists/$f.csv > "$dwruns/rider=$rider/$f.csv"

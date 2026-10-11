@@ -77,30 +77,15 @@ export const rider = (() => {
 
 // Each rider's files live under runs/rider=<rider>/ on the CDN (see
 // db/upload-runs.sh): runs.csv, crashes.csv and run_buoy.csv beside the
-// tracks at dwid=<id>/data.csv. Before that layout existed, tracks were at
-// runs/dwid=<id>/data.csv and the lists were bundled with the site.
+// tracks at dwid=<id>/data.csv.
 const baseFor = who => `https://${DATAHOST}/runs/rider%3D${who}/`;
-const riderBase = baseFor(rider);
-const legacyBase = `https://${DATAHOST}/runs/`;
-let trackBase = legacyBase;
 
 // One of the rider's list files from the CDN, in the shape fetchMeta and
-// the pages expect from a FileAttachment (`.csv({typed})`). If the CDN
-// copy can't be had, Dustin's site uses `bundled`, the copy built into
-// the site (web/rider/data/), and keeps reading tracks from the old layout.
+// the pages expect from a FileAttachment (`.csv({typed})`).
 // `who` reads another rider's file (the root page's rider picker).
-export function riderFile(name, bundled, who = rider) {
+export function riderFile(name, who = rider) {
   return {
-    async csv({ typed = false } = {}) {
-      try {
-        const rows = await d3.csv(baseFor(who) + name, typed ? d3.autoType : undefined);
-        if (who === rider) trackBase = riderBase;
-        return rows;
-      } catch (e) {
-        if (who === 'dustin' && bundled) return bundled.csv({ typed });
-        throw e;
-      }
-    },
+    csv: ({ typed = false } = {}) => d3.csv(baseFor(who) + name, typed ? d3.autoType : undefined),
   };
 }
 
@@ -123,18 +108,12 @@ export function fetchTogether() {
 }
 
 export function runDataURL(meta) {
-  const base = meta.rider && meta.rider !== rider ? baseFor(meta.rider) : trackBase;
-  return `${base}dwid%3D${meta.id}/data.csv`;
+  return `${baseFor(meta.rider ?? rider)}dwid%3D${meta.id}/data.csv`;
 }
 
 export async function fetchRun(meta) {
   if (!meta.has_track) return approximateRoute(meta);
-  // A track that isn't in the rider's layout yet (only the last 14 days are
-  // re-exported on each upload) may still be in the old one.
-  const load = url => d3.csv(url, d3.autoType);
-  const url = runDataURL(meta);
-  const legacy = `${legacyBase}dwid%3D${meta.id}/data.csv`;
-  return load(url).catch(e => (url === legacy || (meta.rider ?? rider) !== 'dustin' ? Promise.reject(e) : load(legacy))).then(data =>
+  return d3.csv(runDataURL(meta), d3.autoType).then(data =>
     d3.sort(
       data.map(d => ({ ...d, odometer: d.distance + 1000 * meta.odometer_km, ts: new Date(d.tsi * 1000) })),
       d => d.tsi

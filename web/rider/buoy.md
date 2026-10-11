@@ -186,10 +186,10 @@ const compareSnapshot = compareTime ? await fetchBuoySnapshot(compareTime) : nul
 ```
 
 ```js
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 const buoyRuns = allRuns.filter(hasBuoyData);
 // Exported alongside runs.csv; only runs newer than the export fetch live.
-const exportedSnapshots = await runBuoySnapshots(riderFile('run_buoy.csv', FileAttachment("data/run_buoy.csv")), buoyRuns);
+const exportedSnapshots = await runBuoySnapshots(riderFile('run_buoy.csv'), buoyRuns);
 const runSnapshots = await Promise.all(
   buoyRuns.map(meta => exportedSnapshots.has(meta.id)
     ? {meta, snapshot: exportedSnapshots.get(meta.id)}

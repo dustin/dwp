@@ -1,5 +1,5 @@
 // run-backend-availability-test.js
-// For every run id in rider/data/runs.csv, verify the backend actually has a
+// For every run id in the rider's runs.csv on the CDN, verify the backend actually has a
 // published track file. This catches runs that are listed in the CSV but
 // whose track data was never uploaded (or was later removed).
 //
@@ -8,13 +8,11 @@
 // track is imported later, the export flips the flag and the run is
 // checked again.
 
-import fs from 'fs';
-import path from 'path';
 import { csvParse } from 'd3-dsv';
 
 const DATAHOST = process.env.DATAHOST || 'd2qwe1xndvncw9.cloudfront.net';
 const CONCURRENCY = Number(process.env.CONCURRENCY || 20);
-const RUNS_CSV = path.join(process.cwd(), 'rider/data/runs.csv');
+const RUNS_CSV = `https://${DATAHOST}/runs/rider%3Ddustin/runs.csv`;
 
 function runDataURL(id) {
   return `https://${DATAHOST}/runs/rider%3Ddustin/dwid%3D${id}/data.csv`;
@@ -48,7 +46,9 @@ async function checkRun(id) {
 }
 
 async function main() {
-  const csvText = fs.readFileSync(RUNS_CSV, 'utf8');
+  const res = await fetch(RUNS_CSV);
+  if (!res.ok) throw new Error(`${RUNS_CSV}: ${res.status}`);
+  const csvText = await res.text();
   const rows = csvParse(csvText);
   const noTrack = new Set(rows.filter(r => r.has_track === 'false').map(r => r.id));
   const ids = [...new Set(rows.map(r => r.id).filter(id => id && !noTrack.has(id)))];

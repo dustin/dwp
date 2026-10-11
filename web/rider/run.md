@@ -20,7 +20,7 @@ import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
 
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment('data/runs.csv')));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 
 const beachColor = beachColorScale(allRuns);
 

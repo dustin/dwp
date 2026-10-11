@@ -130,7 +130,7 @@ import {findCallouts, findFastest1kSegment} from "./components/map.js";
 import {summarizeSwellPartition, formatIndividualSwells, representativeSwellReading, PAUWELA_BUOY} from "./components/swell.js";
 import * as fmt from "./components/formatters.js";
 
-const allRuns = await fetchMeta(() => riderFile('runs.csv', FileAttachment("data/runs.csv")));
+const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 const id = new URLSearchParams(location.search).get("id");
 const meta = allRuns.find(d => d.id === id) ?? d3.greatest(allRuns, d => d.ts);
 const [run, wind, swell] = await Promise.all([fetchRun(meta), fetchWind(meta), fetchSwell(meta)]);

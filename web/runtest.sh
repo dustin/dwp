@@ -41,8 +41,7 @@ podman run --rm \
   --network host \
   -v ./tests:/tests:ro \
   -v ./test-output:/tests/test-output:rw \
-  -v ./rider/data:/tests/data:ro \
   mcr.microsoft.com/playwright:v1.63.0-jammy \
-  sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright d3-dsv && BASE_URL=$BASE_URL RUNS_CSV=/tests/data/runs.csv node dashboard-test.js"
+  sh -c "mkdir -p /work && cd /work && cp /tests/dashboard-test.js . && echo '{\"type\":\"module\"}' > package.json && npm install playwright d3-dsv && BASE_URL=$BASE_URL node dashboard-test.js"
 
 echo "✓ All tests passed!"

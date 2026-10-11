@@ -37,7 +37,7 @@ const pickB = Generators.input(pickBInput);
 
 ```js
 const [runsA, runsB] = await Promise.all([pickA, pickB].map(slug =>
-  fetchMeta(() => riderFile("runs.csv", null, slug)).catch(() => [])));
+  fetchMeta(() => riderFile("runs.csv", slug)).catch(() => [])));
 ```
 
 ```js

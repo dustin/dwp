@@ -24,7 +24,7 @@ const tidesNow = (async () => {
   return Object.fromEntries(await Promise.all(stations.map(async s => [s, await fetchExtremes(s, start, end)])));
 })().catch(() => null);
 const riders = Promise.all(RIDER_NAMES.map(async ([slug, name]) => {
-  const runs = await fetchMeta(() => riderFile("runs.csv", null, slug)).catch(() => []);
+  const runs = await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => []);
   return {slug, name, runs};
 }));
 ```
