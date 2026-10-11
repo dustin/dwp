@@ -33,7 +33,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const thisId = urlParams.get("id");
 
 const runMeta = runMetaMap[thisId] || d3.greatest(allRuns, d => d.ts);
-// Another rider who did this run too, if any.
+// Other riders who did this run too, if any.
 const rodeWith = (await fetchTogether()).get(runMeta.id);
 // Entered by hand (db/import-manual.sql): summary numbers only, and the map
 // shows an approximate route.
@@ -48,7 +48,7 @@ const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
     ${fmt.date(runMeta.ts)} at ${fmt.time(runMeta.ts)}
     on the ${runMeta.foil}
     · ${html`<a href="track.html?id=${runMeta.id}">Open map</a>`}
-    ${rodeWith ? html`· <a href="compare.html?id1=${runMeta.id}&id2=${rodeWith.other_id}&r2=${rodeWith.other_rider}">Compare with ${rodeWith.other_rider[0].toUpperCase() + rodeWith.other_rider.slice(1)}</a>` : ""}
+    ${rodeWith ? html`· <a href="together.html?id=${runMeta.id}">Compare with ${rodeWith.map(t => t.other_rider[0].toUpperCase() + t.other_rider.slice(1)).join(", ")}</a>` : ""}
 </div>
 
 <div>${noTrack ? html`<p style="color: var(--theme-foreground-muted)"><b>No GPS track for this run.</b> Entered by hand from the watch summary; the gray line on the map is an approximate route between the beaches, and stats that need the track are left blank.</p>` : ""}</div>

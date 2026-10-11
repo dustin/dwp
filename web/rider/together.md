@@ -19,9 +19,7 @@ const urlParams = new URLSearchParams(window.location.search);
 const picked = urlParams.get("runs")
   ? urlParams.get("runs").split(",").map(s => s.split(":")).filter(([r]) => RIDERS.includes(r))
   : [[rider, urlParams.get("id")],
-     ...[...(await fetchTogether()).values()]
-       .filter(t => t.id === urlParams.get("id"))
-       .map(t => [t.other_rider, t.other_id])];
+     ...((await fetchTogether()).get(urlParams.get("id")) ?? []).map(t => [t.other_rider, t.other_id])];
 
 const lists = new Map(await Promise.all([...new Set(picked.map(([r]) => r))].map(async r =>
   [r, new Map(withRider(await fetchMeta(() => riderFile('runs.csv', r)), r).map(m => [m.id, m]))])));
@@ -36,12 +34,14 @@ const cap = s => s[0].toUpperCase() + s.slice(1);
 const riders = metas.map((m, i) => ({meta: m, csv: csvs[i], name: cap(m.rider), color: colorOf(i)}));
 const colorizers = csvs.map((c, i) => createColorizer(c, hue(i)));
 const first = metas[0];
+// ?rider= shows another rider's run from any host.
+const runLink = m => `run.html?id=${m.id}${m.rider === rider ? "" : `&rider=${m.rider}`}`;
 const wind = await fetchWind(first);
 ```
 
 # ${first.start_beach} → ${first.end_beach}, ${fmt.date(first.ts)}
 
-<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><b>${r.name}</b> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}</div>
+<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}</div>
 
 <style>
   .riders { display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; margin: .5rem 0 1rem; }

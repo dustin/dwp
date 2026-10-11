@@ -96,13 +96,14 @@ export function riderFile(name, who = rider) {
 export const withRider = (runs, who) => runs.map(r => ({ ...r, rider: who }));
 
 // Other riders' runs that went with this rider's (together.csv, from
-// db/export-lists.sql), as a map from run id to {other_rider, other_id}.
+// db/export-lists.sql), as a map from run id to the [{other_rider,
+// other_id}] who went with it.
 // Empty until the rider's export includes the file.
 let togetherP = null;
 export function fetchTogether() {
   togetherP ??= riderFile('together.csv')
     .csv({ typed: true })
-    .then(rows => new Map(rows.map(r => [r.id, r])))
+    .then(rows => d3.group(rows, r => r.id))
     .catch(() => new Map());
   return togetherP;
 }
