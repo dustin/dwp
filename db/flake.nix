@@ -14,10 +14,13 @@
           pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
         in
         {
+          packages.db-env = pkgs.callPackage ./db-env.nix { duckdb = pkgs-unstable.duckdb; };
           devShells.default = import ./shell.nix { 
             inherit pkgs;
             inherit pkgs-unstable;
           };
         }
-      );
+      ) // {
+        homeManagerModules.default = ./hm-module.nix;
+      };
 }

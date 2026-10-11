@@ -1,0 +1,331 @@
+#!/usr/bin/env python3
+"""Import runs (and kick Strava syncs) from a Matrix room.
+
+    ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
+        --owner @dustin:sallings.org
+
+Listens in one room and only to its owner:
+
+  * a .gpx file, captioned with a foil ("585"), is imported with
+    add-run, then the reply links the new run. Sent without a caption,
+    the bot asks for the foil; answer with one, or "-" for the rider's
+    last foil from that start beach.
+  * "!sync" runs strava/sync run; "!sync walter" just Walter.
+  * "!help" says the above.
+
+Start it from db's nix dev shell (or the flake's matrix-bot package, which
+the home-manager module runs). It reads the bot account's access token
+from --token-file (default ~/.config/dwp/matrix-token, mode 600) and
+remembers where it got to in --state-dir, so a restart neither replays
+old files nor misses ones sent while it was down. Use an unencrypted
+room: it doesn't speak E2EE.
+
+Only the Python standard library, like the rest of db/.
+"""
+
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+DB_DIR = os.path.dirname(os.path.abspath(__file__))
+LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
+HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it; "
+        "without a caption I'll ask. \"-\" for the foil reuses your last one "
+        "from that beach. !sync runs the Strava sync (!sync walter for one rider).")
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} {msg}", file=sys.stderr, flush=True)
+
+
+class Matrix:
+    def __init__(self, homeserver, token):
+        self.base = homeserver.rstrip("/")
+        self.token = token
+        self.txn = int(time.time() * 1000)
+
+    def call(self, method, path, body=None, params=None, raw=False, timeout=60):
+        url = self.base + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Authorization": f"Bearer {self.token}",
+                                              "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read() if raw else json.load(r)
+
+    def send(self, room, content, kind="m.room.message"):
+        self.txn += 1
+        path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                f"/send/{kind}/{self.txn}")
+        try:
+            self.call("PUT", path, content)
+        except (urllib.error.URLError, OSError) as e:
+            log(f"send failed: {e}")
+
+    def notice(self, room, text, reply_to=None, html=None):
+        content = {"msgtype": "m.notice", "body": text}
+        if html:
+            content.update(format="org.matrix.custom.html", formatted_body=html)
+        if reply_to:
+            content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+        self.send(room, content)
+
+    def react(self, room, event_id, key):
+        self.send(room, {"m.relates_to": {"rel_type": "m.annotation",
+                                          "event_id": event_id, "key": key}},
+                  kind="m.reaction")
+
+    def download(self, mxc):
+        server, media = mxc[len("mxc://"):].split("/", 1)
+        tail = f"/download/{urllib.parse.quote(server)}/{urllib.parse.quote(media)}"
+        try:  # authenticated media (Matrix 1.11), then the old unauthenticated path
+            return self.call("GET", "/_matrix/client/v1/media" + tail, raw=True)
+        except urllib.error.HTTPError as e:
+            if e.code not in (400, 404, 405):
+                raise
+            return self.call("GET", "/_matrix/media/v3" + tail, raw=True)
+
+
+def client_url(homeserver):
+    """The client API base for a server name (e.g. sallings.org), from its
+    .well-known; a full https:// URL is taken as is."""
+    if "://" in homeserver:
+        return homeserver
+    try:
+        with urllib.request.urlopen(f"https://{homeserver}/.well-known/matrix/client",
+                                    timeout=30) as r:
+            return json.load(r)["m.homeserver"]["base_url"]
+    except (urllib.error.URLError, OSError, KeyError, ValueError) as e:
+        log(f"no .well-known for {homeserver} ({e}), trying it directly")
+        return f"https://{homeserver}"
+
+
+# --- the work -------------------------------------------------------------
+
+def run(cmd, env=None):
+    """Run cmd in db/; (ok, combined output)."""
+    log("+ " + " ".join(cmd))
+    r = subprocess.run(cmd, cwd=DB_DIR, env=env, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, text=True)
+    sys.stderr.write(r.stdout)
+    return r.returncode == 0, r.stdout
+
+
+def runs(rider):
+    """The rider's runs in the lake: {id: row}."""
+    sql = ("use lake; select id::varchar as id, foil, distance_km, max_speed_kmh "
+           f"from dwlist where rider = '{rider}'")
+    r = subprocess.run(["duckdb", "--init", "init.sql", "-json", "-c", sql], cwd=LAKE_DIR,
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    out = r.stdout[r.stdout.find("["):] if "[" in r.stdout else "[]"
+    try:
+        return {row["id"]: row for row in json.loads(out)}
+    except json.JSONDecodeError:
+        return {}
+
+
+def tail(out, n=15):
+    return "\n".join(out.rstrip().splitlines()[-n:])
+
+
+def import_gpx(mx, room, event_id, path, foil, rider):
+    mx.react(room, event_id, "👀")
+    before = runs(rider)
+    cmd = ["./add-run", path, "--rider", rider]
+    if foil and foil != "-":
+        cmd.insert(2, foil)
+    ok, out = run(cmd)
+    if not ok:
+        mx.notice(room, f"❌ add-run failed:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    new = [r for i, r in runs(rider).items() if i not in before]
+    if len(new) != 1:
+        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
+        return
+    r = new[0]
+    url = f"https://{rider}.downwind.pro/run.html?id={r['id']}"
+    stats = " · ".join(s for s in (
+        r.get("foil"),
+        r.get("distance_km") and f"{r['distance_km']:.1f} km",
+        r.get("max_speed_kmh") and f"max {r['max_speed_kmh']:.1f} km/h") if s)
+    mx.notice(room, f"✅ {stats}\n{url}", reply_to=event_id,
+              html=f'✅ <a href="{url}">{escape(stats or "imported")}</a>')
+
+
+def strava_sync(mx, room, event_id, riders):
+    mx.react(room, event_id, "👀")
+    ok, out = run(["./strava/sync", "run", *riders])
+    summary = next((ln for ln in reversed(out.splitlines()) if ln.startswith("imported ")),
+                   "")
+    if ok:
+        mx.notice(room, f"✅ {summary or 'synced'}", reply_to=event_id)
+    else:
+        mx.notice(room, f"❌ sync failed:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ sync failed:<pre><code>{escape(tail(out))}</code></pre>")
+
+
+def escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+# --- the room -------------------------------------------------------------
+
+def is_gpx(c):
+    name = (c.get("filename") or c.get("body") or "").lower()
+    return c.get("msgtype") == "m.file" and "url" in c and (
+        name.endswith(".gpx") or "gpx" in c.get("info", {}).get("mimetype", ""))
+
+
+def caption(c):
+    """A file's caption (Matrix 1.10: a body that differs from filename)."""
+    fn, body = c.get("filename"), c.get("body", "")
+    return body.strip() if fn and body != fn else ""
+
+
+FOIL = re.compile(r"^(-|[\w .'-]{1,40})$")
+
+
+class Bot:
+    def __init__(self, mx, args):
+        self.mx, self.args = mx, args
+        self.pending = None  # (event_id, gpx path, received at)
+        self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
+
+    def handle(self, ev):
+        room = self.args.room
+        c = ev.get("content", {})
+        if ev.get("type") == "m.room.encrypted":
+            self.mx.notice(room, "This room is encrypted, and I can only read "
+                                 "unencrypted rooms.")
+            return
+        if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
+                c["m.relates_to"].get("rel_type") == "m.replace":
+            return
+        eid = ev["event_id"]
+        if is_gpx(c):
+            fd, path = tempfile.mkstemp(suffix=".gpx", dir=self.tmp)
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(self.mx.download(c["url"]))
+            except (urllib.error.URLError, OSError) as e:
+                self.mx.notice(room, f"❌ couldn't download that file: {e}", reply_to=eid)
+                return
+            foil = caption(c)
+            if foil and FOIL.match(foil):
+                import_gpx(self.mx, room, eid, path, foil, self.args.rider)
+                os.unlink(path)
+            else:
+                if self.pending:  # a newer file replaces one still waiting
+                    os.unlink(self.pending[1])
+                self.pending = (eid, path, time.time())
+                self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
+                                     "one from that beach)", reply_to=eid)
+            return
+        if c.get("msgtype") != "m.text":
+            return
+        text = c.get("body", "").strip()
+        if text.startswith("!sync"):
+            riders = text.split()[1:]
+            if all(re.fullmatch(r"[a-z][a-z0-9-]*", r) for r in riders):
+                strava_sync(self.mx, room, eid, riders)
+            else:
+                self.mx.notice(room, "!sync takes rider names, like !sync walter",
+                               reply_to=eid)
+        elif text.startswith("!help"):
+            self.mx.notice(room, HELP, reply_to=eid)
+        elif self.pending and time.time() - self.pending[2] < PENDING_TTL \
+                and FOIL.match(text):
+            gpx_eid, path, _ = self.pending
+            self.pending = None
+            import_gpx(self.mx, room, gpx_eid, path, text, self.args.rider)
+            os.unlink(path)
+
+
+def load_state(path):
+    try:
+        with open(path) as fh:
+            return fh.read().strip() or None
+    except FileNotFoundError:
+        return None
+
+
+def save_state(path, since):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        fh.write(since)
+    os.replace(tmp, path)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--homeserver", required=True,
+                    help="server name (e.g. sallings.org) or client API URL")
+    ap.add_argument("--room", required=True, help="room id, e.g. !abc:matrix.org")
+    ap.add_argument("--owner", required=True,
+                    help="the only Matrix user it listens to, e.g. @dustin:matrix.org")
+    ap.add_argument("--rider", default="dustin", help="whose runs GPX files are")
+    ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
+                    help="the bot account's access token")
+    ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
+    args = ap.parse_args(argv)
+
+    with open(os.path.expanduser(args.token_file)) as fh:
+        mx = Matrix(client_url(args.homeserver), fh.read().strip())
+    state_dir = os.path.expanduser(args.state_dir)
+    os.makedirs(state_dir, exist_ok=True)
+    state = os.path.join(state_dir, "since")
+    bot = Bot(mx, args)
+
+    me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
+    log(f"{me} listening to {args.owner} in {args.room}")
+    filt = json.dumps({"room": {"rooms": [args.room], "timeline": {"limit": 50},
+                                "state": {"lazy_load_members": True}},
+                       "presence": {"not_types": ["*"]},
+                       "account_data": {"not_types": ["*"]}})
+    since = load_state(state)
+    first = since is None
+    backoff = 5
+    while True:
+        params = {"filter": filt, "timeout": 0 if first else 30000}
+        if since:
+            params["since"] = since
+        try:
+            resp = mx.call("GET", "/_matrix/client/v3/sync", params=params, timeout=90)
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            log(f"sync failed: {e}; retrying in {backoff}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+            continue
+        backoff = 5
+        rooms = resp.get("rooms", {})
+        if args.room in rooms.get("invite", {}):
+            log(f"joining {args.room}")
+            mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(args.room)}", {})
+        if not first:  # the first sync only finds where "now" is
+            timeline = rooms.get("join", {}).get(args.room, {}).get("timeline", {})
+            for ev in timeline.get("events", []):
+                if ev.get("sender") == args.owner:
+                    try:
+                        bot.handle(ev)
+                    except Exception as e:  # keep listening whatever one message does
+                        log(f"error handling {ev.get('event_id')}: {e!r}")
+                        mx.notice(args.room, f"❌ {e!r}")
+        since, first = resp["next_batch"], False
+        save_state(state, since)
+
+
+if __name__ == "__main__":
+    main()
