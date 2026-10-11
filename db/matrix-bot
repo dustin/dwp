@@ -16,6 +16,9 @@ Listens in one room, to the Matrix users --user maps to riders:
     "!sync" syncs every rider, and "!sync walter" just Walter.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
     Imports reply with the same summary.
+  * "!foil 585" changes the foil on the sender's latest run (matched like
+    add-run's, or "new <full name>"), then re-exports. An --admin can
+    name a rider first: "!foil walter orca 685".
   * "!help" says the above.
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
@@ -48,7 +51,7 @@ PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it as your run; "
         "without a caption I'll ask. \"-\" for the foil reuses your last one "
         "from that beach; \"new Axis Spitfire 1180\" records a foil you haven't "
-        "used before. !last shows your latest run (!last walter for someone else's); "
+        "used before. !foil 585 changes your latest run's foil. !last shows your latest run (!last walter for someone else's); "
         "!sync runs your Strava sync.")
 RIDER = re.compile(r"[a-z][a-z0-9-]*")
 
@@ -123,10 +126,10 @@ def client_url(homeserver):
 
 # --- the work -------------------------------------------------------------
 
-def run(cmd, env=None):
-    """Run cmd in db/; (ok, combined output)."""
+def run(cmd, env=None, cwd=DB_DIR):
+    """Run cmd (in db/ by default); (ok, combined output)."""
     log("+ " + " ".join(cmd))
-    r = subprocess.run(cmd, cwd=DB_DIR, env=env, stdout=subprocess.PIPE,
+    r = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
                        stderr=subprocess.STDOUT, text=True)
     sys.stderr.write(r.stdout)
     return r.returncode == 0, r.stdout
@@ -240,6 +243,60 @@ def import_gpx(mx, room, event_id, path, foil, rider):
     return True
 
 
+def sql_str(v):
+    return "'" + v.replace("'", "''") + "'"
+
+
+def resolve_foil(rider, name):
+    """(foil, None) for the one known foil name names, else (None, why).
+
+    Matches like import.sql: a case-insensitive piece of the name, an exact
+    name always winning; the rider's own foils first, then everyone's (a
+    rider whose runs say "unknown" may share a foil with someone else)."""
+    new = re.match(r"new\s+(.+)", name, re.I)
+    if new:
+        return new.group(1).strip(), None
+    for where in (f"rider = '{rider}' and ", ""):
+        known = [row["foil"] for row in query(
+            f"select distinct foil from dwlist where {where}foil is not null")]
+        exact = [f for f in known if f.lower() == name.lower()]
+        hits = exact or [f for f in known if name.lower() in f.lower()]
+        if len(hits) == 1:
+            return hits[0], None
+        if len(hits) > 1:
+            return None, f"'{name}' matches more than one foil: {', '.join(sorted(hits))}"
+    return None, f"no foil matches '{name}'"
+
+
+def set_foil(mx, room, event_id, rider, name):
+    """Record foil name on the rider's latest run, then re-export."""
+    r = latest(rider)
+    if not r:
+        mx.notice(room, f"No runs for {rider}.", reply_to=event_id)
+        return
+    foil, why = resolve_foil(rider, name)
+    if why:
+        mx.notice(room, f"🤔 {why}. If it's a foil nobody has ridden yet, send its "
+                        "full name after \"new\", e.g. !foil new Axis Spitfire 1180.",
+                  reply_to=event_id)
+        return
+    mx.react(room, event_id, "👀")
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', 'matrix-bot: foil of {r['id']}'); "
+           f"update dwlist set foil = {sql_str(foil)} where id = '{r['id']}'; commit;")
+    ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        ok, out = run(["./upload-runs.sh"])
+    if not ok:
+        mx.notice(room, f"❌ couldn't change the foil:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't change the foil:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    text, html = summary(latest(rider, r["id"]), rider)
+    was = r.get("foil") or "none"
+    mx.notice(room, f"✅ foil was {was}\n{text}", reply_to=event_id,
+              html=f"✅ foil was {escape(was)}<br>{html}")
+
+
 def strava_sync(mx, room, event_id, riders):
     mx.react(room, event_id, "👀")
     ok, out = run(["./strava/sync", "run", *riders])
@@ -332,6 +389,21 @@ class Bot:
                 self.mx.notice(room, body, reply_to=eid, html=html)
             else:
                 self.mx.notice(room, f"No runs for {who[0]}.", reply_to=eid)
+        elif text.startswith("!foil"):
+            words = text.split()[1:]
+            target = rider
+            if words and words[0] in self.args.users.values() and len(words) > 1:
+                if sender not in self.args.admin and words[0] != rider:
+                    self.mx.notice(room, "You can only change your own runs.",
+                                   reply_to=eid)
+                    return
+                target, words = words[0], words[1:]
+            name = " ".join(words)
+            if FOIL.match(name):
+                set_foil(self.mx, room, eid, target, name)
+            else:
+                self.mx.notice(room, "!foil takes a foil, like !foil 585 "
+                                     "(or !foil walter orca 685)", reply_to=eid)
         elif text.startswith("!help"):
             self.mx.notice(room, HELP, reply_to=eid)
         elif sender in self.pending and FOIL.match(text):
