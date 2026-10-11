@@ -392,7 +392,7 @@ class Bot:
         elif text.startswith("!foil"):
             words = text.split()[1:]
             target = rider
-            if words and words[0] in self.args.users.values() and len(words) > 1:
+            if len(words) > 1 and words[0] in self.riders():
                 if sender not in self.args.admin and words[0] != rider:
                     self.mx.notice(room, "You can only change your own runs.",
                                    reply_to=eid)
@@ -412,6 +412,12 @@ class Bot:
                 self.attempt(sender, gpx_eid, path, text, rider)
             else:
                 os.unlink(path)
+
+    def riders(self):
+        """Every rider: the users' and any others with runs in the lake."""
+        return set(self.args.users.values()) | {
+            row["rider"] for row in query(
+                "select distinct rider from dwlist where rider is not null")}
 
     def attempt(self, sender, eid, path, foil, rider):
         """Import; if that fails, the file waits for another foil."""
