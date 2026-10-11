@@ -1,0 +1,297 @@
+#!/usr/bin/env python3
+"""Import riders' new downwinders from Strava.
+
+One-time setup per rider, after they've created a Strava API app
+(strava.com/settings/api, callback domain "localhost"):
+
+    ./strava/sync setup walter --client-id 12345 --client-secret abc... \
+        --board "Barracuda V1"
+        # prints a link: the rider opens it, approves, and sends back the
+        # address their browser lands on (a localhost page that won't load)
+    ./strava/sync auth walter 'http://localhost/exchange_token?state=&code=...'
+
+Then, from cron/launchd or by hand:
+
+    ./strava/sync run              # every configured rider
+    ./strava/sync run walter       # just one
+    ./strava/sync run --dry-run    # triage only, import nothing
+
+Each rider's keys and state live in ~/.config/dwp/strava/<rider>.json
+(mode 600). A run asks Strava for the rider's activities since the last
+run (less --days of overlap, so a late upload from a second device is
+still seen), fetches the GPS and heart rate streams of water sports and
+anything named "downwind", and triages them the same way as
+import-archive (see triage.py). "downwind" sessions are imported;
+"review" ones are only listed. A session whose chosen activity was
+already imported is skipped; if a later upload changes the choice (say
+the watch track arrives after the phone's), the new one replaces it.
+One upload-runs.sh at the end if anything was imported.
+
+Strava's newer apps can only connect the athlete who created them, so
+each rider brings their own app; nothing here assumes they share one.
+
+Run it from db's nix dev shell (python3, duckdb, rclone).
+"""
+
+import argparse
+import json
+import os
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+
+sys.dont_write_bytecode = True  # no __pycache__ for jj to sweep up
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from triage import die, import_sessions, load_geo, local, triage, upload  # noqa: E402
+
+CONFIG_DIR = os.path.expanduser(os.environ.get("DWP_STRAVA_DIR", "~/.config/dwp/strava"))
+API = "https://www.strava.com/api/v3"
+TOKEN_URL = "https://www.strava.com/oauth/token"
+REDIRECT = "http://localhost/exchange_token"
+SCOPE = "activity:read_all"
+
+# Strava sport_type -> the display name the archive's activities.csv uses,
+# which is what triage.verdict looks at.
+TYPE_NAMES = {"StandUpPaddling": "Stand Up Paddling", "Windsurf": "Windsurf",
+              "Kitesurf": "Kitesurf", "Surfing": "Surfing", "Sail": "Sail",
+              "Canoeing": "Canoe", "Kayaking": "Kayaking", "Rowing": "Rowing"}
+
+
+# --- config ---------------------------------------------------------------
+
+def config_path(rider):
+    if not rider.replace("-", "").isalnum():
+        die(f"odd rider name: {rider}")
+    return os.path.join(CONFIG_DIR, f"{rider}.json")
+
+
+def load(rider):
+    try:
+        with open(config_path(rider)) as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        die(f"no Strava setup for {rider}; run: sync setup {rider} ...")
+
+
+def save(rider, cfg):
+    os.makedirs(CONFIG_DIR, mode=0o700, exist_ok=True)
+    path = config_path(rider)
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as fh:
+        json.dump(cfg, fh, indent=2, sort_keys=True)
+    os.replace(tmp, path)
+
+
+def riders():
+    if not os.path.isdir(CONFIG_DIR):
+        return []
+    return sorted(f[:-5] for f in os.listdir(CONFIG_DIR) if f.endswith(".json"))
+
+
+# --- Strava ---------------------------------------------------------------
+
+def post_token(cfg, **fields):
+    data = urllib.parse.urlencode(dict(client_id=cfg["client_id"],
+                                       client_secret=cfg["client_secret"], **fields)).encode()
+    try:
+        with urllib.request.urlopen(urllib.request.Request(TOKEN_URL, data=data)) as r:
+            tok = json.load(r)
+    except urllib.error.HTTPError as e:
+        die(f"Strava token request failed: {e.code} {e.read().decode(errors='replace')}")
+    cfg.update(access_token=tok["access_token"], refresh_token=tok["refresh_token"],
+               expires_at=tok["expires_at"])
+    return tok
+
+
+def access_token(rider, cfg):
+    if "refresh_token" not in cfg:
+        die(f"{rider} hasn't authorized yet; run: sync auth {rider} <url>")
+    if cfg.get("expires_at", 0) < time.time() + 120:
+        post_token(cfg, grant_type="refresh_token", refresh_token=cfg["refresh_token"])
+        save(rider, cfg)  # Strava may rotate the refresh token
+    return cfg["access_token"]
+
+
+def get(token, path, **params):
+    url = f"{API}{path}?{urllib.parse.urlencode(params)}" if params else f"{API}{path}"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(req) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return None
+            if e.code == 429 or e.code >= 500:
+                wait = 60 * (attempt + 1)
+                print(f"Strava {e.code}, waiting {wait}s", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            die(f"Strava {path}: {e.code} {e.read().decode(errors='replace')}")
+        except urllib.error.URLError as e:
+            print(f"Strava unreachable ({e.reason}), retrying", file=sys.stderr)
+            time.sleep(10 * (attempt + 1))
+    die(f"Strava {path}: giving up")
+
+
+def activities_since(token, after):
+    page, out = 1, []
+    while True:
+        batch = get(token, "/athlete/activities", after=int(after), per_page=100, page=page)
+        if not batch:
+            return out
+        out.extend(batch)
+        page += 1
+
+
+def wanted(a):
+    """Worth fetching streams for: a water sport, or named downwind, with GPS."""
+    if a.get("manual") or not a.get("start_latlng"):
+        return False
+    return a.get("sport_type") in TYPE_NAMES or "downwind" in a.get("name", "").lower()
+
+
+def track(token, a):
+    """The activity's points, or None if it has no GPS stream."""
+    s = get(token, f"/activities/{a['id']}/streams",
+            keys="time,latlng,heartrate", key_by_type="true")
+    if not s or "latlng" not in s or "time" not in s:
+        return None
+    t0 = datetime.fromisoformat(a["start_date"].replace("Z", "+00:00")).timestamp()
+    hr = s.get("heartrate", {}).get("data")
+    return [(t0 + t, ll[0], ll[1], hr[i] if hr else None)
+            for i, (t, ll) in enumerate(zip(s["time"]["data"], s["latlng"]["data"]))]
+
+
+# --- commands -------------------------------------------------------------
+
+def cmd_setup(args):
+    path = config_path(args.rider)
+    cfg = {}
+    if os.path.exists(path):
+        cfg = load(args.rider)
+    cfg.update(client_id=str(args.client_id), client_secret=args.client_secret,
+               board=args.board, foil=args.foil)
+    save(args.rider, cfg)
+    q = urllib.parse.urlencode(dict(client_id=cfg["client_id"], response_type="code",
+                                    redirect_uri=REDIRECT, approval_prompt="force",
+                                    scope=SCOPE))
+    print(f"Saved {path}. Send {args.rider} this link:\n\n"
+          f"  https://www.strava.com/oauth/authorize?{q}\n\n"
+          f"then run: sync auth {args.rider} '<the address their browser ends up on>'")
+
+
+def cmd_auth(args):
+    cfg = load(args.rider)
+    q = urllib.parse.parse_qs(urllib.parse.urlparse(args.code).query)
+    code = q.get("code", [args.code])[0]
+    if "scope" in q and SCOPE not in q["scope"][0]:
+        die(f"they didn't grant {SCOPE} (got {q['scope'][0]}); send the link again "
+            "and leave \"View data about your private activities\" ticked")
+    tok = post_token(cfg, grant_type="authorization_code", code=code)
+    save(args.rider, cfg)
+    who = tok.get("athlete", {})
+    print(f"{args.rider} authorized as {who.get('firstname', '?')} {who.get('lastname', '')}"
+          .rstrip())
+
+
+def sync_rider(rider, args, geo):
+    """Triage and import one rider's recent activities; (imported, failed) counts."""
+    cfg = load(rider)
+    token = access_token(rider, cfg)
+    started = time.time()
+    since = (cfg.get("last_sync") or started) - args.days * 86400
+    acts = [a for a in activities_since(token, since) if wanted(a)]
+    print(f"{rider}: {len(acts)} activities since {local(since)}", file=sys.stderr)
+
+    metas, tracks = [], {}
+    for a in acts:
+        pts = track(token, a)
+        if pts and len(pts) >= 10:
+            aid = str(a["id"])
+            tracks[aid] = pts
+            metas.append(dict(id=aid, name=a.get("name", ""),
+                              type=TYPE_NAMES.get(a.get("sport_type"), a.get("sport_type", ""))))
+    picked = triage(metas, tracks, *geo)
+
+    done = cfg.setdefault("imported", {})
+    todo = []
+    for r in picked:
+        if r["v"] == "review":
+            print(f"  review: {r['id']} {local(r['start'])} {r['name']} ({r['why']})",
+                  file=sys.stderr)
+        elif r["v"] == "downwind" and r["id"] not in done:
+            todo.append(r)
+    if args.dry_run:
+        for r in todo:
+            print(f"  would import: {r['id']} {local(r['w_start'])} {r['name']}", file=sys.stderr)
+        return 0, 0
+
+    failed = import_sessions(todo, tracks, rider, cfg.get("board", ""),
+                             cfg.get("foil", "unknown"), args.retries)
+    bad = {r["id"] for r in failed}
+    for r in todo:
+        if r["id"] not in bad:
+            done[r["id"]] = r["w_start"]
+    if not bad:
+        cfg["last_sync"] = started  # else the next run looks back far enough to retry
+    save(rider, cfg)
+    for r in failed:
+        print(f"  failed: {r['id']} {local(r['w_start'])} {r['name']}", file=sys.stderr)
+    return len(todo) - len(failed), len(failed)
+
+
+def cmd_run(args):
+    names = args.riders or riders()
+    if not names:
+        die(f"no riders set up in {CONFIG_DIR}")
+    geo = load_geo()
+    imported = failed = 0
+    for rider in names:
+        i, f = sync_rider(rider, args, geo)
+        imported += i
+        failed += f
+    if imported:
+        upload()
+    print(f"imported {imported}, failed {failed}", file=sys.stderr)
+    if failed:
+        sys.exit(1)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("setup", help="save a rider's Strava app and print the consent link")
+    p.add_argument("rider")
+    p.add_argument("--client-id", required=True)
+    p.add_argument("--client-secret", required=True)
+    p.add_argument("--board", required=True, help="board recorded on their runs")
+    p.add_argument("--foil", default="unknown", help="foil recorded on their runs")
+    p.set_defaults(fn=cmd_setup)
+
+    p = sub.add_parser("auth", help="finish setup with the address the consent link led to")
+    p.add_argument("rider")
+    p.add_argument("code", help="the localhost address (or just its code=... value)")
+    p.set_defaults(fn=cmd_auth)
+
+    p = sub.add_parser("run", help="import new downwinders")
+    p.add_argument("riders", nargs="*", help="default: every rider set up")
+    p.add_argument("--days", type=float, default=2,
+                   help="look back this many days before the last run (default: 2)")
+    p.add_argument("--dry-run", action="store_true", help="triage only")
+    p.add_argument("--retries", type=int, default=3,
+                   help="times to retry a run that fails to import (default: 3)")
+    p.set_defaults(fn=cmd_run)
+
+    args = ap.parse_args(argv)
+    args.fn(args)
+
+
+if __name__ == "__main__":
+    main()
