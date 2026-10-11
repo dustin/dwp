@@ -180,7 +180,7 @@ def summary(r, rider):
     """(text, html) describing run r."""
     when = datetime.fromtimestamp(r["ts"], HST)
     head = (f"{r['start_beach']} → {r['end_beach']} · "
-            f"{when:%a %b} {when.day} {when:%-I:%M%p}".replace("AM", "am").replace("PM", "pm"))
+            f"{when:%a %b} {when.day} {when:%H:%M}")
     lines = []
     foil_m, foil_s = r.get("distance_on_foil"), r.get("duration_on_foil")
     if foil_m and foil_s:
