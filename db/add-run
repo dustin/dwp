@@ -2,10 +2,13 @@
 """Import a GPX run end to end.
 
     ./add-run some/run.gpx 688
+    ./add-run some/run.gpx
+
 
 Filters the GPX with gpxconvert/gpx_filter.py, runs import.sql against
 the lake with DWP_FOIL set to the second argument and DWP_CSV to the
-filtered CSV, then runs upload-runs.sh.
+filtered CSV, then runs upload-runs.sh.  Leave the foil out to reuse the
+one from the rider's latest run that started at the same beach.
 
 import.sql resolves DWP_FOIL to the one known foil it names (688 means
 F4 Hammerhead 688), and fails the import if it names none or several.
@@ -51,13 +54,17 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("gpx", help="GPX file to import")
-    ap.add_argument("foil", help="foil to record, e.g. 688 or 'orca 685'")
+    ap.add_argument("foil", nargs="?", default="",
+                    help="foil to record, e.g. 688 or 'orca 685' (default: the "
+                         "rider's latest from the same start beach)")
     ap.add_argument("--new-foil", action="store_true",
                     help="the foil is new: record its name exactly as given")
     ap.add_argument("--rider", default="dustin",
                     help="whose run this is (default: dustin)")
     ap.add_argument("--board", help="board to record (default: the rider's latest)")
     args = ap.parse_args(argv)
+    if args.new_foil and not args.foil:
+        die("--new-foil needs the foil's name")
 
     if not os.path.isfile(args.gpx):
         die(f"no such file: {args.gpx}")

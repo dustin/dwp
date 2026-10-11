@@ -24,6 +24,8 @@ SET VARIABLE board = coalesce(
 -- Resolve DWP_FOIL (any case-insensitive piece of a foil name, e.g. 688)
 -- to the one foil in the rider's dwlist rows it names. An exact name always wins. With
 -- DWP_NEW_FOIL set, DWP_FOIL is a foil not used before, taken as is.
+-- Without DWP_FOIL, the foil is left NULL here and filled in once the start
+-- beach is known: the rider's foil on their latest run from that beach.
 SET VARIABLE foil = (
   WITH known AS (SELECT DISTINCT foil FROM dwlist
                  WHERE foil IS NOT NULL AND rider = getvariable('rider')),
@@ -34,8 +36,7 @@ SET VARIABLE foil = (
          OR lower(foil) = lower(getenv('DWP_FOIL'))
   )
   SELECT CASE
-    WHEN coalesce(getenv('DWP_FOIL'), '') = ''
-      THEN error('set DWP_FOIL to the foil, e.g. DWP_FOIL=688')
+    WHEN coalesce(getenv('DWP_FOIL'), '') = '' THEN NULL
     WHEN coalesce(getenv('DWP_NEW_FOIL'), '') <> '' THEN getenv('DWP_FOIL')
     WHEN count(*) = 1 THEN any_value(foil)
     WHEN count(*) = 0
@@ -46,7 +47,6 @@ SET VARIABLE foil = (
   END
   FROM hits
 );
-SELECT getvariable('foil') AS foil;
 
 -- All filtering happens in gpx_filter.py; speed_final_kmh,
 -- lat_filtered/lon_filtered, and distance_cumulative_m are
@@ -219,6 +219,19 @@ FROM   (
         GROUP BY dwid
       ) x
 WHERE l.id = x.dwid;
+
+-- No DWP_FOIL: the foil from the rider's latest run that started here.
+UPDATE dwlist AS l
+SET    foil = coalesce(
+         (SELECT p.foil FROM dwlist p
+          WHERE p.rider = l.rider AND p.start_pos = l.start_pos
+            AND p.foil IS NOT NULL AND p.id <> l.id
+          ORDER BY p.ts DESC LIMIT 1),
+         error('no earlier run from beach ' || coalesce(l.start_pos::VARCHAR, '(none)')
+               || ' to take a foil from; set DWP_FOIL'))
+WHERE  l.id = (SELECT dwid FROM new_run) AND l.foil IS NULL;
+
+SELECT foil FROM dwlist WHERE id = (SELECT dwid FROM new_run);
 
 -- heart rates
 UPDATE dwlist AS l
