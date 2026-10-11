@@ -53,6 +53,10 @@ export const categories = [
   // break it). The day's first dry run is the one that extends the streak.
   {key: "dry_streak", label: "Dry run streak", color: "#b07aa1", ties: false,
    value: (d, ctx) => ctx.dryStreak.get(d), score: v => v, fmt: days},
+  // Most dry runs in a calendar month, counted as of each dry run.
+  {key: "dry_month", label: "Driest month", color: "#d37295", ties: false,
+   value: (d, ctx) => ctx.dryMonth.get(d), score: v => v,
+   fmt: v => `${v} dry run${v === 1 ? "" : "s"}`},
   // Not a best, a milestone: the run that carried the odometer past it.
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
@@ -88,6 +92,7 @@ function yearsSince(start, t) {
 export function computeAchievements(allRuns) {
   const ctx = {
     streak: streaks(allRuns), dryStreak: streaks(allRuns.filter(d => d.dry)),
+    dryMonth: monthCounts(allRuns.filter(d => d.dry)),
     first: d3.min(allRuns, d => d.ts), firstDry: d3.min(allRuns.filter(d => d.dry), d => d.ts),
   };
   const best = new Map();
@@ -131,4 +136,16 @@ function streaks(runs) {
     streaks.set(run, streak);
   }
   return streaks;
+}
+
+// How many runs so far in the run's calendar month, as of each run.
+function monthCounts(runs) {
+  const counts = new Map(), seen = new Map();
+  for (const run of d3.sort(runs, d => d.ts)) {
+    const month = +d3.timeMonth(run.ts);
+    const n = (seen.get(month) ?? 0) + 1;
+    seen.set(month, n);
+    counts.set(run, n);
+  }
+  return counts;
 }
