@@ -1,6 +1,8 @@
 // dashboard-test.js
 // Simple test to verify dashboard loads and links work without errors
 
+import fs from 'fs';
+import path from 'path';
 import { chromium } from 'playwright';
 import { csvParse } from 'd3-dsv';
 
