@@ -157,6 +157,57 @@ const behind = (() => {
   ]
 }))}</div>
 
+## Heart Rate
+
+```js
+// Effort: heart rate against the rider's own usual foiling heart rate (the
+// median of avg_foiling_hr over all their runs), so riders with different
+// hearts compare fairly: 100% is a typical day for them. Riders without HR
+// data are left out.
+const hrRiders = riders.map(r => {
+  const ref = d3.median([...lists.get(r.meta.rider).values()], m => m.avg_foiling_hr || undefined);
+  const foiling = r.csv.filter(d => d.hr > 0 && d.speed > FOIL_THRESHOLD_KPH);
+  return {...r, ref, foiling};
+}).filter(r => r.ref && r.foiling.length > 0);
+const effortRows = hrRiders.flatMap(r => {
+  // A one-minute rolling mean, sampled every 10 seconds.
+  const pts = r.csv.filter(d => d.hr > 0);
+  const bins = d3.rollups(pts, v => d3.mean(v, d => d.hr), d => Math.floor(d.ts / 10000) * 10000)
+    .sort((a, b) => a[0] - b[0]);
+  return bins.map(([t], i) => {
+    const win = bins.slice(Math.max(0, i - 5), i + 1);
+    return {ts: new Date(t), rider: r.name, effort: d3.mean(win, w => w[1]) / r.ref};
+  });
+});
+const pct = v => `${(v * 100).toFixed(0)}%`;
+function hrCard(title, value, format) {
+  return html`<div class="card"><h2>${title}</h2><div class="multi">${hrRiders.map(r => {
+    const v = value(r);
+    return html`<span class="v" style="--c: ${r.color}">${v == null || Number.isNaN(v) ? "—" : format(v)}</span>`;
+  })}</div></div>`;
+}
+```
+
+<div>${hrRiders.length === 0 ? html`<p>No heart rate data for these runs.</p>` : html`<div class="grid grid-cols-4">
+  ${hrCard("Foiling Effort vs Usual", r => d3.mean(r.foiling, d => d.hr) / r.ref, pct)}
+  ${hrCard("Time on Foil Above Usual", r => r.foiling.filter(d => d.hr > r.ref).length / r.foiling.length, pct)}
+  ${hrCard("Peak Heart Rate", r => d3.max(r.csv, d => d.hr), fmt.hr)}
+  ${hrCard("Usual Foiling Heart Rate", r => r.ref, fmt.hr)}
+</div>
+<div class="card">${resize(width => Plot.plot({
+  title: "Effort: heart rate as % of each rider's usual foiling heart rate (1-minute average)",
+  width, height: 260,
+  x: {type: "time", label: null},
+  y: {label: "% of usual", grid: true, tickFormat: d => `${(d * 100).toFixed(0)}`},
+  color: {domain: hrRiders.map(r => r.name), range: hrRiders.map(r => r.color), legend: true},
+  marks: [
+    Plot.ruleY([1], {strokeDasharray: "4,4"}),
+    Plot.lineY(effortRows, {x: "ts", y: "effort", stroke: "rider", strokeWidth: 1.5}),
+    Plot.tip(effortRows, Plot.pointerX({x: "ts", y: "effort", stroke: "rider",
+      title: d => `${d.rider}: ${pct(d.effort)}\n${fmt.time(d.ts)}`}))
+  ]
+}))}</div>`}</div>
+
 ## Speed
 
 <div class="card">${resize(width => Plot.plot({
