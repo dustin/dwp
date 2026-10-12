@@ -88,6 +88,12 @@ def tides(aux):
 # {"stamp": ISO UTC, "rec": "Kīhei" | "north shore" | "either; ..." | "no can",
 #  "kihei": 0-4, "ns": 0-4}. Under weather/ too, in case it moves there.
 RATING_TOPICS = ("conditions/rating", "weather/conditions/rating")
+# Node-RED's read of a cam frame by a vision model, per site (no stamp; the
+# time it arrives is when it was read): weather/conditions/wailea →
+# {"description": "...", "sea": "glassy" | "light ripples" | "textured" |
+#  "scattered whitecaps" | "many whitecaps", "shorebreak": "none" | "small" |
+#  "big", "daylight": true, "image": optional URL of the frame}
+CAM_TOPICS = ("weather/conditions/+",)
 GO, TIE = 1.5, 0.4  # the rec node's: a side worth going, and too close to call
 
 
@@ -107,7 +113,7 @@ def _rec(kihei, ns):
 
 
 class Weather:
-    def __init__(self, host, port=1883, topics=("weather/+",) + RATING_TOPICS):
+    def __init__(self, host, port=1883, topics=("weather/+",) + RATING_TOPICS + CAM_TOPICS):
         self.host, self.port, self.topics = host, port, topics
         self.ratings = queue.Queue()  # rating dicts, for the bot's main loop
         self.lock = threading.Lock()
@@ -115,6 +121,7 @@ class Weather:
         self.extra = {}  # site -> the latest message's label, aux1, aux2
         self.changed = threading.Event()  # set by each new reading or rating
         self.rating = None  # the latest rating message, as published
+        self.cams = {}  # site -> the latest cam reading, with "t" when it arrived
 
     def start(self):
         threading.Thread(target=self.run, name="mqtt", daemon=True).start()
@@ -176,6 +183,21 @@ class Weather:
                     self.rating = r
             self.changed.set()
             return
+        if topic.startswith("weather/conditions/"):
+            try:
+                m = json.loads(payload)
+                cam = {"t": time.time(), "sea": str(m["sea"]),
+                       "shorebreak": str(m.get("shorebreak", "")),
+                       "daylight": bool(m.get("daylight", True)),
+                       "description": str(m.get("description", "")),
+                       "image": str(m.get("image") or "")}
+            except (ValueError, KeyError, TypeError) as e:
+                log(f"skipping {topic}: {e}")
+                return
+            with self.lock:
+                self.cams[topic.rsplit("/", 1)[-1]] = cam
+            self.changed.set()
+            return
         try:
             m = json.loads(payload)
             site = m.get("shortLabel") or topic.rsplit("/", 1)[-1]
@@ -221,11 +243,20 @@ class Weather:
                 for site, q in self.readings.items() if q}
             aux = {site: e for site, e in self.extra.items()}
             r = self.rating
+            cams = {site: {"stamp": datetime.fromtimestamp(c["t"], HST).isoformat(timespec="seconds"),
+                           **{k: c[k] for k in ("sea", "shorebreak", "daylight", "description")}}
+                    for site, c in self.cams.items()}
         rating = r and {"stamp": datetime.fromtimestamp(r["t"], HST).isoformat(timespec="seconds"),
                         "rec": r["rec"], "kihei": r["kihei"], "ns": r["ns"]}
         newest = max((q["readings"][-1][0] for q in stations.values()), default=None)
         return {"updated": newest, "stations": stations, "rating": rating,
+                "cams": cams,
                 "tides": {site: e["aux2"] for site, e in aux.items() if tides(e.get("aux2"))}}
+
+    def cam(self, site):
+        """The site's latest cam reading, or None."""
+        with self.lock:
+            return dict(self.cams[site]) if site in self.cams else None
 
     def info(self, site):
         with self.lock:

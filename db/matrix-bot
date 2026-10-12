@@ -37,7 +37,10 @@ from the room each time) can act for any rider and publish:
 When the conditions/rating feed (Node-RED's 0-4 score per side) says a
 run is getting good, the bot says so in the room, once per session per
 side, plus once if it gets really good and once when it drops off: see
-run_alerts.py.
+run_alerts.py. And once a day, when Kīhei is starting to look good (a
+rating of LOOK or more) and the Wailea cam reads lively (Node-RED's vision
+read of the frame on weather/conditions/wailea), it suggests a look at the
+cam, with the frame.
 
 The bot also pins a one-line version of !conditions in the room and edits
 it in place every few minutes (Element X shows the pinned message in a
@@ -81,11 +84,15 @@ import run_alerts  # noqa: E402
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
 EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
+CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
+CAM_STALE = 30 * 60  # a cam reading older than this isn't shown
+LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea values worth a look
+LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
-    ("!conditions", "latest wind and buoys, with the buoy's spectrum"),
+    ("!conditions", "latest wind, buoys and Wailea cam, with the buoy's spectrum and the cam frame"),
     ("!help", "this"),
 ]
 HELP_RIDER = [
@@ -177,9 +184,9 @@ class Matrix:
         with urllib.request.urlopen(req, timeout=60) as r:
             return json.load(r)["content_uri"]
 
-    def image(self, room, mxc, filename, size, w, h, reply_to=None):
+    def image(self, room, mxc, filename, size, w, h, reply_to=None, mimetype="image/png"):
         content = {"msgtype": "m.image", "body": filename, "url": mxc,
-                   "info": {"mimetype": "image/png", "size": size, "w": w, "h": h}}
+                   "info": {"mimetype": mimetype, "size": size, "w": w, "h": h}}
         if reply_to:
             content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
         self.send(room, content)
@@ -626,11 +633,44 @@ def status_line():
     return " · ".join(parts)
 
 
+def fresh_cam(site="wailea"):
+    """The site's cam reading if it's recent and in daylight, else None."""
+    cam = WEATHER.cam(site) if WEATHER else None
+    if cam and cam["daylight"] and time.time() - cam["t"] < CAM_STALE:
+        return cam
+    return None
+
+
+def cam_line(cam, site="wailea"):
+    return (f"{site_name(site)} cam: {cam['sea']}"
+            + (f", shorebreak {cam['shorebreak']}" if cam["shorebreak"] else "")
+            + f" · {when(cam['t'])}")
+
+
+def send_cam_frame(mx, room, cam, cache, reply_to=None):
+    """Post the frame the cam reading was made from, if Node-RED gave its
+    URL (fetched from here, so a LAN address is fine); cache maps the
+    reading's time to its upload, so it goes up once."""
+    if not cam.get("image"):
+        return
+    if cam["t"] not in cache:
+        try:
+            with urllib.request.urlopen(cam["image"], timeout=20) as r:
+                jpg = r.read()
+        except (OSError, urllib.error.URLError) as e:
+            log(f"cam frame {cam['image']}: {e}")
+            return
+        cache.clear()
+        cache[cam["t"]] = (mx.upload(jpg, "wailea-cam.jpg", "image/jpeg"), len(jpg))
+    mxc, size = cache[cam["t"]]
+    mx.image(room, mxc, "wailea-cam.jpg", size, 1920, 1080, reply_to=reply_to, mimetype="image/jpeg")
+
+
 def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def conditions(mx, room, event_id, images):
+def conditions(mx, room, event_id, images, frames):
     """Reply with the wind and buoys, then each buoy's spectrum image.
     images caches (site, epoch) -> uploaded mxc, so asking again before
     the next reading doesn't upload the same picture again."""
@@ -638,13 +678,19 @@ def conditions(mx, room, event_id, images):
     tide = tide_line()
     if tide:
         lines.append(("↕️ ", tide))
+    cam = fresh_cam()
+    if cam:
+        lines.append(("📷 ", cam_line(cam)))
     buoys = swells_now()
     lines += [("🌊 ", f"{site_name(s)} {when(t)}: {swell_text(sw, 4)}") for s, t, sw in buoys]
     if not lines:
         mx.notice(room, "No wind or buoy readings in the last day.", reply_to=event_id)
         return
     mx.notice(room, "\n".join(a + b for a, b in lines), reply_to=event_id,
-              html="<br>".join(a + escape(b) for a, b in lines))
+              html="<br>".join(a + (f'<a href="{CAM_PAGE}">{escape(b)}</a>' if a == "📷 " else escape(b))
+                               for a, b in lines))
+    if cam:
+        send_cam_frame(mx, room, cam, frames, reply_to=event_id)
     for site, t, sw in buoys:
         key = (site, t)
         if key not in images:
@@ -683,6 +729,7 @@ class Bot:
         self.pending = {}  # sender -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
+        self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
         self.status, self.status_at, self.edited = None, 0, 0
 
     def refresh_status(self):
@@ -729,11 +776,32 @@ class Bot:
             if not said:
                 continue
             wind = {site: wind_line(site, r, before) for site, r, before in wind_now()}
-            lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind],
+            cam = fresh_cam()
+            lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind]
+                     + ([cam_line(cam)] if cam else []),
                      "ns": [wind[s] for s in ("hookipa",) if s in wind]}
             for kind, sides in said:
                 self.mx.send(self.args.room, {"msgtype": "m.text", "body": run_alerts.message(
                     kind, sides, rating, lines)})
+
+    def suggest_cam(self):
+        """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
+        cam reads LIVELY (both fresh), suggest a look at the cam."""
+        cam, rating = fresh_cam(), WEATHER.rating if WEATHER else None
+        if not cam or cam["sea"] not in LIVELY or not rating:
+            return
+        if time.time() - rating["t"] > run_alerts.STALE or rating["kihei"] < LOOK:
+            return
+        path, today = os.path.join(self.args.state_dir, "cam-nudge"), f"{hst(time.time()):%F}"
+        if load_state(path) == today:
+            return
+        save_state(path, today)
+        text = (f"👀 The Wailea cam shows {cam['sea']} and Kīhei is at "
+                f"{run_alerts.out_of_10(rating['kihei'])}. Worth a look: {CAM_PAGE}")
+        self.mx.send(self.args.room, {"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
+                                      "formatted_body": escape(text).replace(
+                                          CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
+        send_cam_frame(self.mx, self.args.room, cam, self.frames)
 
     def handle(self, ev):
         room = self.args.room
@@ -749,7 +817,7 @@ class Bot:
         rider = self.args.users.get(sender)
         text = c.get("body", "").strip() if c.get("msgtype") == "m.text" else ""
         if text.startswith("!conditions"):  # anyone in the room
-            conditions(self.mx, room, eid, self.images)
+            conditions(self.mx, room, eid, self.images, self.frames)
             return
         if text.startswith("!help") and not rider:
             body, html = help_text([("Anyone", HELP_ANYONE)])
@@ -955,6 +1023,10 @@ def main(argv=None):
             bot.announce_ratings()
         except Exception as e:
             log(f"run alert failed: {e!r}")
+        try:
+            bot.suggest_cam()
+        except Exception as e:
+            log(f"cam suggestion failed: {e!r}")
         try:
             bot.refresh_status()
         except Exception as e:  # the pinned conditions are nice to have
