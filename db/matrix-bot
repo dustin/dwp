@@ -703,8 +703,12 @@ def rating_line():
     r = WEATHER.rating if WEATHER else None
     if not r or time.time() - r["t"] > run_alerts.STALE:
         return None
-    scores = ", ".join(f"{name} {run_alerts.out_of_10(r[side])}" for side, name in run_alerts.SIDES.items())
-    return f"Best bet: {r['rec'][:1].upper() + r['rec'][1:]} · {scores} ({when(r['t'])})"
+    # The better side first, with its score: "North shore 4/10 · Kīhei 3/10".
+    sides = sorted(run_alerts.SIDES.items(), key=lambda kv: -r[kv[0]])
+    scores = " · ".join(f"{name} {run_alerts.out_of_10(r[side])}" for side, name in sides)
+    rec = r["rec"].lower()
+    lead = "no can · " if rec.startswith("no can") else "either, " if rec.startswith("either") else ""
+    return f"Best bet: {lead}{scores} ({when(r['t'])})"
 
 
 def conditions(mx, room, event_id, images, frames, charts=False):
