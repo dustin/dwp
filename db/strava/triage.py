@@ -39,6 +39,8 @@ LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
+sys.path.insert(0, DB_DIR)
+import dwp_publish  # noqa: E402
 import gpx_filter  # noqa: E402
 
 GPX = "{http://www.topografix.com/GPX/1/1}"
@@ -368,4 +370,7 @@ def import_sessions(todo, tracks, rider, board, foil, retries=3):
 
 
 def upload():
-    run(["./publish"], cwd=DB_DIR)
+    try:
+        dwp_publish.run()
+    except dwp_publish.PublishError as e:
+        die(f"publish: {e}")
