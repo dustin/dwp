@@ -456,7 +456,9 @@ def strava_sync(mx, room, event_id, riders):
 
 # --- conditions -------------------------------------------------------------
 
-SITE_NAMES = {"kihei": "Kihei", "hookipa": "Ho'okipa", "pauwela": "Pauwela",
+# Wind stations in the order !conditions lists them (any others after).
+WIND_ORDER = ["kihei", "wailea", "hookipa"]
+SITE_NAMES = {"kihei": "Kihei", "wailea": "Wailea", "hookipa": "Ho'okipa", "pauwela": "Pauwela",
               "kanaha": "Kanaha"}
 
 
@@ -515,7 +517,7 @@ def write_live(weather, dry_run=False):
 
 def wind_now():
     """Per station with readings in the last day: (site, latest reading,
-    its average an hour earlier), newest first. The lake's readings, then
+    its average an hour earlier), in WIND_ORDER. The lake's readings, then
     the live feed's newer ones on top."""
     rows = query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
                  "where ts > now() - interval 1 day and wavg is not null order by ts")
@@ -531,12 +533,14 @@ def wind_now():
         last = rs[-1]
         hour_ago = [r["wavg"] for r in rs if 3000 <= last["t"] - r["t"] <= 4200]
         out.append((site, last, sum(hour_ago) / len(hour_ago) if hour_ago else None))
-    return sorted(out, key=lambda x: -x[1]["t"])
+    return sorted(out, key=lambda x: (WIND_ORDER.index(x[0]) if x[0] in WIND_ORDER
+                                      else len(WIND_ORDER), -x[1]["t"]))
 
 
 def wind_line(site, r, before):
     s = (f"{site_name(site)} {r['wavg']:.0f} kn {spectrum_svg.compass(r['wdir'])} "
-         f"({r['wdir']:.0f}°), gusts {r['wgust']:.0f} / lulls {r['wlull']:.0f}")
+         f"({r['wdir']:.0f}°), gusts {r['wgust']:.0f}"
+         + (f" / lulls {r['wlull']:.0f}" if r.get("wlull") is not None else ""))
     if before is not None:
         d = r["wavg"] - before
         s += (f" · building from {before:.0f}" if d >= 3 else
@@ -619,7 +623,7 @@ def status_line():
              for s, r, _ in wind]
     parts += [f"{site_name(s)} {swell_text(sw, 2)}" for s, _, sw in swells_now()]
     if wind:
-        parts.append(f"as of {when(wind[0][1]['t'])}")
+        parts.append(f"as of {when(max(r['t'] for _, r, _ in wind))}")
     return " · ".join(parts)
 
 

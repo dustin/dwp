@@ -140,7 +140,8 @@ class Weather:
             site = m.get("shortLabel") or topic.rsplit("/", 1)[-1]
             t = datetime.fromisoformat(m["stamp"]).replace(tzinfo=HST).timestamp()
             r = {"t": t, "wavg": float(m["avg"]), "wgust": float(m["gust"]),
-                 "wlull": float(m["lull"]), "wdir": float(m["dir_deg"]), "live": True}
+                 "wlull": None if m.get("lull") is None else float(m["lull"]),  # Wailea has none
+                 "wdir": float(m["dir_deg"]), "live": True}
         except (ValueError, KeyError, TypeError) as e:
             log(f"skipping {topic}: {e}")
             return
