@@ -2,25 +2,25 @@
 """Import runs (and kick Strava syncs) from a Matrix room.
 
     ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
-        --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter \
-        --admin @dustin:sallings.org
+        --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter
 
 Listens in one room, to the Matrix users --user maps to riders (and to
-anyone for !conditions and !help):
+anyone for !conditions and !help). Room admins (power level 100, read
+from the room each time) can act for any rider and publish:
 
   * a .gpx file, captioned with a foil ("585"), is imported with add-run
     as the sender's run, then the reply links it. Sent without a caption,
     the bot asks for the foil; answer with one, or "-" for the rider's
     last foil from that start beach. A foil they haven't used before
     takes its full name after "new": "new Axis Spitfire 1180".
-  * "!sync" runs strava/sync run for the sender's rider. An --admin's
+  * "!sync" runs strava/sync run for the sender's rider. A room admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
     Imports reply with the same summary.
   * "!foil 585" changes the foil on the sender's latest run (matched like
-    add-run's, or "new <full name>"), then re-exports. An --admin can
-    name a rider first: "!foil walter orca 685".
-  * "!publish" runs ./publish for a room admin (power level 100), with
+    add-run's, or "new <full name>"), then re-exports. A room admin
+    can name a rider first: "!foil walter orca 685".
+  * "!publish" runs ./publish for a room admin, with
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
     short; the full output is in the bot's log.
@@ -634,7 +634,7 @@ class Bot:
         text = c.get("body", "").strip()
         if text.startswith("!sync"):
             riders = text.split()[1:]
-            if sender not in self.args.admin:
+            if not self.room_admin(sender):
                 if riders and riders != [rider]:
                     self.mx.notice(room, "You can only sync yourself.", reply_to=eid)
                     return
@@ -656,7 +656,7 @@ class Bot:
             words = text.split()[1:]
             target = rider
             if len(words) > 1 and words[0] in self.riders():
-                if sender not in self.args.admin and words[0] != rider:
+                if words[0] != rider and not self.room_admin(sender):
                     self.mx.notice(room, "You can only change your own runs.",
                                    reply_to=eid)
                     return
@@ -680,12 +680,12 @@ class Bot:
                 publish(self.mx, room, eid, words)
         elif text.startswith("!help"):
             sections = [("Anyone", HELP_ANYONE), ("Your runs", HELP_RIDER)]
-            if sender in self.args.admin:  # their bare !sync syncs everyone
+            admin = self.room_admin(sender)
+            if admin:  # their bare !sync syncs everyone
                 sections = [("Anyone", HELP_ANYONE),
                             ("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
-                            ("Any rider (admin)", HELP_ADMIN)]
-            if self.room_admin(sender):
-                sections.append(("Publishing (room admin)", HELP_ROOM_ADMIN))
+                            ("Room admins: any rider", HELP_ADMIN),
+                            ("Room admins: publishing", HELP_ROOM_ADMIN)]
             body, html = help_text(sections)
             self.mx.notice(room, body, reply_to=eid, html=html)
         elif sender in self.pending and FOIL.match(text):
@@ -740,7 +740,7 @@ def main(argv=None):
                     help="a Matrix user it listens to, and whose runs their GPX files "
                          "are, e.g. @dustin:sallings.org=dustin (repeatable)")
     ap.add_argument("--admin", action="append", default=[], metavar="MXID",
-                    help="a user whose !sync may name any rider (repeatable)")
+                    help=argparse.SUPPRESS)  # ignored: room power levels decide now
     ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
                     help="the bot account's access token")
     ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")

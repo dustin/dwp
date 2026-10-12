@@ -12,7 +12,6 @@
 #     room = "!abc:sallings.org";
 #     users."@dustin:sallings.org" = "dustin";
 #     users."@walter:matrix.org" = "walter";
-#     admins = [ "@dustin:sallings.org" ];
 #     tokenFile = config.sops.secrets.dwp-matrix-token.path;
 #   };
 #
@@ -29,8 +28,7 @@ let
     "--room" cfg.room
     "--token-file" cfg.tokenFile
   ]
-  ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users)
-  ++ lib.concatMap (mxid: [ "--admin" mxid ]) cfg.admins;
+  ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
 in
 {
   options.services.dwp-matrix-bot = with lib; {
@@ -51,11 +49,6 @@ in
       type = types.attrsOf types.str;
       example = { "@dustin:sallings.org" = "dustin"; };
       description = "Matrix users the bot listens to, each mapped to the rider their GPX files import as.";
-    };
-    admins = mkOption {
-      type = types.listOf types.str;
-      default = [ ];
-      description = "Users whose !sync can name any rider (others sync only themselves).";
     };
     tokenFile = mkOption {
       type = types.str;
