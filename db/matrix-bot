@@ -56,12 +56,41 @@ import dwp_publish  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
-HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it as your run; "
-        "without a caption I'll ask. \"-\" for the foil reuses your last one "
-        "from that beach; \"new Axis Spitfire 1180\" records a foil you haven't "
-        "used before. !foil 585 changes your latest run's foil. !last shows your latest run (!last walter for someone else's); "
-        "!sync runs your Strava sync. Room admins: !publish [--dry-run], "
-        "!publish verify [--fix], !publish orphans [--delete [--force]] [--dry-run].")
+# (command, what it does) for each permission level; !help shows the
+# sender the ones they may use.
+HELP_RIDER = [
+    ("📎 a .gpx captioned 585", "import it as your run, on foil 585"),
+    ("📎 a .gpx, no caption", "I'll ask which foil; \"-\" reuses your last one from that beach"),
+    ("new Axis Spitfire 1180", "as the foil, for one nobody has ridden yet"),
+    ("!last", "your latest run"),
+    ("!last walter", "someone else's latest run"),
+    ("!foil 585", "change your latest run's foil"),
+    ("!sync", "run your Strava sync"),
+]
+HELP_ADMIN = [
+    ("!sync", "sync every rider"),
+    ("!sync walter", "sync one rider"),
+    ("!foil walter orca 685", "change another rider's latest foil"),
+]
+HELP_ROOM_ADMIN = [
+    ("!publish", "publish whatever changed (--dry-run to just look)"),
+    ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
+    ("!publish orphans", "list objects nothing makes any more"),
+    ("!publish orphans --delete", "delete them (--force if over 5% of the bucket)"),
+]
+
+
+def help_text(sections):
+    """(text, html) for [(heading, [(command, what)])]."""
+    text, html = [], []
+    for head, cmds in sections:
+        text += [head, *(f"  {c}: {w}" for c, w in cmds)]
+        html.append(f"<b>{escape(head)}</b><ul>"
+                    + "".join(f"<li><code>{escape(c)}</code> {escape(w)}</li>" for c, w in cmds)
+                    + "</ul>")
+    return "\n".join(text), "".join(html)
+
+
 RIDER = re.compile(r"[a-z][a-z0-9-]*")
 
 
@@ -463,7 +492,14 @@ class Bot:
             else:
                 publish(self.mx, room, eid, words)
         elif text.startswith("!help"):
-            self.mx.notice(room, HELP, reply_to=eid)
+            sections = [("Your runs", HELP_RIDER)]
+            if sender in self.args.admin:  # their bare !sync syncs everyone
+                sections = [("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
+                            ("Any rider (admin)", HELP_ADMIN)]
+            if self.room_admin(sender):
+                sections.append(("Publishing (room admin)", HELP_ROOM_ADMIN))
+            body, html = help_text(sections)
+            self.mx.notice(room, body, reply_to=eid, html=html)
         elif sender in self.pending and FOIL.match(text):
             gpx_eid, path, at = self.pending.pop(sender)
             if time.time() - at < PENDING_TTL:
