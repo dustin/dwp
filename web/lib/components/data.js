@@ -260,6 +260,23 @@ export async function fetchWind(meta) {
     .then(allRows => inRange(meta, allRows));
 }
 
+// live/wind.json, which matrix-bot replaces as the stations' MQTT feed
+// reports (see db/mqtt_weather.py): site -> readings, oldest first, over
+// the last 24 hours. null if it's missing or unreadable.
+export async function fetchLiveWind() {
+  try {
+    const r = await fetch(`https://${DATAHOST}/live/wind.json`, {cache: 'no-cache'});
+    if (!r.ok) return null;
+    const {stations} = await r.json();
+    return Object.fromEntries(Object.entries(stations).map(([site, {readings}]) => [
+      site,
+      readings.map(([ts, wavg, wgust, wlull, wdir]) => ({ts: new Date(ts), wavg, wgust, wlull, wdir})),
+    ]));
+  } catch {
+    return null;
+  }
+}
+
 // The last `hours` of a wind station's readings, oldest first.
 export async function fetchRecentWind(site, hours = 6) {
   const end = new Date();

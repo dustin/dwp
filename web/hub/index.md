@@ -8,15 +8,33 @@ toc: false
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchBuoySnapshot} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 
-const windNow = Promise.all(WIND_SITES.map(([site, name]) =>
-  fetchRecentWind(site, 6).then(rows => ({site, name, rows})).catch(() => ({site, name, rows: []}))));
+// Each station's last 6 hours: live/wind.json when the bot's feed is
+// fresh, else the lake's half-hourly export. Refetched every minute while
+// the page is visible, so the cards keep up on their own.
+const LIVE_STALE = 15 * 60e3;
+async function loadWind() {
+  const live = await fetchLiveWind();
+  const since = Date.now() - 6 * 3600e3;
+  return Promise.all(WIND_SITES.map(async ([site, name]) => {
+    const rows = live?.[site]?.filter(d => d.ts >= since) ?? [];
+    if (rows.length && Date.now() - rows.at(-1).ts < LIVE_STALE) return {site, name, rows, live: true};
+    return fetchRecentWind(site, 6).then(rows => ({site, name, rows})).catch(() => ({site, name, rows: []}));
+  }));
+}
+const windNow = (async function* () {
+  while (true) {
+    yield await loadWind();
+    do await new Promise(resolve => setTimeout(resolve, 60e3));
+    while (document.hidden);
+  }
+})();
 const buoyNow = fetchBuoySnapshot(new Date()).catch(() => null);
 const tidesNow = (async () => {
   const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
@@ -34,11 +52,11 @@ function riderHref(slug) {
   return `https://${slug}.downwind.pro/`;
 }
 
-function windCard({name, rows}) {
+function windCard({name, rows, live}) {
   const last = rows.at(-1);
   if (!last) return htl.html`<div class="card"><h2>${name} wind</h2><div class="nav-muted">No recent readings</div></div>`;
   return htl.html`<div class="card wind-card">
-    <h2>${name} wind <span class="nav-age">${fmt.relativeTime(last.ts)}</span></h2>
+    <h2>${name} wind <span class="nav-age">${live ? htl.html`<span class="live-dot"></span>live · ` : ""}${fmt.relativeTime(last.ts)}</span></h2>
     <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span> gusting ${last.wgust.toFixed(0)} · ${compassPoint(last.wdir)} ${Math.round(last.wdir)}°</div>
     ${resize(width => Plot.plot({
       width, height: 70, margin: 2, marginBottom: 16, x: {type: "time", ticks: 3, tickFormat: fmt.clock, label: null}, y: {axis: null, domain: [0, Math.max(30, d3.max(rows, d => d.wgust))]},
@@ -206,6 +224,9 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   .nav-row { display: grid; grid-template-columns: 1fr auto 1.2em; gap: 0.6rem; font-size: 0.9rem; }
   .nav-row-value { font-variant-numeric: tabular-nums; }
   .tide-ok { color: var(--theme-green, #3ca951); }
+  .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px;
+    background: var(--theme-green, #3ca951); animation: live-pulse 2s ease-in-out infinite; }
+  @keyframes live-pulse { 50% { opacity: 0.35; } }
   a.nav-card { color: var(--theme-foreground); text-decoration: none; display: flex; flex-direction: column; gap: 0.3rem;
     background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
     border-color: color-mix(in srgb, var(--theme-foreground-focus) 25%, transparent); }

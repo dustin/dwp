@@ -27,7 +27,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 HST = ZoneInfo("Pacific/Honolulu")
-KEEP = 3 * 3600  # seconds of readings kept per station
+KEEP = 24 * 3600  # seconds of readings kept per station (the live object's span)
 KEEPALIVE = 60
 TIDE = re.compile(r"(\d{2})(\d{2})([HL])(-?[\d.]+)")
 
@@ -89,6 +89,7 @@ class Weather:
         self.lock = threading.Lock()
         self.readings = {}  # site -> deque of reading dicts, oldest first
         self.extra = {}  # site -> the latest message's label, aux1, aux2
+        self.changed = threading.Event()  # set by each new reading
 
     def start(self):
         threading.Thread(target=self.run, name="mqtt", daemon=True).start()
@@ -151,11 +152,34 @@ class Weather:
             while q and q[0]["t"] < t - KEEP:
                 q.popleft()
             self.extra[site] = {k: m.get(k, "") for k in ("label", "aux1", "aux2")}
+        self.changed.set()
+
+    def seed(self, site, rows):
+        """Older readings (from the lake) under whatever the feed has."""
+        cutoff = time.time() - KEEP
+        with self.lock:
+            q = self.readings.setdefault(site, deque())
+            first = q[0]["t"] if q else float("inf")
+            q.extendleft(reversed([r for r in rows if cutoff <= r["t"] < first]))
 
     def recent(self):
         """site -> list of readings, oldest first."""
         with self.lock:
             return {site: list(q) for site, q in self.readings.items()}
+
+    def snapshot(self):
+        """The live object: every station's last 24 hours, compactly."""
+        with self.lock:
+            stations = {
+                site: {"label": self.extra.get(site, {}).get("label") or site,
+                       "cols": ["ts", "avg", "gust", "lull", "dir"],
+                       "readings": [[datetime.fromtimestamp(r["t"], HST).isoformat(timespec="seconds"),
+                                     r["wavg"], r["wgust"], r["wlull"], round(r["wdir"])] for r in q]}
+                for site, q in self.readings.items() if q}
+            aux = {site: e for site, e in self.extra.items()}
+        newest = max((q["readings"][-1][0] for q in stations.values()), default=None)
+        return {"updated": newest, "stations": stations,
+                "tides": {site: e["aux2"] for site, e in aux.items() if tides(e.get("aux2"))}}
 
     def info(self, site):
         with self.lock:

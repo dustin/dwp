@@ -28,11 +28,16 @@ from the room each time) can act for any rider and publish:
     its trend over the last hour, Kihei's tides, and each buoy's swells
     with an image of its spectrum and direction rose. Wind and tides come
     live from the weather/+ feed on --mqtt (default host mqtt) when it's
-    up, on top of the lake's half-hourly wind.
+    up, on top of the lake's half-hourly wind. The bot also keeps
+    live/wind.json in the bucket (each station's last 24 hours, for the
+    hub's live wind cards) replaced at most every 30 seconds as readings
+    arrive.
   * "!help" says the above.
 
-The bot's own Matrix status (presence status_msg) carries a one-line
-version of !conditions, refreshed every few minutes.
+The bot also pins a one-line version of !conditions in the room and edits
+it in place every few minutes (Element X shows the pinned message in a
+banner atop the room). Pinning needs the bot to have the power to change
+m.room.pinned_events (moderator, 50, by default).
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
 the home-manager module runs). It reads the bot account's access token
@@ -45,12 +50,14 @@ Only the Python standard library, like the rest of db/.
 """
 
 import argparse
+import gzip
 import json
 import os
 import re
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.error
 import urllib.parse
@@ -136,9 +143,10 @@ class Matrix:
         path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
                 f"/send/{kind}/{self.txn}")
         try:
-            self.call("PUT", path, content)
+            return self.call("PUT", path, content).get("event_id")
         except (urllib.error.URLError, OSError) as e:
             log(f"send failed: {e}")
+            return None
 
     def notice(self, room, text, reply_to=None, html=None):
         content = {"msgtype": "m.notice", "body": text}
@@ -146,7 +154,7 @@ class Matrix:
             content.update(format="org.matrix.custom.html", formatted_body=html)
         if reply_to:
             content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
-        self.send(room, content)
+        return self.send(room, content)
 
     def react(self, room, event_id, key):
         self.send(room, {"m.relates_to": {"rel_type": "m.annotation",
@@ -169,9 +177,26 @@ class Matrix:
             content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
         self.send(room, content)
 
-    def set_status(self, user_id, msg):
-        self.call("PUT", f"/_matrix/client/v3/presence/{urllib.parse.quote(user_id)}/status",
-                  {"presence": "online", "status_msg": msg})
+    def edit(self, room, event_id, text):
+        """Replace a notice's text in place (no notification)."""
+        self.send(room, {"msgtype": "m.notice", "body": "* " + text,
+                         "m.new_content": {"msgtype": "m.notice", "body": text},
+                         "m.relates_to": {"rel_type": "m.replace", "event_id": event_id}})
+
+    def pinned(self, room):
+        try:
+            return self.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                                    "/state/m.room.pinned_events").get("pinned", [])
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return []
+            raise
+
+    def pin(self, room, event_id):
+        """Pin event_id first; needs the power to send m.room.pinned_events."""
+        self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                         "/state/m.room.pinned_events",
+                  {"pinned": [event_id] + [e for e in self.pinned(room) if e != event_id]})
 
     def download(self, mxc):
         server, media = mxc[len("mxc://"):].split("/", 1)
@@ -442,6 +467,42 @@ def when(epoch):
 
 
 WEATHER = None  # a Weather once main starts it: live readings over MQTT
+LIVE_KEY = "live/wind.json"  # outside publish's prefixes, so orphans leaves it be
+LIVE_EVERY = 30  # at most one write of it per this many seconds
+LIVE_HEADERS = ["Content-Encoding: gzip", "Content-Type: application/json",
+                "Cache-Control: public, max-age=30"]
+
+
+def seed_weather(weather):
+    """The lake's last day of wind under the live feed, so a restart
+    doesn't start the live object over empty."""
+    by = {}
+    for r in query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
+                   "where ts > now() - interval 1 day and wavg is not null order by ts"):
+        by.setdefault(r.pop("site"), []).append(r)
+    for site, rows in by.items():
+        weather.seed(site, rows)
+    log(f"seeded live wind from the lake: {', '.join(f'{s} {len(r)}' for s, r in by.items())}")
+
+
+def write_live(weather, dry_run=False):
+    """Keep LIVE_KEY in the bucket replaced with weather's last 24 hours,
+    within LIVE_EVERY seconds of each new reading. Runs in its own thread."""
+    while True:
+        weather.changed.wait()
+        weather.changed.clear()
+        body = gzip.compress(json.dumps(weather.snapshot(), separators=(",", ":")).encode(),
+                             mtime=0)
+        args = ["rclone", "rcat", dwp_publish.DEST + LIVE_KEY]
+        for h in LIVE_HEADERS:
+            args += ["--header-upload", h]
+        if dry_run:
+            log(f"would write {LIVE_KEY}: {len(body)} bytes")
+        else:
+            r = subprocess.run(args, input=body, capture_output=True)
+            if r.returncode != 0:
+                log(f"writing {LIVE_KEY} failed: {r.stderr.decode(errors='replace').strip()}")
+        time.sleep(LIVE_EVERY)
 
 
 def wind_now():
@@ -539,10 +600,13 @@ def spectrum_png(site, epoch, swells):
 
 
 def status_line():
-    """One line of the latest conditions, for the bot's Matrix status."""
+    """One line of the latest conditions, for the bot's pinned message."""
+    wind = wind_now()
     parts = [f"{site_name(s)} {r['wavg']:.0f}g{r['wgust']:.0f} kn {spectrum_svg.compass(r['wdir'])}"
-             for s, r, _ in wind_now()]
+             for s, r, _ in wind]
     parts += [f"{site_name(s)} {swell_text(sw, 2)}" for s, _, sw in swells_now()]
+    if wind:
+        parts.append(f"as of {when(wind[0][1]['t'])}")
     return " · ".join(parts)
 
 
@@ -605,16 +669,29 @@ class Bot:
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.status, self.status_at = None, 0
 
-    def refresh_status(self, me):
-        """Every STATUS_EVERY seconds, put the latest conditions in the bot's
-        Matrix status, if they've changed."""
+    def refresh_status(self):
+        """Every STATUS_EVERY seconds, edit the latest conditions into the
+        bot's pinned message (Element X shows it in a banner atop the room),
+        if they've changed. If that message isn't pinned any more (or never
+        was), post and pin a new one."""
         if time.time() - self.status_at < STATUS_EVERY:
             return
         self.status_at = time.time()
         line = status_line()
-        if line and line != self.status:
-            self.mx.set_status(me, line)
-            self.status = line
+        if not line:
+            return
+        room, path = self.args.room, os.path.join(self.args.state_dir, "pinned")
+        pinned = load_state(path)
+        if pinned and pinned in self.mx.pinned(room):
+            if line != self.status:
+                self.mx.edit(room, pinned, line)
+        else:
+            eid = self.mx.notice(room, line)
+            if not eid:
+                return
+            self.mx.pin(room, eid)
+            save_state(path, eid)
+        self.status = line
 
     def handle(self, ev):
         room = self.args.room
@@ -783,14 +860,20 @@ def main(argv=None):
 
     with open(os.path.expanduser(args.token_file)) as fh:
         mx = Matrix(client_url(args.homeserver), fh.read().strip())
-    state_dir = os.path.expanduser(args.state_dir)
+    state_dir = args.state_dir = os.path.expanduser(args.state_dir)
     os.makedirs(state_dir, exist_ok=True)
     state = os.path.join(state_dir, "since")
     bot = Bot(mx, args)
     if args.mqtt:
         global WEATHER
         host, _, port = args.mqtt.partition(":")
-        WEATHER = Weather(host, int(port or 1883)).start()
+        WEATHER = Weather(host, int(port or 1883))
+        try:
+            seed_weather(WEATHER)
+        except Exception as e:  # live wind without history beats none
+            log(f"seeding live wind failed: {e!r}")
+        WEATHER.start()
+        threading.Thread(target=write_live, args=(WEATHER,), name="live", daemon=True).start()
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
     log(f"{me} listening to {', '.join(args.users)} in {args.room}")
@@ -827,9 +910,9 @@ def main(argv=None):
                         log(f"error handling {ev.get('event_id')}: {e!r}")
                         mx.notice(args.room, f"❌ {e!r}")
         try:
-            bot.refresh_status(me)
-        except Exception as e:  # a status is nice to have
-            log(f"status update failed: {e!r}")
+            bot.refresh_status()
+        except Exception as e:  # the pinned conditions are nice to have
+            log(f"pinned conditions update failed: {e!r}")
         since, first = resp["next_batch"], False
         save_state(state, since)
 
