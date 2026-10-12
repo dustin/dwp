@@ -27,7 +27,7 @@ from the room each time) can act for any rider and publish:
   * "!conditions" (anyone) shows the latest wind at each station with
     its trend over the last hour, Kihei's tides, and each buoy's swells
     with an image of its spectrum and direction rose. Wind and tides come
-    live from the weather/+ feed on --mqtt (default host bee1) when it's
+    live from the weather/+ feed on --mqtt (default host mqtt) when it's
     up, on top of the lake's half-hourly wind. The bot also keeps
     live/wind.json in the bucket (each station's last 24 hours, for the
     hub's live wind cards) replaced at most every 30 seconds as readings
@@ -848,7 +848,7 @@ def main(argv=None):
     ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
                     help="the bot account's access token")
     ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
-    ap.add_argument("--mqtt", default="bee1", metavar="HOST[:PORT]",
+    ap.add_argument("--mqtt", default="mqtt", metavar="HOST[:PORT]",
                     help="broker with the weather/+ station feed (\"\" for none)")
     args = ap.parse_args(argv)
     args.users = {}

@@ -27,6 +27,7 @@ let
     "--homeserver" cfg.homeserver
     "--room" cfg.room
     "--token-file" cfg.tokenFile
+    "--mqtt" cfg.mqtt
   ]
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
 in
@@ -49,6 +50,12 @@ in
       type = types.attrsOf types.str;
       example = { "@dustin:sallings.org" = "dustin"; };
       description = "Matrix users the bot listens to, each mapped to the rider their GPX files import as.";
+    };
+    mqtt = mkOption {
+      type = types.str;
+      default = "mqtt";
+      example = "bee1:1883";
+      description = "HOST[:PORT] of the broker with the weather/+ station feed (\"\" for none).";
     };
     tokenFile = mkOption {
       type = types.str;
