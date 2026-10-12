@@ -36,8 +36,9 @@ from the room each time) can act for any rider and publish:
 
 The bot also pins a one-line version of !conditions in the room and edits
 it in place every few minutes (Element X shows the pinned message in a
-banner atop the room). Pinning needs the bot to have the power to change
-m.room.pinned_events (moderator, 50, by default).
+banner atop the room), and makes the room's avatar the latest buoy
+reading's swell rose. Both need the bot to have the power to change
+m.room.pinned_events and m.room.avatar (moderator, 50, by default).
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
 the home-manager module runs). It reads the bot account's access token
@@ -74,6 +75,8 @@ from mqtt_weather import Weather, tides  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
+EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
+AVATAR_EVERY = 3 * 3600  # ... and between room avatar changes
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
@@ -197,6 +200,11 @@ class Matrix:
         self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
                          "/state/m.room.pinned_events",
                   {"pinned": [event_id] + [e for e in self.pinned(room) if e != event_id]})
+
+    def set_avatar(self, room, mxc):
+        """Needs the power to send m.room.avatar (moderator, 50, by default)."""
+        self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                         "/state/m.room.avatar", {"url": mxc})
 
     def download(self, mxc):
         server, media = mxc[len("mxc://"):].split("/", 1)
@@ -579,15 +587,20 @@ def spectrum_rows(site, epoch):
         f"and ts = to_timestamp({epoch}) order by freq")]
 
 
-def spectrum_png(site, epoch, swells):
-    """PNG bytes of the buoy's spectrum at epoch, with the reading nearest
-    six hours before it dashed over it; None if there's no spectrum."""
+def nearest_spectrum(site, epoch):
+    """The epoch of the buoy's spectrum within an hour of epoch, or None."""
     near = query(f"select epoch(ts) as t from swell_spectrum where site = {sql_str(site)} "
                  f"and ts between to_timestamp({epoch - 3600}) and to_timestamp({epoch + 3600}) "
                  f"order by abs(epoch(ts) - {epoch}) limit 1")
-    if not near:
+    return near[0]["t"] if near else None
+
+
+def spectrum_png(site, epoch, swells):
+    """PNG bytes of the buoy's spectrum at epoch, with the reading nearest
+    six hours before it dashed over it; None if there's no spectrum."""
+    epoch = nearest_spectrum(site, epoch)
+    if epoch is None:
         return None
-    epoch = near[0]["t"]
     rows = spectrum_rows(site, epoch)
     prev = query(f"select epoch(ts) as t from swell_spectrum where site = {sql_str(site)} "
                  f"and ts between to_timestamp({epoch - 7 * 3600}) and to_timestamp({epoch - 5 * 3600}) "
@@ -667,13 +680,16 @@ class Bot:
         self.pending = {}  # sender -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
-        self.status, self.status_at = None, 0
+        self.status, self.status_at, self.edited = None, 0, 0
+        self.avatar, self.avatar_at = None, 0  # when the room's avatar last changed
 
     def refresh_status(self):
         """Every STATUS_EVERY seconds, edit the latest conditions into the
         bot's pinned message (Element X shows it in a banner atop the room),
-        if they've changed. If that message isn't pinned any more (or never
-        was), post and pin a new one."""
+        if they've changed (not just their time) and it's been EDIT_EVERY
+        since the last edit, posting it the first time and pinning it again
+        if someone unpinned it. Each edit is an event in the room, so
+        fewer of them is less churn for everyone's clients."""
         if time.time() - self.status_at < STATUS_EVERY:
             return
         self.status_at = time.time()
@@ -681,17 +697,48 @@ class Bot:
         if not line:
             return
         room, path = self.args.room, os.path.join(self.args.state_dir, "pinned")
-        pinned = load_state(path)
-        if pinned and pinned in self.mx.pinned(room):
-            if line != self.status:
-                self.mx.edit(room, pinned, line)
-        else:
-            eid = self.mx.notice(room, line)
-            if not eid:
+        pinned, now = load_state(path), time.time()
+        if not pinned:
+            pinned = self.mx.notice(room, line)
+            if not pinned:
                 return
-            self.mx.pin(room, eid)
-            save_state(path, eid)
-        self.status = line
+            save_state(path, pinned)
+            self.status, self.edited = line, now
+        elif (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
+              and now - self.edited >= EDIT_EVERY):
+            self.mx.edit(room, pinned, line)
+            self.status, self.edited = line, now
+        # The message is saved before it's pinned, so a bot without the
+        # power to pin (403) keeps editing its one message rather than
+        # posting a new one every few minutes.
+        if pinned not in self.mx.pinned(room):
+            self.mx.pin(room, pinned)
+
+    def refresh_avatar(self):
+        """Make the room's avatar the latest buoy reading's rose (Pauwela's,
+        when there's more than one buoy), at most every AVATAR_EVERY: each
+        change is a line in the room's timeline, and the rose's shape
+        shifts with nearly every hourly reading."""
+        now = time.time()
+        if now - self.avatar_at < STATUS_EVERY:
+            return
+        self.avatar_at = now
+        path = os.path.join(self.args.state_dir, "avatar")
+        if self.avatar is None:
+            self.avatar = float(load_state(path) or 0)
+        if now - self.avatar < AVATAR_EVERY:
+            return
+        buoys = sorted(swells_now(), key=lambda b: b[0] != "pauwela")
+        if not buoys:
+            return
+        site = buoys[0][0]
+        epoch = nearest_spectrum(site, buoys[0][1])
+        if epoch is None:
+            return
+        png = spectrum_svg.to_png(spectrum_svg.avatar_svg(spectrum_rows(site, epoch)), zoom=1)
+        self.mx.set_avatar(self.args.room, self.mx.upload(png, f"{site}-rose.png", "image/png"))
+        self.avatar = now
+        save_state(path, f"{now:.0f}")
 
     def handle(self, ev):
         room = self.args.room
@@ -913,6 +960,10 @@ def main(argv=None):
             bot.refresh_status()
         except Exception as e:  # the pinned conditions are nice to have
             log(f"pinned conditions update failed: {e!r}")
+        try:
+            bot.refresh_avatar()
+        except Exception as e:  # so is the avatar
+            log(f"room avatar update failed: {e!r}")
         since, first = resp["next_batch"], False
         save_state(state, since)
 

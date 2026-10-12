@@ -4,7 +4,8 @@ The web's spectrum histogram (web/lib/components/spectrum.js) redrawn as a
 plain SVG: energy by period between each NDBC bin's real edges, colored by
 the direction it comes from (the same sinebow), the reading six hours
 earlier dashed over it, and the web's mini rose, bigger, beside it.
-to_png() turns it into a PNG with rsvg-convert (librsvg, in db-env.nix).
+avatar_svg() is that rose alone, for the room's avatar. to_png() turns
+either into a PNG with rsvg-convert (librsvg, in db-env.nix).
 
 Only the Python standard library, like the rest of db/.
 """
@@ -44,15 +45,32 @@ def edges(rows):
     return out
 
 
-def rose(bins, cx, cy, r):
-    """Energy summed into 16 sectors by the direction it comes from, each
-    wedge's length the square root of its share (renderMiniRose)."""
-    step = 22.5
+def sectors(bins):
+    """Energy summed into 16 sectors by the direction it comes from."""
     tot = [0.0] * 16
     for lo, hi, e, d in bins:
         if d is not None and hi > FMIN and lo < FMAX:
-            tot[round((d % 360) / step) % 16] += e * (hi - lo)
-    mx = max(tot) or 1
+            tot[round((d % 360) / 22.5) % 16] += e * (hi - lo)
+    return tot
+
+
+def wedges(tot, cx, cy, r):
+    """Each sector a wedge, its length the square root of its share
+    (renderMiniRose), colored by its direction."""
+    step, mx = 22.5, max(tot) or 1
+    out = []
+    for k, v in enumerate(tot):
+        if not v:
+            continue
+        rr = r * math.sqrt(v / mx)
+        a0, a1 = math.radians(k * step - step / 2), math.radians(k * step + step / 2)
+        out.append(f'<path d="M{cx},{cy} L{cx + rr * math.sin(a0):.1f},{cy - rr * math.cos(a0):.1f} '
+                   f'A{rr:.1f},{rr:.1f} 0 0 1 {cx + rr * math.sin(a1):.1f},{cy - rr * math.cos(a1):.1f} Z" '
+                   f'fill="{sinebow(k * step)}"/>')
+    return out
+
+
+def rose(bins, cx, cy, r):
     out = [f'<circle cx="{cx}" cy="{cy}" r="{r}" fill="#fff" stroke="#ccc"/>',
            f'<circle cx="{cx}" cy="{cy}" r="{r / 2}" fill="none" stroke="#eee"/>']
     for a in range(0, 360, 45):
@@ -62,15 +80,21 @@ def rose(bins, cx, cy, r):
         out.append(f'<text x="{cx + (r + 11) * math.sin(math.radians(a)):.1f}" '
                    f'y="{cy - (r + 11) * math.cos(math.radians(a)) + 4:.1f}" '
                    f'text-anchor="middle" fill="#777">{t}</text>')
-    for k, v in enumerate(tot):
-        if not v:
-            continue
-        rr = r * math.sqrt(v / mx)
-        a0, a1 = math.radians(k * step - step / 2), math.radians(k * step + step / 2)
-        out.append(f'<path d="M{cx},{cy} L{cx + rr * math.sin(a0):.1f},{cy - rr * math.cos(a0):.1f} '
-                   f'A{rr:.1f},{rr:.1f} 0 0 1 {cx + rr * math.sin(a1):.1f},{cy - rr * math.cos(a1):.1f} Z" '
-                   f'fill="{sinebow(k * step)}"/>')
-    return "\n".join(out)
+    return "\n".join(out + wedges(sectors(bins), cx, cy, r))
+
+
+def avatar_svg(rows, n=256):
+    """Just the rose, filling an n-pixel square, for the room's avatar:
+    clients crop it to a circle and show it 24-64 px across, so no labels."""
+    c, r = n / 2, n / 2 - 6
+    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{n}" height="{n}">',
+           f'<rect width="{n}" height="{n}" fill="#fff"/>',
+           f'<circle cx="{c}" cy="{c}" r="{r / 2}" fill="none" stroke="#e4e4e4" stroke-width="2"/>']
+    for a in range(0, 360, 90):
+        out.append(f'<line x1="{c}" y1="{c}" x2="{c + r * math.sin(math.radians(a)):.1f}" '
+                   f'y2="{c - r * math.cos(math.radians(a)):.1f}" stroke="#e4e4e4" stroke-width="2"/>')
+    out += wedges(sectors(edges(rows)), c, c, r)
+    return "\n".join(out + ["</svg>"])
 
 
 def spectrum_svg(rows, title, earlier=None, earlier_label=""):
