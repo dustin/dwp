@@ -3,12 +3,13 @@
 Node-RED rates each side about every 10 minutes during the day (0-4: 0 not a
 downwinder, 2 doable, 3 good, 4 really good; run-recs/node-red-rating.md)
 and publishes it, retained, on conditions/rating. Alerts.see() takes each
-rating and returns what to say, if anything, so the room hears about a run
+rating and returns what to say, if anything (scores shown out of 10), so the
+room hears about a run
 as it shapes up and not on every reading:
 
   * a side "turns on" at GOOD (2.8) and only "turns off" below OFF (2.0),
     so a score wobbling around 3 says nothing new;
-  * turning on says so once ("Kīhei is looking good (3.2/4)"); a side
+  * turning on says so once ("Kīhei is looking good (8/10)"); a side
     that turns on again within COOLDOWN of turning off does so quietly,
     so a flapping afternoon is one message, not five;
   * a side that's on and reaches REALLY (3.8) says so once more;
@@ -81,13 +82,18 @@ class Alerts:
         return out
 
 
+def out_of_10(score):
+    """Node-RED's 0-4 score as Dustin reads it: out of 10."""
+    return f"{score * 2.5:.0f}/10"
+
+
 def message(kind, sides, rating, wind_lines):
     """The announcement's text. wind_lines: side -> [line] of its stations."""
     names = " and ".join(SIDES[s] if i == 0 else SIDES[s].lower() for i, s in enumerate(sides))
-    scores = ", ".join(f"{rating[s]:.1f}/4" for s in sides)
+    scores = ", ".join(out_of_10(rating[s]) for s in sides)
     if kind == "off":
         return (f"{names} {'is' if len(sides) == 1 else 'are'} dropping off ("
-                + ", ".join(f"{SIDES[s]} {rating[s]:.1f}" for s in SIDES) + ").")
+                + ", ".join(f"{SIDES[s]} {out_of_10(rating[s])}" for s in SIDES) + ").")
     verb = "is" if len(sides) == 1 else "are"
     head = (f"🤙 {names} {verb} looking good ({scores})" if kind == "on" else
             f"🔥 {names} {verb} really good now ({scores})")
