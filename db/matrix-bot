@@ -674,13 +674,16 @@ def conditions(mx, room, event_id, images, frames):
     """Reply with the wind and buoys, then each buoy's spectrum image.
     images caches (site, epoch) -> uploaded mxc, so asking again before
     the next reading doesn't upload the same picture again."""
-    lines = [("🌬️ ", wind_line(*w)) for w in wind_now()]
+    lines, cam = [], fresh_cam()
+    for w in wind_now():
+        lines.append(("🌬️ ", wind_line(*w)))
+        if w[0] == "wailea" and cam:  # the cam goes under Wailea's wind
+            lines.append(("📷 ", cam_line(cam)))
+    if cam and not any(a == "📷 " for a, _ in lines):
+        lines.append(("📷 ", cam_line(cam)))
     tide = tide_line()
     if tide:
         lines.append(("↕️ ", tide))
-    cam = fresh_cam()
-    if cam:
-        lines.append(("📷 ", cam_line(cam)))
     buoys = swells_now()
     lines += [("🌊 ", f"{site_name(s)} {when(t)}: {swell_text(sw, 4)}") for s, t, sw in buoys]
     if not lines:
