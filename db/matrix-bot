@@ -94,7 +94,7 @@ PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
-    ("!conditions", "best bet and run scores, latest wind, buoys and Wailea cam, with the cam frame"),
+    ("!conditions", "best bet and run scores, latest wind, buoys and the Wailea cam (sea and water motion), with the cam frame"),
     ("!conditions chart", "the same, plus each buoy's spectrum chart"),
     ("!help", "this"),
 ]
@@ -673,6 +673,18 @@ def cam_line(cam, site="wailea"):
             + f" · {when(cam['t'])}")
 
 
+def motion_line(site="wailea"):
+    """The cam's water motion, if there's a recent measurement: right to
+    left (dx < 0) is energy running down the coast toward Makena."""
+    m = WEATHER.water_motion(site) if WEATHER else None
+    if not m or m["dx"] is None or time.time() - m["t"] > CAM_STALE:
+        return None
+    way = "down the coast" if m["dx"] < 0 else "up the coast"
+    share = m["left"] if m["dx"] < 0 else 1 - m["left"]
+    return (f"{site_name(site)} water moving {way}, {abs(m['dx']):.1f} px/s "
+            f"({share:.0%}) · {when(m['t'])}")
+
+
 def send_cam_frame(mx, room, cam, cache, reply_to=None):
     """Post the frame the cam reading was made from, if Node-RED gave its
     URL (fetched from here, so a LAN address is fine); cache maps the
@@ -723,6 +735,8 @@ def conditions(mx, room, event_id, images, frames, charts=False):
         lines.append(("🌬️ ", wind_line(*w)))
         if w[0] == "wailea" and cam:  # the cam goes under Wailea's wind
             lines.append(("📷 ", cam_line(cam)))
+        if w[0] == "wailea" and motion_line():
+            lines.append(("〰️ ", motion_line()))
     if cam and not any(a == "📷 " for a, _ in lines):
         lines.append(("📷 ", cam_line(cam)))
     tide = tide_line()
@@ -825,7 +839,8 @@ class Bot:
             wind = {site: wind_line(site, r, before) for site, r, before in wind_now()}
             cam = fresh_cam()
             lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind]
-                     + ([cam_line(cam)] if cam else []),
+                     + ([cam_line(cam)] if cam else [])
+                     + [m for m in (motion_line(),) if m],
                      "ns": [wind[s] for s in ("hookipa",) if s in wind]}
             for kind, sides in said:
                 self.mx.send(self.args.room, {"msgtype": "m.text", "body": run_alerts.message(

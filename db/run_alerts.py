@@ -7,13 +7,15 @@ rating and returns what to say, if anything (scores shown out of 10), so the
 room hears about a run
 as it shapes up and not on every reading:
 
-  * a side "turns on" at GOOD (2.8) and only "turns off" below OFF (2.0),
-    so a score wobbling around 3 says nothing new;
-  * turning on says so once ("Kīhei is looking good (8/10)"); a side
-    that turns on again within COOLDOWN of turning off does so quietly,
-    so a flapping afternoon is one message, not five;
-  * a side that's on and reaches REALLY (3.8) says so once more;
-  * when every side that was on has turned off, one "dropping off".
+  * each side climbs through levels: "worth considering" at CONSIDER
+    (1.5, about doable), "looking good" at GOOD (2.8) and "really good" at
+    REALLY (3.8), and the room hears once per level it reaches;
+  * levels drop back with some slack (below 1.0, 2.0 and 3.0), so a score
+    wobbling around a threshold says nothing new;
+  * a side that comes back within COOLDOWN of dropping to nothing does so
+    quietly, so a flapping afternoon is one message, not five;
+  * when every side that was announced has dropped to nothing, one
+    "dropping off".
 
 Ratings older than STALE (a retained one after a restart, say) are only
 used to catch up the state, never announced. The state is saved to a file,
@@ -24,7 +26,10 @@ import json
 import os
 import time
 
-GOOD, OFF, REALLY = 2.8, 2.0, 3.8
+CONSIDER, GOOD, REALLY = 1.5, 2.8, 3.8
+UP = (CONSIDER, GOOD, REALLY)  # score to reach level 1, 2, 3
+DOWN = (1.0, 2.0, 3.0)  # below these, level 1, 2, 3 drops a level
+KINDS = (None, "consider", "on", "really")
 COOLDOWN = 60 * 60
 STALE = 30 * 60
 SIDES = {"kihei": "Kīhei", "ns": "North shore"}
@@ -40,7 +45,11 @@ class Alerts:
             self.state = {}
         self.state.setdefault("t", 0)
         for side in SIDES:
-            self.state.setdefault(side, {"on": False, "really": False, "off_at": 0})
+            st = self.state.setdefault(side, {})
+            st.pop("on", None), st.pop("really", None)  # the pre-levels state
+            st.setdefault("level", 0)  # 0 nothing, 1 consider, 2 good, 3 really
+            st.setdefault("said", 0)  # highest level announced since it was 0
+            st.setdefault("off_at", 0)
 
     def save(self):
         tmp = self.path + ".tmp"
@@ -49,35 +58,35 @@ class Alerts:
         os.replace(tmp, self.path)
 
     def see(self, rating, now=None):
-        """[(kind, sides)] to announce for this rating: kind is "on",
-        "really" or "off", sides the SIDES keys it's about."""
+        """[(kind, sides)] to announce for this rating: kind is "consider",
+        "on", "really" or "off", sides the SIDES keys it's about."""
         now = time.time() if now is None else now
         if rating["t"] <= self.state["t"]:
             return []
         self.state["t"] = rating["t"]
         quiet = now - rating["t"] > STALE
-        was_on = [s for s in SIDES if self.state[s]["on"]]
-        on, really = [], []
+        was_on = [s for s in SIDES if self.state[s]["said"]]
+        rose = {}  # kind -> sides
         for side in SIDES:
             st, score = self.state[side], rating[side]
-            if not st["on"] and score >= GOOD:
-                st.update(on=True, really=score >= REALLY)
-                if now - st["off_at"] >= COOLDOWN:  # else it's back on, quietly
-                    on.append(side)
-            elif st["on"] and score < OFF:
-                st.update(on=False, really=False, off_at=now)
-            elif st["on"] and score >= REALLY and not st["really"]:
-                st["really"] = True
-                really.append(side)
+            up = sum(score >= u for u in UP)
+            if up > st["level"]:
+                st["level"] = up
+            else:
+                while st["level"] and score < DOWN[st["level"] - 1]:
+                    st["level"] -= 1
+            if st["level"] > st["said"]:
+                back = not st["said"] and now - st["off_at"] < COOLDOWN
+                st["said"] = st["level"]
+                if not back:  # else it's back on, quietly
+                    rose.setdefault(KINDS[st["level"]], []).append(side)
+            elif not st["level"] and st["said"]:
+                st.update(said=0, off_at=now)
         self.save()
         if quiet:
             return []
-        out = []
-        if on:
-            out.append(("on", on))
-        if really:
-            out.append(("really", really))
-        if was_on and not any(self.state[s]["on"] for s in SIDES):
+        out = [(k, rose[k]) for k in KINDS[1:] if k in rose]
+        if was_on and not any(self.state[s]["said"] for s in SIDES):
             out.append(("off", was_on))
         return out
 
@@ -95,8 +104,9 @@ def message(kind, sides, rating, wind_lines):
         return (f"{names} {'is' if len(sides) == 1 else 'are'} dropping off ("
                 + ", ".join(f"{SIDES[s]} {out_of_10(rating[s])}" for s in SIDES) + ").")
     verb = "is" if len(sides) == 1 else "are"
-    head = (f"🤙 {names} {verb} looking good ({scores})" if kind == "on" else
-            f"🔥 {names} {verb} really good now ({scores})")
+    head = {"consider": f"🤔 {names} {verb} worth considering ({scores})",
+            "on": f"🤙 {names} {verb} looking good ({scores})",
+            "really": f"🔥 {names} {verb} really good now ({scores})"}[kind]
     rec = rating["rec"]
     lines = [head + (f" · {rec}" if rec.startswith("either") else "")]
     for s in sides:

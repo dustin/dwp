@@ -122,6 +122,7 @@ class Weather:
         self.changed = threading.Event()  # set by each new reading or rating
         self.rating = None  # the latest rating message, as published
         self.cams = {}  # site -> the latest cam reading, with "t" when it arrived
+        self.motion = {}  # site -> the latest cam water-motion reading, likewise
 
     def start(self):
         threading.Thread(target=self.run, name="mqtt", daemon=True).start()
@@ -181,6 +182,19 @@ class Weather:
             with self.lock:
                 if self.rating is None or r["t"] > self.rating["t"]:
                     self.rating = r
+            self.changed.set()
+            return
+        if topic.endswith("_motion"):  # weather/conditions/<site>_motion: wailea_motion
+            try:
+                m = json.loads(payload)
+                mo = {"t": time.time(), "skipped": m.get("skipped"),
+                      "dx": None if m.get("dx") is None else float(m["dx"]),
+                      "left": float(m.get("left") or 0)}
+            except (ValueError, TypeError) as e:
+                log(f"skipping {topic}: {e}")
+                return
+            with self.lock:
+                self.motion[topic.rsplit("/", 1)[-1][:-len("_motion")]] = mo
             self.changed.set()
             return
         if topic.startswith("weather/conditions/"):
@@ -260,6 +274,11 @@ class Weather:
         """The site's latest cam reading, or None."""
         with self.lock:
             return dict(self.cams[site]) if site in self.cams else None
+
+    def water_motion(self, site):
+        """The site's latest cam water-motion reading, or None."""
+        with self.lock:
+            return dict(self.motion[site]) if site in self.motion else None
 
     def info(self, site):
         with self.lock:
