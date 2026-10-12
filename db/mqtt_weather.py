@@ -202,9 +202,11 @@ class Weather:
             m = json.loads(payload)
             site = m.get("shortLabel") or topic.rsplit("/", 1)[-1]
             t = datetime.fromisoformat(m["stamp"]).replace(tzinfo=HST).timestamp()
-            r = {"t": t, "wavg": float(m["avg"]), "wgust": float(m["gust"]),
-                 "wlull": None if m.get("lull") is None else float(m["lull"]),  # Wailea has none
-                 "wdir": float(m["dir_deg"]), "live": True}
+            num = lambda k: None if m.get(k) is None else float(m[k])  # noqa: E731
+            # Only avg is required: Wailea has no lull, and sends null gust
+            # or direction at times.
+            r = {"t": t, "wavg": float(m["avg"]), "wgust": num("gust"), "wlull": num("lull"),
+                 "wdir": num("dir_deg"), "live": True}
         except (ValueError, KeyError, TypeError) as e:
             log(f"skipping {topic}: {e}")
             return
@@ -239,7 +241,8 @@ class Weather:
                 site: {"label": self.extra.get(site, {}).get("label") or site,
                        "cols": ["ts", "avg", "gust", "lull", "dir"],
                        "readings": [[datetime.fromtimestamp(r["t"], HST).isoformat(timespec="seconds"),
-                                     r["wavg"], r["wgust"], r["wlull"], round(r["wdir"])] for r in q]}
+                                     r["wavg"], r["wgust"], r["wlull"],
+                                     None if r["wdir"] is None else round(r["wdir"])] for r in q]}
                 for site, q in self.readings.items() if q}
             aux = {site: e for site, e in self.extra.items()}
             r = self.rating
