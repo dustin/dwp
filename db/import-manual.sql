@@ -5,7 +5,7 @@
 --
 --   cd ~/stuff/duck && duckdb --init init.sql < .../db/import-manual.sql
 --
--- then ./upload-runs.sh to export and publish.
+-- then ./publish to export and upload it.
 --
 -- What you get is a dwlist row with no trackpoints: the run shows up in the
 -- run list, odometer, wind stats and buoy comparisons like any other. The

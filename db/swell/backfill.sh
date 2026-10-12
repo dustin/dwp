@@ -16,10 +16,10 @@
 #      the provisional :26 spectra the archive picked up since early
 #      September with NDBC's final :56 ones, while NDBC still has them.
 #   2. swell/backfill.sh -- recomputes everything older than NDBC's window.
-#   3. ./upload-conditions.sh 120 -- the normal export only covers 14 days.
-#   4. Invalidate /swell_partition/* and /swell_spectrum/* in CloudFront.
+#   3. ./publish -- it finds the rewritten days by their fingerprints.
+#   4. Invalidate the paths publish lists at the end in CloudFront.
 #      Settled days are served with a year-long cache lifetime (see
-#      upload-conditions.sh), so rewritten ones won't show up otherwise.
+#      publish), so rewritten ones won't show up otherwise.
 #
 # Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
 # elsewhere.

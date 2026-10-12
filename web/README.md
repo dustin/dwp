@@ -7,7 +7,7 @@ Two [Observable Framework](https://observablehq.com/framework/) sites built from
 
 Shared code lives in `lib/`: `lib/components/` and `lib/data/islands.json` are symlinked into each site as `components/` and `data/islands.json`, so pages import `./components/…` as usual.
 
-Run data comes from the CDN under `runs/rider=<rider>/` (see `db/upload-runs.sh`). `rider/data/` holds a bundled copy of Dustin's lists for when the CDN can't be reached.
+Run data comes from the CDN under `runs/rider=<rider>/` (see `db/publish`). `rider/data/` holds a bundled copy of Dustin's lists for when the CDN can't be reached.
 
 ## Setup
 

@@ -76,7 +76,7 @@ export const rider = (() => {
 })();
 
 // Each rider's files live under runs/rider=<rider>/ on the CDN (see
-// db/upload-runs.sh): runs.csv, crashes.csv and run_buoy.csv beside the
+// db/publish): runs.csv, crashes.csv and run_buoy.csv beside the
 // tracks at dwid=<id>/data.csv.
 const baseFor = who => `https://${DATAHOST}/runs/rider%3D${who}/`;
 
@@ -332,7 +332,7 @@ export async function fetchSwell(meta) {
 }
 
 // The buoy uploads are partitioned by Hawaii calendar day (see
-// db/export-conditions.sql), so enumerate days in HST regardless of the
+// db/publish), so enumerate days in HST regardless of the
 // viewer's own time zone. Hawaii has no DST, so a fixed offset is exact.
 const HST_OFFSET_MS = 10 * 3600 * 1000;
 
@@ -493,7 +493,7 @@ export async function fetchBuoySnapshot(ts, site = 'pauwela', { windowHours = 3 
   };
 }
 
-// Mid-run buoy snapshots exported by db/export-runs.sql (run_buoy.csv): one
+// Mid-run buoy snapshots exported by db/export-lists.sql (run_buoy.csv): one
 // row per spectrum bin, with the run's nearest NDBC report repeated on each.
 // Returns a Map of run id -> snapshot shaped like fetchBuoySnapshot's (null
 // when the export found no buoy data for that run). Runs missing from the

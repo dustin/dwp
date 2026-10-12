@@ -8,7 +8,7 @@ Without --import it only triages: every activity in the archive is
 summarized and sorted into downwind / review / skip, and the result is
 written to candidates.csv (next to the archive unless -o says otherwise).
 Look it over, then rerun with --import to import the "downwind" rows
-(plus any ids passed with --include), and finish with one upload-runs.sh.
+(plus any ids passed with --include), and finish with one publish.
 
 Triage and import work as described in triage.py. Sessions that overlap
 one of the rider's runs already in the lake are skipped (--reimport

@@ -1,12 +1,12 @@
 -- One rider's run list, crashes, buoy snapshots and rides with other
 -- riders, for the web.
 --
--- upload-runs.sh runs this once per rider with the rider variable set:
+-- publish runs this once per rider with the rider variable set:
 --
 --   duckdb --init init.sql -cmd "set variable rider = 'dustin';" < export-lists.sql
 --
--- It writes to /Users/dustin/stuff/dwlists/ and upload-runs.sh moves the
--- files to runs/rider=<rider>/ on the CDN.
+-- It writes to /Users/dustin/stuff/dwlists/ (publish swaps in a temp dir)
+-- and publish uploads the files to runs/rider=<rider>/ on the CDN.
 
 use lake;
 

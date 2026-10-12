@@ -7,7 +7,7 @@
 
 Filters the GPX with gpxconvert/gpx_filter.py, runs import.sql against
 the lake with DWP_FOIL set to the second argument and DWP_CSV to the
-filtered CSV, then runs upload-runs.sh.  Leave the foil out to reuse the
+filtered CSV, then runs publish.  Leave the foil out to reuse the
 one from the rider's latest run that started at the same beach.
 
 import.sql resolves DWP_FOIL to the one known foil it names (688 means
@@ -79,7 +79,7 @@ def main(argv=None):
         with open(os.path.join(DB_DIR, "import.sql")) as sql:
             run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
 
-    run(["./upload-runs.sh"], cwd=DB_DIR)
+    run(["./publish"], cwd=DB_DIR)
 
 
 if __name__ == "__main__":

@@ -286,7 +286,7 @@ def set_foil(mx, room, event_id, rider, name):
            f"update dwlist set foil = {sql_str(foil)} where id = '{r['id']}'; commit;")
     ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
-        ok, out = run(["./upload-runs.sh"])
+        ok, out = run(["./publish"])
     if not ok:
         mx.notice(room, f"❌ couldn't change the foil:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't change the foil:<pre><code>{escape(tail(out))}</code></pre>")

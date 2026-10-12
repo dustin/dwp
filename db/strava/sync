@@ -25,7 +25,7 @@ import-archive (see triage.py). "downwind" sessions are imported;
 "review" ones are only listed. A session whose chosen activity was
 already imported is skipped; if a later upload changes the choice (say
 the watch track arrives after the phone's), the new one replaces it.
-One upload-runs.sh at the end if anything was imported.
+One publish at the end if anything was imported.
 
 Strava's newer apps can only connect the athlete who created them, so
 each rider brings their own app; nothing here assumes they share one.

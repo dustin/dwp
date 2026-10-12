@@ -368,4 +368,4 @@ def import_sessions(todo, tracks, rider, board, foil, retries=3):
 
 
 def upload():
-    run(["./upload-runs.sh"], cwd=DB_DIR)
+    run(["./publish"], cwd=DB_DIR)
