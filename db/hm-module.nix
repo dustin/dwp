@@ -32,6 +32,9 @@ let
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
 in
 {
+  # services.dwp-wailea-motion: the Wailea cam's water motion, see cams/hm-module.nix.
+  imports = [ ./cams/hm-module.nix ];
+
   options.services.dwp-matrix-bot = with lib; {
     enable = mkEnableOption "the downwind.pro Matrix import bot";
     package = mkOption {

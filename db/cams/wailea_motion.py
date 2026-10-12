@@ -11,9 +11,9 @@ Makena); dy > 0 is toward the beach. With --log DIR it also appends each reading
 to DIR/motion.jsonl and keeps an arrow overlay per reading, for calibration.
 Run it every 10 min in daylight (launchd/cron); the stream is up 05:00-19:30 HST.
 
-    python3 wailea_motion.py --mqtt bee1 [--log ~/wailea-motion] [--segments 3]
+    wailea-motion --mqtt bee1 [--log ~/wailea-motion] [--segments 3]
 
-Needs opencv-python-headless and numpy.
+Packaged with OpenCV and numpy in default.nix (`wailea-motion`); hm-module.nix runs it.
 """
 import argparse, json, os, re, socket, struct, sys, tempfile, time, urllib.parse, urllib.request
 from datetime import datetime, timezone
