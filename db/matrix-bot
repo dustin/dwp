@@ -36,9 +36,8 @@ from the room each time) can act for any rider and publish:
 
 The bot also pins a one-line version of !conditions in the room and edits
 it in place every few minutes (Element X shows the pinned message in a
-banner atop the room), and makes the room's avatar the latest buoy
-reading's swell rose. Both need the bot to have the power to change
-m.room.pinned_events and m.room.avatar (moderator, 50, by default).
+banner atop the room). Pinning needs the bot to have the power to change
+m.room.pinned_events (moderator, 50, by default).
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
 the home-manager module runs). It reads the bot account's access token
@@ -76,7 +75,6 @@ from mqtt_weather import Weather, tides  # noqa: E402
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
 EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
-AVATAR_EVERY = 3 * 3600  # ... and between room avatar changes
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
@@ -200,11 +198,6 @@ class Matrix:
         self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
                          "/state/m.room.pinned_events",
                   {"pinned": [event_id] + [e for e in self.pinned(room) if e != event_id]})
-
-    def set_avatar(self, room, mxc):
-        """Needs the power to send m.room.avatar (moderator, 50, by default)."""
-        self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
-                         "/state/m.room.avatar", {"url": mxc})
 
     def download(self, mxc):
         server, media = mxc[len("mxc://"):].split("/", 1)
@@ -685,7 +678,6 @@ class Bot:
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.status, self.status_at, self.edited = None, 0, 0
-        self.avatar, self.avatar_at = None, 0  # when the room's avatar last changed
 
     def refresh_status(self):
         """Every STATUS_EVERY seconds, edit the latest conditions into the
@@ -717,32 +709,6 @@ class Bot:
         # posting a new one every few minutes.
         if pinned not in self.mx.pinned(room):
             self.mx.pin(room, pinned)
-
-    def refresh_avatar(self):
-        """Make the room's avatar the latest buoy reading's rose (Pauwela's,
-        when there's more than one buoy), at most every AVATAR_EVERY: each
-        change is a line in the room's timeline, and the rose's shape
-        shifts with nearly every hourly reading."""
-        now = time.time()
-        if now - self.avatar_at < STATUS_EVERY:
-            return
-        self.avatar_at = now
-        path = os.path.join(self.args.state_dir, "avatar")
-        if self.avatar is None:
-            self.avatar = float(load_state(path) or 0)
-        if now - self.avatar < AVATAR_EVERY:
-            return
-        buoys = sorted(swells_now(), key=lambda b: b[0] != "pauwela")
-        if not buoys:
-            return
-        site = buoys[0][0]
-        epoch = nearest_spectrum(site, buoys[0][1])
-        if epoch is None:
-            return
-        png = spectrum_svg.to_png(spectrum_svg.avatar_svg(spectrum_rows(site, epoch)), zoom=1)
-        self.mx.set_avatar(self.args.room, self.mx.upload(png, f"{site}-rose.png", "image/png"))
-        self.avatar = now
-        save_state(path, f"{now:.0f}")
 
     def handle(self, ev):
         room = self.args.room
@@ -964,10 +930,6 @@ def main(argv=None):
             bot.refresh_status()
         except Exception as e:  # the pinned conditions are nice to have
             log(f"pinned conditions update failed: {e!r}")
-        try:
-            bot.refresh_avatar()
-        except Exception as e:  # so is the avatar
-            log(f"room avatar update failed: {e!r}")
         since, first = resp["next_batch"], False
         save_state(state, since)
 

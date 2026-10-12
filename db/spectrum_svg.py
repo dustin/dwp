@@ -4,8 +4,7 @@ The web's spectrum histogram (web/lib/components/spectrum.js) redrawn as a
 plain SVG: energy by period between each NDBC bin's real edges, colored by
 the direction it comes from (the same sinebow), the reading six hours
 earlier dashed over it, and the web's mini rose, bigger, beside it.
-avatar_svg() is that rose alone, for the room's avatar. to_png() turns
-either into a PNG with rsvg-convert (librsvg, in db-env.nix).
+to_png() turns it into a PNG with rsvg-convert (librsvg, in db-env.nix).
 
 Only the Python standard library, like the rest of db/.
 """
@@ -81,20 +80,6 @@ def rose(bins, cx, cy, r):
                    f'y="{cy - (r + 11) * math.cos(math.radians(a)) + 4:.1f}" '
                    f'text-anchor="middle" fill="#777">{t}</text>')
     return "\n".join(out + wedges(sectors(bins), cx, cy, r))
-
-
-def avatar_svg(rows, n=256):
-    """Just the rose, filling an n-pixel square, for the room's avatar:
-    clients crop it to a circle and show it 24-64 px across, so no labels."""
-    c, r = n / 2, n / 2 - 6
-    out = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{n}" height="{n}">',
-           f'<rect width="{n}" height="{n}" fill="#fff"/>',
-           f'<circle cx="{c}" cy="{c}" r="{r / 2}" fill="none" stroke="#e4e4e4" stroke-width="2"/>']
-    for a in range(0, 360, 90):
-        out.append(f'<line x1="{c}" y1="{c}" x2="{c + r * math.sin(math.radians(a)):.1f}" '
-                   f'y2="{c - r * math.cos(math.radians(a)):.1f}" stroke="#e4e4e4" stroke-width="2"/>')
-    out += wedges(sectors(edges(rows)), c, c, r)
-    return "\n".join(out + ["</svg>"])
 
 
 def spectrum_svg(rows, title, earlier=None, earlier_label=""):
