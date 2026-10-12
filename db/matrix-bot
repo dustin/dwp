@@ -546,8 +546,11 @@ def wind_now():
 
 
 def wind_line(site, r, before):
-    s = (f"{site_name(site)} {r['wavg']:.0f} kn {spectrum_svg.compass(r['wdir'])} "
-         f"({r['wdir']:.0f}°), gusts {r['wgust']:.0f}"
+    # Any of direction, gust and lull can be missing (Wailea's feed has no
+    # lull, and a station's row can lack gust or direction).
+    s = (f"{site_name(site)} {r['wavg']:.0f} kn"
+         + (f" {spectrum_svg.compass(r['wdir'])} ({r['wdir']:.0f}°)" if r.get("wdir") is not None else "")
+         + (f", gusts {r['wgust']:.0f}" if r.get("wgust") is not None else "")
          + (f" / lulls {r['wlull']:.0f}" if r.get("wlull") is not None else ""))
     if before is not None:
         d = r["wavg"] - before
@@ -645,7 +648,9 @@ def spectrum_png(site, epoch, swells):
 def status_line():
     """One line of the latest conditions, for the bot's pinned message."""
     wind = wind_now()
-    parts = [f"{site_name(s)} {r['wavg']:.0f}g{r['wgust']:.0f} kn {spectrum_svg.compass(r['wdir'])}"
+    parts = [f"{site_name(s)} {r['wavg']:.0f}"
+             + (f"g{r['wgust']:.0f}" if r.get("wgust") is not None else "") + " kn"
+             + (f" {spectrum_svg.compass(r['wdir'])}" if r.get("wdir") is not None else "")
              for s, r, _ in wind]
     parts += [f"{site_name(s)} {swell_text(sw, 2)}"
               + (f" {sw[0][3]:.0f} kJ" if sw[0][3] is not None else "") for s, _, sw in swells_now()]
