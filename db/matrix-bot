@@ -19,6 +19,10 @@ Listens in one room, to the Matrix users --user maps to riders:
   * "!foil 585" changes the foil on the sender's latest run (matched like
     add-run's, or "new <full name>"), then re-exports. An --admin can
     name a rider first: "!foil walter orca 685".
+  * "!publish" runs ./publish for a room admin (power level 100), with
+    the same words and flags: "!publish --dry-run", "!publish verify
+    --fix", "!publish orphans --delete". Long lists in the output are cut
+    short; the full output is in the bot's log.
   * "!help" says the above.
 
 Start it from db's nix dev shell (or the flake's matrix-bot package, which
@@ -56,7 +60,8 @@ HELP = ("Send a .gpx captioned with the foil (e.g. 585) to import it as your run
         "without a caption I'll ask. \"-\" for the foil reuses your last one "
         "from that beach; \"new Axis Spitfire 1180\" records a foil you haven't "
         "used before. !foil 585 changes your latest run's foil. !last shows your latest run (!last walter for someone else's); "
-        "!sync runs your Strava sync.")
+        "!sync runs your Strava sync. Room admins: !publish [--dry-run], "
+        "!publish verify [--fix], !publish orphans [--delete [--force]] [--dry-run].")
 RIDER = re.compile(r"[a-z][a-z0-9-]*")
 
 
@@ -304,6 +309,41 @@ def set_foil(mx, room, event_id, rider, name):
               html=f"✅ foil was {escape(was)}<br>{html}")
 
 
+PUBLISH_WORDS = {"publish", "verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
+LISTED = re.compile(r"(orphan|not in inventory|missing from S3|size differs|"
+                    r"publish: would upload|publish: would delete): |/")
+
+
+def condense(out, keep=5):
+    """out with each run of more than keep similar lines (orphan: ...,
+    would upload ..., an invalidation path) cut to its first keep."""
+    lines, kind, n = [], None, 0
+    for ln in out.rstrip().splitlines():
+        m = LISTED.match(ln)
+        k = m.group(0) if m else None
+        if k != kind:
+            if n > keep:
+                lines.append(f"… and {n - keep} more")
+            kind, n = k, 0
+        n += 1
+        if k is None or n <= keep:
+            lines.append(ln)
+    if n > keep:
+        lines.append(f"… and {n - keep} more")
+    return "\n".join(lines)
+
+
+def publish(mx, room, event_id, words):
+    """./publish with words, replying with its (condensed) output."""
+    mx.react(room, event_id, "👀")
+    ok, out = run(["./publish", *words])
+    what = " ".join(["publish", *words])
+    body = tail(condense(out), 25) or "(no output)"
+    mark = "✅" if ok else "⚠️"
+    mx.notice(room, f"{mark} {what}\n{body}", reply_to=event_id,
+              html=f"{mark} {escape(what)}<pre><code>{escape(body)}</code></pre>")
+
+
 def strava_sync(mx, room, event_id, riders):
     mx.react(room, event_id, "👀")
     ok, out = run(["./strava/sync", "run", *riders])
@@ -411,6 +451,17 @@ class Bot:
             else:
                 self.mx.notice(room, "!foil takes a foil, like !foil 585 "
                                      "(or !foil walter orca 685)", reply_to=eid)
+        elif text.startswith("!publish"):
+            words = text.split()[1:]
+            if not self.room_admin(sender):
+                self.mx.notice(room, "Only room admins can publish.", reply_to=eid)
+            elif not set(words) <= PUBLISH_WORDS or words[1:] and \
+                    set(words[1:]) & {"publish", "verify", "orphans"}:
+                self.mx.notice(room, "!publish takes ./publish's words: [verify | orphans] "
+                                     "[--dry-run] [--fix] [--delete] [--force]",
+                               reply_to=eid)
+            else:
+                publish(self.mx, room, eid, words)
         elif text.startswith("!help"):
             self.mx.notice(room, HELP, reply_to=eid)
         elif sender in self.pending and FOIL.match(text):
@@ -419,6 +470,12 @@ class Bot:
                 self.attempt(sender, gpx_eid, path, text, rider)
             else:
                 os.unlink(path)
+
+    def room_admin(self, sender):
+        """Whether sender has admin power (100) in the room, read fresh."""
+        pl = self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(self.args.room)}"
+                                 "/state/m.room.power_levels")
+        return pl.get("users", {}).get(sender, pl.get("users_default", 0)) >= 100
 
     def riders(self):
         """Every rider: the users' and any others with runs in the lake."""
