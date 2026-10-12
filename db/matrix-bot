@@ -94,7 +94,8 @@ PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
-    ("!conditions", "latest wind, buoys and Wailea cam, with the buoy's spectrum and the cam frame"),
+    ("!conditions", "best bet and run scores, latest wind, buoys and Wailea cam, with the cam frame"),
+    ("!conditions chart", "the same, plus each buoy's spectrum chart"),
     ("!help", "this"),
 ]
 HELP_RIDER = [
@@ -696,11 +697,25 @@ def escape(s):
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def conditions(mx, room, event_id, images, frames):
-    """Reply with the wind and buoys, then each buoy's spectrum image.
-    images caches (site, epoch) -> uploaded mxc, so asking again before
-    the next reading doesn't upload the same picture again."""
+def rating_line():
+    """Node-RED's best bet and both sides' scores, or None if there's no
+    rating newer than run_alerts.STALE."""
+    r = WEATHER.rating if WEATHER else None
+    if not r or time.time() - r["t"] > run_alerts.STALE:
+        return None
+    scores = ", ".join(f"{name} {run_alerts.out_of_10(r[side])}" for side, name in run_alerts.SIDES.items())
+    return f"Best bet: {r['rec'][:1].upper() + r['rec'][1:]} · {scores} ({when(r['t'])})"
+
+
+def conditions(mx, room, event_id, images, frames, charts=False):
+    """Reply with the run rating, wind and buoys, the cam frame and, with
+    charts, each buoy's spectrum image. images caches (site, epoch) ->
+    uploaded mxc, so asking again before the next reading doesn't upload
+    the same picture again."""
     lines, cam = [], fresh_cam()
+    best = rating_line()
+    if best:
+        lines.append(("🏄 ", best))
     for w in wind_now():
         lines.append(("🌬️ ", wind_line(*w)))
         if w[0] == "wailea" and cam:  # the cam goes under Wailea's wind
@@ -720,7 +735,7 @@ def conditions(mx, room, event_id, images, frames):
                                for a, b in lines))
     if cam:
         send_cam_frame(mx, room, cam, frames, reply_to=event_id)
-    for site, t, sw in buoys:
+    for site, t, sw in buoys if charts else ():
         key = (site, t)
         if key not in images:
             try:
@@ -846,7 +861,8 @@ class Bot:
         rider = self.args.users.get(sender)
         text = c.get("body", "").strip() if c.get("msgtype") == "m.text" else ""
         if text.startswith("!conditions"):  # anyone in the room
-            conditions(self.mx, room, eid, self.images, self.frames)
+            conditions(self.mx, room, eid, self.images, self.frames,
+                       charts="chart" in text[len("!conditions"):])
             return
         if text.startswith("!help") and not rider:
             body, html = help_text([("Anyone", HELP_ANYONE)])
