@@ -681,8 +681,9 @@ def motion_line(site="wailea"):
         return None
     way = "down the coast" if m["dx"] < 0 else "up the coast"
     share = m["left"] if m["dx"] < 0 else 1 - m["left"]
+    caps = f", {m['whitecaps']} whitecaps" if m.get("whitecaps") else ""
     return (f"{site_name(site)} water moving {way}, {abs(m['dx']):.1f} px/s "
-            f"({share:.0%}) · {when(m['t'])}")
+            f"({share:.0%}){caps} · {when(m['t'])}")
 
 
 def send_cam_frame(mx, room, cam, cache, reply_to=None):

@@ -10,7 +10,7 @@ stdenvNoCC.mkDerivation {
   version = "0";
   src = lib.fileset.toSource {
     root = ./.;
-    fileset = lib.fileset.unions [ ./wailea_motion.py ./water_motion.py ];
+    fileset = lib.fileset.unions [ ./wailea_motion.py ./water_motion.py ./whitecaps.py ];
   };
   nativeBuildInputs = [ makeWrapper ];
   installPhase = ''

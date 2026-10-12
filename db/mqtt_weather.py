@@ -189,7 +189,8 @@ class Weather:
                 m = json.loads(payload)
                 mo = {"t": time.time(), "skipped": m.get("skipped"),
                       "dx": None if m.get("dx") is None else float(m["dx"]),
-                      "left": float(m.get("left") or 0)}
+                      "left": float(m.get("left") or 0),
+                      "whitecaps": m.get("whitecaps")}
             except (ValueError, TypeError) as e:
                 log(f"skipping {topic}: {e}")
                 return

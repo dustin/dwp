@@ -4,7 +4,7 @@ Grabs the latest few seconds of the Ozolio HLS stream, runs water_motion's
 optical flow on it, and publishes (retained) to weather/conditions/wailea_motion:
 
     {"stamp": ISO UTC, "dx": px/s, "dy": px/s, "left": share, "right": share,
-     "pairs": n, "seconds": clip length}
+     "pairs": n, "seconds": clip length, "whitecaps": patches (whitecaps.py)}
 
 dx < 0 is right to left in the picture (energy running down the coast toward
 Makena); dy > 0 is toward the beach. With --log DIR it also appends each reading
@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import water_motion  # noqa: E402
+import whitecaps  # noqa: E402
 
 RELAY = "https://relay.ozolio.com/ses.api"
 UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
@@ -64,6 +65,22 @@ def clip(n):
             get(RELAY, {"cmd": "close", "oid": sid})
         except OSError:
             pass
+
+
+def caps(path, n=5):
+    """Whitecap patches (whitecaps.py) in the clip: the median over n frames
+    spread through it, so one passing boat or glint doesn't count."""
+    import cv2
+    cap = cv2.VideoCapture(path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 0
+    counts = []
+    for i in range(n):
+        if total:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, (i + 0.5) * total / n)
+        ok, f = cap.read()
+        if ok:
+            counts.append(whitecaps.measure(f)[1])
+    return sorted(counts)[len(counts) // 2] if counts else None
 
 
 def utf(s):
@@ -166,6 +183,7 @@ def main():
         overlay = os.path.join(os.path.expanduser(a.log), stamp.replace(":", "") + ".jpg")
     try:
         m = water_motion.measure(path, overlay) or {"dx": 0.0, "dy": 0.0, "left": 0.0, "right": 0.0, "pairs": 0}
+        m["whitecaps"] = caps(path)
     finally:
         os.unlink(path)
     m = {"stamp": stamp, **m, "seconds": round(seconds, 1)}
