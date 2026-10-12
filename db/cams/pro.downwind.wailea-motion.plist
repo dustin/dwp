@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Every 10 min: Wailea cam water motion → MQTT weather/conditions/wailea_motion.
+     The script skips itself outside 05:30-19:00 HST. Paths are an example. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>pro.downwind.wailea-motion</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/env</string><string>python3</string>
+    <string>/Users/dustin/prog/downwind.pro/db/cams/wailea_motion.py</string>
+    <string>--mqtt</string><string>bee1</string>
+    <string>--log</string><string>/Users/dustin/Library/Caches/wailea-motion</string>
+  </array>
+  <key>StartInterval</key><integer>600</integer>
+  <key>StandardErrorPath</key><string>/tmp/wailea-motion.log</string>
+</dict>
+</plist>
