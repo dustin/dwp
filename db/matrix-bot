@@ -25,8 +25,10 @@ from the room each time) can act for any rider and publish:
     --fix", "!publish orphans --delete". Long lists in the output are cut
     short; the full output is in the bot's log.
   * "!conditions" (anyone) shows the latest wind at each station with
-    its trend over the last hour, and each buoy's swells with an image of
-    its spectrum and direction rose.
+    its trend over the last hour, Kihei's tides, and each buoy's swells
+    with an image of its spectrum and direction rose. Wind and tides come
+    live from the weather/+ feed on --mqtt (default host mqtt) when it's
+    up, on top of the lake's half-hourly wind.
   * "!help" says the above.
 
 The bot's own Matrix status (presence status_msg) carries a one-line
@@ -61,6 +63,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, DB_DIR)
 import dwp_publish  # noqa: E402
 import spectrum_svg  # noqa: E402
+from mqtt_weather import Weather, tides  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
@@ -438,14 +441,22 @@ def when(epoch):
     return f"{t:%H:%M}" if t.date() == datetime.now(HST).date() else f"{t:%a %H:%M}"
 
 
+WEATHER = None  # a Weather once main starts it: live readings over MQTT
+
+
 def wind_now():
     """Per station with readings in the last day: (site, latest reading,
-    its average an hour earlier, readings since then), newest first."""
+    its average an hour earlier), newest first. The lake's readings, then
+    the live feed's newer ones on top."""
     rows = query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
                  "where ts > now() - interval 1 day and wavg is not null order by ts")
     by = {}
     for r in rows:
         by.setdefault(r["site"], []).append(r)
+    for site, live in (WEATHER.recent() if WEATHER else {}).items():
+        rs = by.setdefault(site, [])
+        newest = rs[-1]["t"] if rs else 0
+        rs += [r for r in live if r["t"] > newest]
     out = []
     for site, rs in by.items():
         last = rs[-1]
@@ -461,7 +472,20 @@ def wind_line(site, r, before):
         d = r["wavg"] - before
         s += (f" · building from {before:.0f}" if d >= 3 else
               f" · dropping from {before:.0f}" if d <= -3 else " · steady")
-    return s + f" · {when(r['t'])}"
+    return s + f" · {'live ' if r.get('live') else ''}{when(r['t'])}"
+
+
+def tide_line():
+    """Kihei's tides today, from the live feed's aux2: "low 09:52 0.6 ft ·
+    high 15:24 1.7 ft", the next one marked."""
+    ts = tides(WEATHER.info("kihei").get("aux2")) if WEATHER else []
+    if not ts:
+        return None
+    now = time.time()
+    nxt = next((t for t, _, _ in ts if t > now), None)
+    return "Kihei tide: " + " · ".join(
+        f"{'next ' if t == nxt else ''}{'high' if hl == 'H' else 'low'} {hst(t):%H:%M} {ft:.1f} ft"
+        for t, hl, ft in ts)
 
 
 def swells_now():
@@ -531,6 +555,9 @@ def conditions(mx, room, event_id, images):
     images caches (site, epoch) -> uploaded mxc, so asking again before
     the next reading doesn't upload the same picture again."""
     lines = [("🌬️ ", wind_line(*w)) for w in wind_now()]
+    tide = tide_line()
+    if tide:
+        lines.append(("↕️ ", tide))
     buoys = swells_now()
     lines += [("🌊 ", f"{site_name(s)} {when(t)}: {swell_text(sw, 4)}") for s, t, sw in buoys]
     if not lines:
@@ -744,6 +771,8 @@ def main(argv=None):
     ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
                     help="the bot account's access token")
     ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
+    ap.add_argument("--mqtt", default="mqtt", metavar="HOST[:PORT]",
+                    help="broker with the weather/+ station feed (\"\" for none)")
     args = ap.parse_args(argv)
     args.users = {}
     for u in args.user:
@@ -758,6 +787,10 @@ def main(argv=None):
     os.makedirs(state_dir, exist_ok=True)
     state = os.path.join(state_dir, "since")
     bot = Bot(mx, args)
+    if args.mqtt:
+        global WEATHER
+        host, _, port = args.mqtt.partition(":")
+        WEATHER = Weather(host, int(port or 1883)).start()
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
     log(f"{me} listening to {', '.join(args.users)} in {args.room}")
