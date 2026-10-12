@@ -16,6 +16,7 @@ Python standard library.
 """
 
 import json
+import queue
 import re
 import socket
 import struct
@@ -83,9 +84,16 @@ def tides(aux):
     return out
 
 
+# Node-RED's run rating (run-recs/node-red-rating.md), retained:
+# {"stamp": ISO UTC, "rec": "Kīhei" | "north shore" | "either; ..." | "no can",
+#  "kihei": 0-4, "ns": 0-4}. Under weather/ too, in case it moves there.
+RATING_TOPICS = ("conditions/rating", "weather/conditions/rating")
+
+
 class Weather:
-    def __init__(self, host, port=1883, topic="weather/+"):
-        self.host, self.port, self.topic = host, port, topic
+    def __init__(self, host, port=1883, topics=("weather/+",) + RATING_TOPICS):
+        self.host, self.port, self.topics = host, port, topics
+        self.ratings = queue.Queue()  # rating dicts, for the bot's main loop
         self.lock = threading.Lock()
         self.readings = {}  # site -> deque of reading dicts, oldest first
         self.extra = {}  # site -> the latest message's label, aux1, aux2
@@ -116,8 +124,9 @@ class Weather:
             kind, body = _next(s)
             if kind >> 4 != 2 or body[1] != 0:
                 raise ConnectionError(f"connect refused ({body[1:2].hex()})")
-            s.sendall(_packet(0x82, struct.pack(">H", 1) + _str(self.topic) + b"\0"))
-            log(f"subscribed to {self.topic} on {self.host}")
+            s.sendall(_packet(0x82, struct.pack(">H", 1) +
+                              b"".join(_str(t) + b"\0" for t in self.topics)))
+            log(f"subscribed to {', '.join(self.topics)} on {self.host}")
             heard = time.time()
             while True:
                 try:
@@ -135,6 +144,15 @@ class Weather:
                     self.take(topic, rest)
 
     def take(self, topic, payload):
+        if topic in RATING_TOPICS:
+            try:
+                m = json.loads(payload)
+                self.ratings.put({"t": datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp(),
+                                  "rec": str(m["rec"]), "kihei": float(m["kihei"]),
+                                  "ns": float(m["ns"])})
+            except (ValueError, KeyError, TypeError) as e:
+                log(f"skipping {topic}: {e}")
+            return
         try:
             m = json.loads(payload)
             site = m.get("shortLabel") or topic.rsplit("/", 1)[-1]

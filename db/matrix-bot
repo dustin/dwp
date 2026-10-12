@@ -34,6 +34,11 @@ from the room each time) can act for any rider and publish:
     arrive.
   * "!help" says the above.
 
+When the conditions/rating feed (Node-RED's 0-4 score per side) says a
+run is getting good, the bot says so in the room, once per session per
+side, plus once if it gets really good and once when it drops off: see
+run_alerts.py.
+
 The bot also pins a one-line version of !conditions in the room and edits
 it in place every few minutes (Element X shows the pinned message in a
 banner atop the room). Pinning needs the bot to have the power to change
@@ -71,6 +76,7 @@ sys.path.insert(0, DB_DIR)
 import dwp_publish  # noqa: E402
 import spectrum_svg  # noqa: E402
 from mqtt_weather import Weather, tides  # noqa: E402
+import run_alerts  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
@@ -710,6 +716,25 @@ class Bot:
         if pinned not in self.mx.pinned(room):
             self.mx.pin(room, pinned)
 
+    def announce_ratings(self):
+        """Tell the room when a run's getting good (see run_alerts.py), as
+        plain text rather than a notice, so it notifies like a person would."""
+        if not WEATHER:
+            return
+        if not hasattr(self, "alerts"):
+            self.alerts = run_alerts.Alerts(os.path.join(self.args.state_dir, "rating.json"))
+        while not WEATHER.ratings.empty():
+            rating = WEATHER.ratings.get()
+            said = self.alerts.see(rating)
+            if not said:
+                continue
+            wind = {site: wind_line(site, r, before) for site, r, before in wind_now()}
+            lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind],
+                     "ns": [wind[s] for s in ("hookipa",) if s in wind]}
+            for kind, sides in said:
+                self.mx.send(self.args.room, {"msgtype": "m.text", "body": run_alerts.message(
+                    kind, sides, rating, lines)})
+
     def handle(self, ev):
         room = self.args.room
         c = ev.get("content", {})
@@ -926,6 +951,10 @@ def main(argv=None):
                     except Exception as e:  # keep listening whatever one message does
                         log(f"error handling {ev.get('event_id')}: {e!r}")
                         mx.notice(args.room, f"❌ {e!r}")
+        try:
+            bot.announce_ratings()
+        except Exception as e:
+            log(f"run alert failed: {e!r}")
         try:
             bot.refresh_status()
         except Exception as e:  # the pinned conditions are nice to have
