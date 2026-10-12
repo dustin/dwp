@@ -19,13 +19,22 @@ const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 // fresh, else the lake's half-hourly export. Refetched every minute while
 // the page is visible, so the cards keep up on their own.
 const LIVE_STALE = 15 * 60e3;
+// Which side of Node-RED's run rating each station's card shows, and the
+// rating's own name for it in rec ("Kīhei", "north shore").
+const RATING_SIDE = {kihei: ["kihei", "Kīhei"], hookipa: ["ns", "north shore"]};
+const RATING_STALE = 30 * 60e3;
 async function loadWind() {
   const live = await fetchLiveWind();
   const since = Date.now() - 6 * 3600e3;
+  const rating = live?.rating && Date.now() - live.rating.ts < RATING_STALE ? live.rating : null;
   return Promise.all(WIND_SITES.map(async ([site, name]) => {
-    const rows = live?.[site]?.filter(d => d.ts >= since) ?? [];
-    if (rows.length && Date.now() - rows.at(-1).ts < LIVE_STALE) return {site, name, rows, live: true};
-    return fetchRecentWind(site, 6).then(rows => ({site, name, rows})).catch(() => ({site, name, rows: []}));
+    const [side, recName] = RATING_SIDE[site] ?? [];
+    const run = rating && side in rating
+      ? {score: rating[side], best: rating.rec === recName || rating.rec.includes(`${recName} slightly better`)}
+      : null;
+    const rows = live?.stations[site]?.filter(d => d.ts >= since) ?? [];
+    if (rows.length && Date.now() - rows.at(-1).ts < LIVE_STALE) return {site, name, rows, live: true, run};
+    return fetchRecentWind(site, 6).then(rows => ({site, name, rows, run})).catch(() => ({site, name, rows: [], run}));
   }));
 }
 const windNow = (async function* () {
@@ -52,7 +61,15 @@ function riderHref(slug) {
   return `https://${slug}.downwind.pro/`;
 }
 
-function windCard({name, rows, live}) {
+// The run rating, quietly: "run 8/10" (out of 10, as the bot says it),
+// in the focus color on the side the rating recommends.
+function runHint(run) {
+  if (!run) return "";
+  const score = `run ${Math.round(run.score * 2.5)}/10`;
+  return run.best ? htl.html`<span class="run-hint run-best">${score} · best bet</span>` : htl.html`<span class="run-hint">${score}</span>`;
+}
+
+function windCard({name, rows, live, run}) {
   const last = rows.at(-1);
   if (!last) return htl.html`<div class="card"><h2>${name} wind</h2><div class="nav-muted">No recent readings</div></div>`;
   return htl.html`<div class="card wind-card">
@@ -66,7 +83,7 @@ function windCard({name, rows, live}) {
         Plot.ruleY([15], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"})
       ]
     }))}
-    <div class="nav-muted">last 6 hours · dashed line 15 kn</div>
+    <div class="nav-muted wind-foot"><span>last 6 hours · dashed line 15 kn</span>${runHint(run)}</div>
   </div>`;
 }
 
@@ -227,6 +244,9 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   .live-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; vertical-align: 1px;
     background: var(--theme-green, #3ca951); animation: live-pulse 2s ease-in-out infinite; }
   @keyframes live-pulse { 50% { opacity: 0.35; } }
+  .wind-foot { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+  .run-hint { white-space: nowrap; }
+  .run-best { color: var(--theme-foreground-focus); }
   a.nav-card { color: var(--theme-foreground); text-decoration: none; display: flex; flex-direction: column; gap: 0.3rem;
     background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
     border-color: color-mix(in srgb, var(--theme-foreground-focus) 25%, transparent); }

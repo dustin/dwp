@@ -261,17 +261,22 @@ export async function fetchWind(meta) {
 }
 
 // live/wind.json, which matrix-bot replaces as the stations' MQTT feed
-// reports (see db/mqtt_weather.py): site -> readings, oldest first, over
-// the last 24 hours. null if it's missing or unreadable.
+// reports (see db/mqtt_weather.py): {stations: site -> readings, oldest
+// first, over the last 24 hours; rating: Node-RED's latest run rating
+// ({ts, rec, kihei, ns}, sides scored 0-4) or null}. null if it's missing
+// or unreadable.
 export async function fetchLiveWind() {
   try {
     const r = await fetch(`https://${DATAHOST}/live/wind.json`, {cache: 'no-cache'});
     if (!r.ok) return null;
-    const {stations} = await r.json();
-    return Object.fromEntries(Object.entries(stations).map(([site, {readings}]) => [
-      site,
-      readings.map(([ts, wavg, wgust, wlull, wdir]) => ({ts: new Date(ts), wavg, wgust, wlull, wdir})),
-    ]));
+    const {stations, rating} = await r.json();
+    return {
+      stations: Object.fromEntries(Object.entries(stations).map(([site, {readings}]) => [
+        site,
+        readings.map(([ts, wavg, wgust, wlull, wdir]) => ({ts: new Date(ts), wavg, wgust, wlull, wdir})),
+      ])),
+      rating: rating ? {...rating, ts: new Date(rating.stamp)} : null,
+    };
   } catch {
     return null;
   }

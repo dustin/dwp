@@ -97,7 +97,8 @@ class Weather:
         self.lock = threading.Lock()
         self.readings = {}  # site -> deque of reading dicts, oldest first
         self.extra = {}  # site -> the latest message's label, aux1, aux2
-        self.changed = threading.Event()  # set by each new reading
+        self.changed = threading.Event()  # set by each new reading or rating
+        self.rating = None  # the latest rating message, as published
 
     def start(self):
         threading.Thread(target=self.run, name="mqtt", daemon=True).start()
@@ -147,11 +148,16 @@ class Weather:
         if topic in RATING_TOPICS:
             try:
                 m = json.loads(payload)
-                self.ratings.put({"t": datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp(),
-                                  "rec": str(m["rec"]), "kihei": float(m["kihei"]),
-                                  "ns": float(m["ns"])})
+                r = {"t": datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp(),
+                     "rec": str(m["rec"]), "kihei": float(m["kihei"]), "ns": float(m["ns"])}
             except (ValueError, KeyError, TypeError) as e:
                 log(f"skipping {topic}: {e}")
+                return
+            self.ratings.put(r)
+            with self.lock:
+                if self.rating is None or r["t"] > self.rating["t"]:
+                    self.rating = r
+            self.changed.set()
             return
         try:
             m = json.loads(payload)
@@ -187,7 +193,8 @@ class Weather:
             return {site: list(q) for site, q in self.readings.items()}
 
     def snapshot(self):
-        """The live object: every station's last 24 hours, compactly."""
+        """The live object: every station's last 24 hours, compactly, and
+        Node-RED's latest run rating (or None)."""
         with self.lock:
             stations = {
                 site: {"label": self.extra.get(site, {}).get("label") or site,
@@ -196,8 +203,11 @@ class Weather:
                                      r["wavg"], r["wgust"], r["wlull"], round(r["wdir"])] for r in q]}
                 for site, q in self.readings.items() if q}
             aux = {site: e for site, e in self.extra.items()}
+            r = self.rating
+        rating = r and {"stamp": datetime.fromtimestamp(r["t"], HST).isoformat(timespec="seconds"),
+                        "rec": r["rec"], "kihei": r["kihei"], "ns": r["ns"]}
         newest = max((q["readings"][-1][0] for q in stations.values()), default=None)
-        return {"updated": newest, "stations": stations,
+        return {"updated": newest, "stations": stations, "rating": rating,
                 "tides": {site: e["aux2"] for site, e in aux.items() if tides(e.get("aux2"))}}
 
     def info(self, site):
