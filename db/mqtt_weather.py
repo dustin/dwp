@@ -88,6 +88,22 @@ def tides(aux):
 # {"stamp": ISO UTC, "rec": "Kīhei" | "north shore" | "either; ..." | "no can",
 #  "kihei": 0-4, "ns": 0-4}. Under weather/ too, in case it moves there.
 RATING_TOPICS = ("conditions/rating", "weather/conditions/rating")
+GO, TIE = 1.5, 0.4  # the rec node's: a side worth going, and too close to call
+
+
+def _score(v):
+    """A side's 0-4: a number, or jev's answer object {score, level, ...}."""
+    return float(v["score"] if isinstance(v, dict) else v)
+
+
+def _rec(kihei, ns):
+    """The rec node's pick, for ratings published without one."""
+    if max(kihei, ns) < GO:
+        return "no can"
+    if abs(kihei - ns) < TIE:
+        better = "Kīhei" if kihei >= ns else "north shore"
+        return f"either; {better} slightly better"
+    return "Kīhei" if kihei > ns else "north shore"
 
 
 class Weather:
@@ -148,8 +164,9 @@ class Weather:
         if topic in RATING_TOPICS:
             try:
                 m = json.loads(payload)
+                kihei, ns = _score(m["kihei"]), _score(m["ns"])
                 r = {"t": datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp(),
-                     "rec": str(m["rec"]), "kihei": float(m["kihei"]), "ns": float(m["ns"])}
+                     "rec": str(m.get("rec") or _rec(kihei, ns)), "kihei": kihei, "ns": ns}
             except (ValueError, KeyError, TypeError) as e:
                 log(f"skipping {topic}: {e}")
                 return
