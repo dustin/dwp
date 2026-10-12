@@ -707,7 +707,7 @@ def rating_line():
     sides = sorted(run_alerts.SIDES.items(), key=lambda kv: -r[kv[0]])
     scores = " · ".join(f"{name} {run_alerts.out_of_10(r[side])}" for side, name in sides)
     rec = r["rec"].lower()
-    lead = "no can · " if rec.startswith("no can") else "either, " if rec.startswith("either") else ""
+    lead = "go paddleboarding · " if rec.startswith("no can") else "either, " if rec.startswith("either") else ""
     return f"Best bet: {lead}{scores} ({when(r['t'])})"
 
 
