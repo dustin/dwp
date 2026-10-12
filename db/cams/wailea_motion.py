@@ -9,8 +9,8 @@ optical flow on it, and publishes (retained) to weather/conditions/wailea_motion
 dx < 0 is right to left in the picture (energy running down the coast toward
 Makena); dy > 0 is toward the beach. With --log DIR it also appends each reading
 to DIR/motion.jsonl and keeps an arrow overlay per reading, for calibration.
-It skips the video (publishing {"stamp", "skipped": "glassy"}) when the cam's
-vision read on weather/conditions/wailea says glassy. Run it every 10 min in daylight (launchd/cron); the stream is up 05:00-19:30 HST.
+It skips the video (publishing {"stamp", "skipped": "kihei light"}) while the
+Kihei station (weather/kihei) reads under 9 kn. Run it every 10 min in daylight (launchd/cron); the stream is up 05:00-19:30 HST.
 
     wailea-motion --mqtt bee1 [--log ~/wailea-motion] [--segments 3]
 
@@ -27,7 +27,8 @@ UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
 INIT = {"cmd": "init", "oid": "CID_XWEE00001592", "ver": "5", "channel": "0", "control": "1",
         "document": "https://www.ozolio.com/explore/XWEE00001592", "directory": "DIR_0DEF00000001"}
 TOPIC = "weather/conditions/wailea_motion"
-CAM_TOPIC = "weather/conditions/wailea"  # Node-RED's vision read of the same cam
+KIHEI_TOPIC = "weather/kihei"
+KIHEI_MIN = 9  # kn; under this Kihei is LIGHT in the run rating (floor 12 - 3)
 
 
 def get(url, params=None):
@@ -129,13 +130,15 @@ def retained(host, topic, wait=3):
         return None
 
 
-def calm(host):
-    """True when the cam's latest vision read (weather/conditions/wailea) is glassy."""
+def kihei_light(host):
+    """True when the Kihei station's latest reading (weather/kihei) is under
+    KIHEI_MIN kn: no north run to finish, so no point measuring. Any trouble
+    reading it counts as not light, so the measurement still runs."""
     try:
-        m = json.loads(retained(host, CAM_TOPIC) or b"{}")
-    except (OSError, ValueError):
+        m = json.loads(retained(host, KIHEI_TOPIC) or b"{}")
+        return float(m["avg"]) < KIHEI_MIN
+    except (OSError, ValueError, KeyError, TypeError):
         return False
-    return m.get("sea") == "glassy"
 
 
 def main():
@@ -148,11 +151,12 @@ def main():
     hst = datetime.fromtimestamp(time.time() - 10 * 3600, timezone.utc)
     if not a.any_time and not 5.5 <= hst.hour + hst.minute / 60 < 19:
         return  # the stream is dark or down; launchd can fire every 10 min all day
-    if a.mqtt and not a.any_time and calm(a.mqtt):
-        # Glassy water has no motion worth measuring; say so rather than
-        # leave an older reading standing.
+    if a.mqtt and not a.any_time and kihei_light(a.mqtt):
+        # No north run worth finishing; say so rather than leave an older
+        # reading standing. (The cam's vision read isn't used: it calls
+        # small, clearly moving water "glassy".)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        publish(a.mqtt, TOPIC, json.dumps({"stamp": stamp, "skipped": "glassy"}))
+        publish(a.mqtt, TOPIC, json.dumps({"stamp": stamp, "skipped": "kihei light"}))
         return
     path, seconds = clip(a.segments)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
