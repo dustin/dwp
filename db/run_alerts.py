@@ -65,7 +65,8 @@ class Alerts:
             return []
         self.state["t"] = rating["t"]
         quiet = now - rating["t"] > STALE
-        was_on = [s for s in SIDES if self.state[s]["said"]]
+        # Sides the room has heard about (not ones that came back quietly).
+        was_on = [s for s in SIDES if self.state[s]["said"] and not self.state[s].get("hushed")]
         rose = {}  # kind -> sides
         for side in SIDES:
             st, score = self.state[side], rating[side]
@@ -78,10 +79,11 @@ class Alerts:
             if st["level"] > st["said"]:
                 back = not st["said"] and now - st["off_at"] < COOLDOWN
                 st["said"] = st["level"]
+                st["hushed"] = back
                 if not back:  # else it's back on, quietly
                     rose.setdefault(KINDS[st["level"]], []).append(side)
             elif not st["level"] and st["said"]:
-                st.update(said=0, off_at=now)
+                st.update(said=0, off_at=now, hushed=False)
         self.save()
         if quiet:
             return []
