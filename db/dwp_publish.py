@@ -6,6 +6,7 @@
     ./publish verify --fix   ...and re-upload whatever is missing or wrong
     ./publish orphans     list objects the lake no longer makes (from the S3
                           inventory in the lake, so about a day behind)
+    ./publish orphans --delete   ...and delete them from S3
 
 Everything under s3:db.downwind.pro/ that comes from the lake goes through
 here: each run's track and each rider's lists under runs/, and one file per
@@ -53,8 +54,10 @@ the lists. Try it with --dry-run first.
 
 orphans reads the bucket inventory (s3.latest_files, about a day behind) and
 lists objects under publish's prefixes that no run or site-day in the lake
-makes any more, such as the old track of a re-imported run. It deletes
-nothing. It also lists objects the manifest says were uploaded over two days
+makes any more, such as the old track of a re-imported run. --delete
+removes them from S3 (and the manifest), but refuses if they're over 5% of
+the inventory, which smells like a lake read gone wrong rather than real
+orphans; --force overrides that. It also lists objects the manifest says were uploaded over two days
 ago that the inventory doesn't have, a check verify --fix can then repair.
 
 Run it as ./publish from db's nix dev shell (python3, duckdb, rclone), like
@@ -429,7 +432,7 @@ def verify(manifest, fix):
     return 1 if bad else 0
 
 
-def orphans(manifest):
+def orphans(manifest, delete=False, force=False, dry_run=False):
     bucket = DEST.split(":")[-1].strip("/").split("/")[0]
     prefixes = tuple(p + "/" for p in ["runs"] + [t.name for t in TABLES if t.name != "tracks"])
     inventory = set()
@@ -453,7 +456,29 @@ def orphans(manifest):
         print(f"not in inventory: {k}")
     log(f"{len(inventory)} objects in the inventory, {len(orphaned)} orphaned, "
         f"{len(missing)} uploaded over two days ago but missing")
+    if delete and orphaned:
+        if len(orphaned) > 0.05 * len(inventory) and not force:
+            die(f"not deleting: {len(orphaned)} orphans is over 5% of the bucket; "
+                "check the list, then rerun with --force")
+        remove(orphaned, dry_run)
+        if not dry_run:
+            manifest.forget(orphaned)
     return 1 if missing else 0
+
+
+def remove(keys, dry_run):
+    """Delete exactly these keys from S3, without listing the bucket."""
+    if dry_run:
+        for k in keys:
+            log(f"would delete {k}")
+        return
+    with tempfile.NamedTemporaryFile("w", prefix="dwp-orphans-") as f:
+        f.write("".join(k + "\n" for k in keys))
+        f.flush()
+        r = subprocess.run(["rclone", "delete", DEST, "--files-from-raw", f.name, "--no-traverse"])
+    if r.returncode != 0:
+        die(f"rclone delete failed (exit {r.returncode})")
+    log(f"deleted {len(keys)} orphans")
 
 
 def locked(path):
@@ -476,6 +501,8 @@ def main(argv=None):
     ap.add_argument("command", nargs="?", default="publish", choices=["publish", "verify", "orphans"])
     ap.add_argument("--dry-run", action="store_true", help="upload nothing, record nothing")
     ap.add_argument("--fix", action="store_true", help="verify: re-upload what's wrong")
+    ap.add_argument("--delete", action="store_true", help="orphans: delete them from S3")
+    ap.add_argument("--force", action="store_true", help="orphans --delete: even over 5%% of the bucket")
     ap.add_argument("--manifest", default=MANIFEST)
     args = ap.parse_args(argv)
 
@@ -485,7 +512,9 @@ def main(argv=None):
             return 0
         with locked(args.manifest):
             m = Manifest(args.manifest)
-            return verify(m, args.fix) if args.command == "verify" else orphans(m)
+            if args.command == "verify":
+                return verify(m, args.fix)
+            return orphans(m, args.delete, args.force, args.dry_run)
     except PublishError as e:
         log(str(e))
         return 1
