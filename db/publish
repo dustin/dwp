@@ -5,6 +5,8 @@
     ./publish --dry-run   say what would be uploaded; upload and record nothing
     ./publish verify      check the bucket against the manifest
     ./publish verify --fix   ...and re-upload whatever is missing or wrong
+    ./publish orphans     list objects the lake no longer makes (from the S3
+                          inventory in the lake, so about a day behind)
 
 Everything under s3:db.downwind.pro/ that comes from the lake goes through
 here: each run's track and each rider's lists under runs/, and one file per
@@ -49,6 +51,12 @@ S3 already has without uploading them, except the last 14 days of tracks and
 conditions (the window the old scripts re-sent every time, so the newest
 copies are the ones in doubt). Everything S3 lacks is uploaded, and so are
 the lists. Try it with --dry-run first.
+
+orphans reads the bucket inventory (s3.latest_files, about a day behind) and
+lists objects under publish's prefixes that no run or site-day in the lake
+makes any more, such as the old track of a re-imported run. It deletes
+nothing. It also lists objects the manifest says were uploaded over two days
+ago that the inventory doesn't have, a check verify --fix can then repair.
 
 Runs from db's nix dev shell (python3, duckdb, rclone), like add-run.
 """
@@ -173,8 +181,9 @@ class Manifest:
         self.db.commit()
 
     def all(self):
-        return {k: {"sha": s, "size": z, "headers": h, "fp": f} for k, s, z, h, f in
-                self.db.execute("select key, sha256, size, headers, fingerprint from objects")}
+        return {k: {"sha": s, "size": z, "headers": h, "fp": f, "uploaded_at": u}
+                for k, s, z, h, f, u in self.db.execute(
+                    "select key, sha256, size, headers, fingerprint, uploaded_at from objects")}
 
     def record(self, rows):
         """rows: (key, sha256, size, headers, fingerprint), in one transaction."""
@@ -417,10 +426,37 @@ def verify(manifest, fix):
     return 1 if bad else 0
 
 
+def orphans(manifest):
+    bucket = DEST.split(":", 1)[1].split("/")[0]
+    prefixes = tuple(p + "/" for p in ["runs"] + [t.name for t in TABLES if t.name != "tracks"])
+    inventory = set()
+    for r in duckdb(f"select filename from s3.latest_files where bucket = {sql_str(bucket)};",
+                    json_out=True):
+        k = r["filename"].removeprefix(f"s3://{bucket}/").lstrip("/")
+        if k.startswith(prefixes):
+            inventory.add(k)
+
+    expected = {f"runs/rider={r}/{n}.csv" for r in riders() for n in LISTS}
+    for t in TABLES:
+        expected |= set(fingerprints(t))
+    orphaned = sorted(inventory - expected)
+    for k in orphaned:
+        print(f"orphan: {k}")
+
+    cutoff = time.time() - 2 * 86400
+    missing = sorted(k for k, v in manifest.all().items()
+                     if v["uploaded_at"] < cutoff and k not in inventory)
+    for k in missing:
+        print(f"not in inventory: {k}")
+    log(f"{len(inventory)} objects in the inventory, {len(orphaned)} orphaned, "
+        f"{len(missing)} uploaded over two days ago but missing")
+    return 1 if missing else 0
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("command", nargs="?", default="publish", choices=["publish", "verify"])
+    ap.add_argument("command", nargs="?", default="publish", choices=["publish", "verify", "orphans"])
     ap.add_argument("--dry-run", action="store_true", help="upload nothing, record nothing")
     ap.add_argument("--fix", action="store_true", help="verify: re-upload what's wrong")
     ap.add_argument("--manifest", default=MANIFEST)
@@ -433,6 +469,8 @@ def main(argv=None):
     m = Manifest(args.manifest)
     if args.command == "verify":
         return verify(m, args.fix)
+    if args.command == "orphans":
+        return orphans(m)
     publish(m, dry_run=args.dry_run)
     return 0
 
