@@ -17,6 +17,11 @@ as it shapes up and not on every reading:
   * when every side that was announced has dropped to nothing, one
     "dropping off".
 
+Each Hawaii day starts from nothing, quietly, so yesterday's run never
+"drops off" the next morning. Before MORNING_END the room only hears a
+side that's already looking good (unexpectedly good mornings); no
+"worth considering" and no "dropping off".
+
 Ratings older than STALE (a retained one after a restart, say) are only
 used to catch up the state, never announced. The state is saved to a file,
 so a restart doesn't announce the same session again.
@@ -25,12 +30,15 @@ so a restart doesn't announce the same session again.
 import json
 import os
 import time
+from datetime import datetime, timedelta, timezone
 
 CONSIDER, GOOD, REALLY = 1.5, 2.8, 3.8
 UP = (CONSIDER, GOOD, REALLY)  # score to reach level 1, 2, 3
 DOWN = (1.0, 2.0, 3.0)  # below these, level 1, 2, 3 drops a level
 KINDS = (None, "consider", "on", "really")
 COOLDOWN = 60 * 60
+MORNING_END = 11  # HST hour
+HST = timezone(timedelta(hours=-10))
 STALE = 30 * 60
 SIDES = {"kihei": "Kīhei", "ns": "North shore"}
 
@@ -63,8 +71,14 @@ class Alerts:
         now = time.time() if now is None else now
         if rating["t"] <= self.state["t"]:
             return []
+        hst = datetime.fromtimestamp(rating["t"], HST)
+        if self.state.get("day") != hst.date().isoformat():  # a new day starts quietly
+            self.state["day"] = hst.date().isoformat()
+            for side in SIDES:
+                self.state[side].update(level=0, said=0, off_at=0, hushed=False)
         self.state["t"] = rating["t"]
         quiet = now - rating["t"] > STALE
+        morning = hst.hour < MORNING_END
         # Sides the room has heard about (not ones that came back quietly).
         was_on = [s for s in SIDES if self.state[s]["said"] and not self.state[s].get("hushed")]
         rose = {}  # kind -> sides
@@ -87,8 +101,8 @@ class Alerts:
         self.save()
         if quiet:
             return []
-        out = [(k, rose[k]) for k in KINDS[1:] if k in rose]
-        if was_on and not any(self.state[s]["said"] for s in SIDES):
+        out = [(k, rose[k]) for k in KINDS[1:] if k in rose and not (morning and k == "consider")]
+        if was_on and not morning and not any(self.state[s]["said"] for s in SIDES):
             out.append(("off", was_on))
         return out
 
