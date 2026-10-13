@@ -33,7 +33,8 @@ let
 in
 {
   # services.dwp-wailea-motion: the Wailea cam's water motion, see cams/hm-module.nix.
-  imports = [ ./cams/hm-module.nix ];
+  # services.dwp-strava-sync: scheduled Strava imports, see strava/hm-module.nix.
+  imports = [ ./cams/hm-module.nix ./strava/hm-module.nix ];
 
   options.services.dwp-matrix-bot = with lib; {
     enable = mkEnableOption "the downwind.pro Matrix import bot";
