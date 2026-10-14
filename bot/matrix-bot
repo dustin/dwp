@@ -73,6 +73,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -1234,22 +1235,17 @@ class Bot:
                                      "(or !foil walter orca 685)", reply_to=eid)
         elif text.startswith("!ask"):
             words = text.split()[1:]
-            # Whose runs: another rider named anywhere ("walter's longest
-            # run"), else the sender's. Anyone may ask about anyone (their
-            # runs are on their site anyway); changes still need an admin's ✅.
+            # Whose runs: the sender's plus any rider named anywhere ("walter's
+            # longest run", "walter and I"). Anyone may ask about anyone
+            # (their runs are on their site anyway); changes still need an
+            # admin's ✅.
             named = {w for w in re.findall(r"[a-z][a-z0-9-]*", " ".join(words).lower()
                                            .replace("'s", "").replace("’s", ""))
-                     if w in self.riders() and w != rider}
-            if len(named) > 1:
-                self.mx.notice(room, f"🤔 One rider at a time, please: {', '.join(sorted(named))}?",
-                               reply_to=eid)
-                return
-            target = named.pop() if named else rider
-            if words and words[0] == target:
-                words = words[1:]
+                     if w in self.riders()}
+            riders = [rider] + sorted(named - {rider})
             if words:
                 # The model takes a while; keep the room's other commands going.
-                threading.Thread(target=self.ask_runs, args=(room, eid, target, " ".join(words)),
+                threading.Thread(target=self.ask_runs, args=(room, eid, rider, riders, " ".join(words)),
                                  name="ask", daemon=True).start()
             else:
                 self.mx.notice(room, "!ask takes a question or a change, like "
@@ -1284,65 +1280,57 @@ class Bot:
             else:
                 os.unlink(path)
 
-    def ask_runs(self, room, eid, rider, question):
-        """Answer question about rider's runs, or propose the change it asks
-        for (applied by approve), via the model and ask.py's sandbox."""
+    def ask_runs(self, room, eid, me, riders, question):
+        """Answer question (from rider me) about riders' runs, or propose the
+        change it asks for (applied by approve), via the model and ask.py's
+        sandbox."""
         a = self.args
         self.mx.react(room, eid, "👀")
-        fd, parquet = tempfile.mkstemp(suffix=".parquet", dir=self.tmp)
-        os.close(fd)
+        snap = tempfile.mkdtemp(dir=self.tmp)
+        whose = " and ".join(f"{r}'s" for r in riders) + " runs"
         try:
-            ask.snapshot(LAKE_DIR, rider, parquet)
-            context = {
-                "rider": rider,
-                "today": f"{datetime.now(HST):%A %Y-%m-%d}",
-                "beaches": ", ".join(r["name"] for r in query(
-                    "select name from beaches order by name")),
-                "foils": ", ".join(r["v"] for r in ask.sandboxed(
-                    parquet, "select distinct foil as v from runs where foil is not null order by 1")),
-                "boards": ", ".join(r["v"] for r in ask.sandboxed(
-                    parquet, "select distinct board as v from runs where board is not null order by 1")),
-            }
-            p, rows = ask.plan(a.ollama, a.ask_model, question, context, parquet)
+            ask.snapshot(LAKE_DIR, riders, snap)
+            context = ask.context(snap, me, riders, [r["name"] for r in query(
+                "select name from beaches order by name")])
+            p, rows = ask.plan(a.ollama, a.ask_model, question, context, snap)
             if p["kind"] == "unclear":
                 self.mx.notice(room, f"🤔 {p.get('say') or 'I did not follow that.'}", reply_to=eid)
                 return
             sql = p["sql"]
-            if p["kind"] == "query":
-                said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
-                ids = [r["id"] for r in rows if isinstance(r.get("id"), str)
-                       and re.fullmatch(r"[0-9a-f-]{36}", r["id"])][:5]
-                linked = ask.sandboxed(parquet, "select * from runs where id in ("
-                                       + ", ".join(map(ask.sql_str, ids))
-                                       + ") order by date, time") if ids else []
-                links = [(ask.run_line(r), f"https://{rider}.downwind.pro/run.html?id={r['id']}")
-                         for r in linked]
-                self.mx.notice(room, "\n".join([said, *(f"{l}: {u}" for l, u in links),
-                                                f"\nSQL over {rider}'s runs: {sql}"]),
-                               reply_to=eid,
-                               html=escape(said)
-                               + "".join(f'<br>🔗 <a href="{u}">{escape(l)}</a>' for l, u in links)
-                               + f"<details><summary>SQL over {rider}'s runs</summary>"
-                                 f"<pre><code>{escape(sql)}</code></pre></details>")
+            if p["kind"] == "edit":
+                self.propose(room, eid, question, p, rows, snap)
                 return
-            self.propose(room, eid, rider, question, p, rows, parquet)
+            said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
+            together = bool(re.search(r"\btogether\b", sql, re.I))
+            links = [ask.link(snap, r, together) for r in ask.answered_runs(snap, rows, me)]
+            self.mx.notice(room, "\n".join([said, *(f"{l}: {u}" for l, u in links),
+                                            f"\nSQL over {whose}: {sql}"]),
+                           reply_to=eid,
+                           html=escape(said)
+                           + "".join(f'<br>🔗 <a href="{u}">{escape(l)}</a>' for l, u in links)
+                           + f"<details><summary>SQL over {escape(whose)}</summary>"
+                             f"<pre><code>{escape(sql)}</code></pre></details>")
         except ask.AskError as e:
             self.mx.notice(room, f"🤔 {e}", reply_to=eid)
         except (urllib.error.URLError, OSError) as e:
             self.mx.notice(room, f"❌ couldn't reach the model: {e}", reply_to=eid)
         finally:
-            os.unlink(parquet)
+            shutil.rmtree(snap, ignore_errors=True)
 
-    def propose(self, room, eid, rider, question, p, rows, parquet):
+    def propose(self, room, eid, question, p, rows, snap):
         """Show the change plan p would make, and keep it for a ✅."""
         ids = [r["id"] for r in rows if r.get("id")]
         if len(ids) != len(rows):
             raise ask.AskError("the change's SELECT has to pick runs by id")
-        fields = ask.check_set(p.get("set"), lambda f: resolve_foil(rider, f))
         if not ids:
             raise ask.AskError("no runs match that")
-        picked = ask.sandboxed(parquet, "select * from runs where id in ("
+        picked = ask.sandboxed(snap, "select * from runs where id in ("
                                + ", ".join(ask.sql_str(i) for i in ids) + ") order by date, time")
+        whose = {r["rider"] for r in picked}
+        if len(whose) != 1:
+            raise ask.AskError(f"one rider's runs at a time, please, not {' and '.join(sorted(whose))}'s")
+        rider = whose.pop()
+        fields = ask.check_set(p.get("set"), lambda f: resolve_foil(rider, f))
         lines = [ask.run_line(r) + ": " + ", ".join(
             f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
         if len(picked) > 20:
@@ -1375,7 +1363,7 @@ class Bot:
             del self.asks[pid]
             self.mx.notice(room, "That change is too old now; ask again.", reply_to=pid)
             return
-        if not self.room_admin(ev["sender"]):
+        if not self.room_admin(room, ev["sender"]):
             return
         del self.asks[pid]
         ok, out = run(["duckdb", "--init", "init.sql", "-c", change["sql"]], cwd=LAKE_DIR)

@@ -26,7 +26,7 @@ import urllib.request
 
 # What the model sees of a run: table runs. Dates and times are Hawaii local.
 RUN_COLUMNS = """\
-id varchar, date date, time time, start_beach varchar, end_beach varchar,
+rider varchar, id varchar, date date, time time, start_beach varchar, end_beach varchar,
 region varchar, board varchar, foil varchar, foil_confidence varchar,
 name varchar, description varchar, distance_km double,
 distance_on_foil double, duration_sec double, duration_on_foil double,
@@ -34,21 +34,39 @@ avg_speed_kmh double, max_speed_1k double, avg_foiling_hr double,
 max_hr double, paddle_up_count int"""
 
 SNAPSHOT_SQL = """\
-select id::varchar as id, date, time, start_beach, end_beach, region, board,
+select rider, id::varchar as id, date, time, start_beach, end_beach, region, board,
        foil, foil_confidence, name, description, distance_km,
        distance_on_foil, duration_sec, duration_on_foil, avg_speed_kmh,
        max_speed_1k, avg_foiling_hr, max_hr, paddle_up_count
-from dwlist_resolved where rider = {rider}"""
+from dwlist_resolved where rider in ({riders})"""
+
+# Runs that went together (as db/export-lists.sql's together.csv): same
+# start beach, overlapping by at least ten minutes, among riders only.
+TOGETHER_SQL = """\
+select a.rider, a.id::varchar as id, b.rider as other_rider, b.id::varchar as other_id,
+       round(least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts)) as overlap_sec
+from dwlist a join dwlist b
+  on b.rider <> a.rider and b.start_pos = a.start_pos
+ and b.ts < a.ts + a.duration_sec and a.ts < b.ts + b.duration_sec
+where a.rider in ({riders}) and b.rider in ({riders})
+  and least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts) >= 600"""
 
 # Fields a change may set, and the values each may take (None: any text).
 EDITABLE = {"foil": None, "foil_confidence": {"high", "medium", "low"},
             "board": None, "name": None, "description": None}
 
 SYSTEM = """\
-You turn a downwind foil rider's message to a chat bot into JSON. The bot
-runs your SQL in DuckDB against one table holding only this rider's runs:
+You turn a downwind foil rider's message to a chat bot into JSON. The
+rider asking is {me} ("I", "me", "my" mean {me}). The bot runs your SQL in
+DuckDB over these tables, which hold only the runs of {riders}:
 
   runs({columns})
+  together(rider, id, other_rider, other_id, overlap_sec): two riders' runs
+    that went together (same start beach, overlapping in time), listed
+    both ways round; join id to runs.id for the run's details.
+
+Filter runs by rider for a question about one rider ("my longest run":
+where rider = '{me}').
 
 distance_km is km, distance_on_foil METRES (divide by 1000 for km),
 duration_* seconds, speeds km/h (max_speed_1k is the fastest 1 km),
@@ -56,10 +74,9 @@ heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
 dayname(date) for days of the week (isodow(date) to order them, Monday
 first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
 "went to X" means either one, and a loose place name means the closest
-beach in the list below ("the harbor" is Kahului Harbor). The table holds
-only {rider}'s runs, so a question naming {rider} needs no filter for it. foil is null or 'unknown' when not known.
+beach in the list below ("the harbor" is Kahului Harbor). foil is null or 'unknown' when not known.
 Today is {today} (Hawaii). Beaches: {beaches}.
-This rider's foils: {foils}. Boards: {boards}.
+Their foils: {foils}. Boards: {boards}.
 
 Answer with exactly one of:
   {{"kind": "query", "sql": "<one SELECT over runs answering the question>"}}
@@ -164,10 +181,13 @@ def one_select(sql):
     return s
 
 
-def snapshot(lake_dir, rider, path):
-    """Copy rider's runs out of the lake into the parquet file path."""
-    sql = (f"use lake; copy ({SNAPSHOT_SQL.format(rider=sql_str(rider))}) "
-           f"to {sql_str(path)} (format parquet);")
+def snapshot(lake_dir, riders, path):
+    """Copy riders' runs, and which of them went together, out of the
+    lake into the directory path (runs.parquet, together.parquet)."""
+    who = ", ".join(map(sql_str, riders))
+    sql = "use lake; " + "".join(
+        f"copy ({q.format(riders=who)}) to {sql_str(os.path.join(path, name))} (format parquet); "
+        for q, name in ((SNAPSHOT_SQL, "runs.parquet"), (TOGETHER_SQL, "together.parquet")))
     r = subprocess.run(["duckdb", "--init", "init.sql", "-c", sql], cwd=lake_dir,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if r.returncode != 0:
@@ -181,10 +201,11 @@ FIELD_MACRO = ("create macro field(x, " + ", ".join(f"v{i} := null" for i in ran
                + "], x), 0);")
 
 
-def sandboxed(parquet, sql, duckdb="duckdb"):
-    """Rows of sql over table runs (from parquet), in a fresh in-memory
-    duckdb that can read no other file once runs is loaded."""
-    script = (f"create table runs as from read_parquet({sql_str(parquet)});\n"
+def sandboxed(path, sql, duckdb="duckdb"):
+    """Rows of sql over tables runs and together (from snapshot's path), in
+    a fresh in-memory duckdb that can read no other file once they're loaded."""
+    script = (f"create table runs as from read_parquet({sql_str(os.path.join(path, 'runs.parquet'))});\n"
+              f"create table together as from read_parquet({sql_str(os.path.join(path, 'together.parquet'))});\n"
               f"{FIELD_MACRO}\n"
               "set enable_external_access = false;\n"
               "set lock_configuration = true;\n"
@@ -234,6 +255,44 @@ def apply_sql(rider, ids, fields, request):
             f"and id::varchar in ({which}); commit;")
 
 
+def answered_runs(path, rows, me=None, most=5):
+    """The runs (from snapshot path) that answer rows names, for links: by
+    their ids, or, when the model left the id out, by each row's date (and
+    rider and beaches, where given) when that finds just one run, or just
+    one of me's."""
+    ids = [r["id"] for r in rows if isinstance(r.get("id"), str)
+           and re.fullmatch(r"[0-9a-f-]{36}", r["id"])]
+    if not ids and len(rows) <= most:
+        for r in rows:
+            if not re.fullmatch(r"\d{4}-\d\d-\d\d", str(r.get("date", ""))[:10]):
+                continue
+            where = [f"date = {sql_str(str(r['date'])[:10])}"] + [
+                f"{k} = {sql_str(r[k])}" for k in ("rider", "start_beach", "end_beach")
+                if isinstance(r.get(k), str)]
+            hit = sandboxed(path, "select id, rider from runs where " + " and ".join(where))
+            if len(hit) > 1:
+                hit = [h for h in hit if h["rider"] == me]
+            if len(hit) == 1:
+                ids.append(hit[0]["id"])
+    if not ids:
+        return []
+    return sandboxed(path, "select * from runs where id in ("
+                     + ", ".join(map(sql_str, ids[:most])) + ") order by date, time")
+
+
+def link(path, r, together=False):
+    """(line, url) linking run r: to together.html with the runs that went
+    with it, when together and there are some, else to its run page."""
+    url = f"https://{r['rider']}.downwind.pro/"
+    others = sandboxed(path, f"select other_rider, other_id from together where id = {sql_str(r['id'])}"
+                             " order by other_rider") if together else []
+    if others:
+        runs = ",".join([f"{r['rider']}:{r['id']}"] + [f"{o['other_rider']}:{o['other_id']}" for o in others])
+        return (f"{run_line(r)} with {' and '.join(o['other_rider'] for o in others)}",
+                f"{url}together.html?runs={runs}")
+    return run_line(r), f"{url}run.html?id={r['id']}"
+
+
 def run_line(r):
     """A run in a line: 2025-10-03 07:12 Maliko → Kanaha 12.3 km."""
     km = r.get("distance_km")
@@ -242,30 +301,36 @@ def run_line(r):
             + (f" {km:.1f} km" if isinstance(km, (int, float)) else ""))
 
 
-def main():
-    """Try a question against the lake without the bot, writing nothing:
-    bot/ask.py [--model M] [--ollama URL] walter 'the 2 runs with an unknown foil were the ART 999'"""
-    import argparse
-    import tempfile
+def context(path, me, riders, beaches):
+    """What SYSTEM needs besides the columns, for snapshot path."""
     from datetime import datetime
     from zoneinfo import ZoneInfo
+    distinct = lambda col: ", ".join(r["v"] for r in sandboxed(
+        path, f"select distinct {col} as v from runs where {col} is not null order by 1"))
+    return {"me": me, "riders": " and ".join(riders),
+            "today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
+            "beaches": ", ".join(beaches), "foils": distinct("foil"), "boards": distinct("board")}
+
+
+def main():
+    """Try a question against the lake without the bot, writing nothing:
+    bot/ask.py [--model M] [--ollama URL] walter 'the 2 runs with an unknown foil were the ART 999'
+    bot/ask.py dustin,walter 'when did walter and I first go together?' (the first rider asks)"""
+    import argparse
+    import tempfile
     ap = argparse.ArgumentParser(description=main.__doc__)
     ap.add_argument("--ollama", default="http://localhost:11434")
     ap.add_argument("--model", default="qwen3-coder-next:latest")
-    ap.add_argument("rider")
+    ap.add_argument("riders")
     ap.add_argument("question", nargs="+")
     a = ap.parse_args()
     lake = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
-    question = " ".join(a.question)
+    question, riders = " ".join(a.question), a.riders.split(",")
     with tempfile.TemporaryDirectory() as tmp:
-        parquet = os.path.join(tmp, "runs.parquet")
-        snapshot(lake, a.rider, parquet)
-        distinct = lambda col: ", ".join(r["v"] for r in sandboxed(
-            parquet, f"select distinct {col} as v from runs where {col} is not null order by 1"))
-        context = {"rider": a.rider, "today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
-                   "beaches": distinct("start_beach") + ", " + distinct("end_beach"),
-                   "foils": distinct("foil"), "boards": distinct("board")}
-        p, rows = plan(a.ollama, a.model, question, context, parquet)
+        snapshot(lake, riders, tmp)
+        beaches = [r["v"] for r in sandboxed(
+            tmp, "select distinct start_beach as v from runs union select end_beach from runs")]
+        p, rows = plan(a.ollama, a.model, question, context(tmp, riders[0], riders, beaches), tmp)
         print(json.dumps(p, indent=2))
         if rows is not None:
             print(json.dumps(rows[:20], indent=2, default=str))
