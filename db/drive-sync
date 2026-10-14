@@ -123,7 +123,7 @@ def main(argv=None):
         if r.returncode != 0:
             die(f"rclone sync failed (exit {r.returncode})")
 
-    metas, tracks, sums, foils = [], {}, {}, {}
+    metas, tracks, sums, foils, names = [], {}, {}, {}, {}
     for fn in sorted(os.listdir(cache)):
         m = NAME.match(fn)
         if not m:
@@ -137,10 +137,14 @@ def main(argv=None):
             pts = parse_gpx(fh.read())
         if len(pts) < 10:
             continue
-        tracks[fn] = pts
-        foils[fn] = m.group(4)
+        # triage joins duplicate ids with spaces and names temp files
+        # after them, so give it plain ids.
+        fid = f"f{len(names)}"
+        names[fid] = fn
+        tracks[fid] = pts
+        foils[fid] = m.group(4)
         # Named after the route so triage.verdict treats it as a SUP downwind.
-        metas.append(dict(id=fn, name=m.group(2).replace("_", " "), type="Stand Up Paddling"))
+        metas.append(dict(id=fid, name=m.group(2).replace("_", " "), type="Stand Up Paddling"))
 
     seen = st["files"]
     if args.adopt:
@@ -152,20 +156,20 @@ def main(argv=None):
     picked = triage(metas, tracks, *load_geo())
     todo, held = [], set()
     for r in picked:
-        group = [r["id"]] + r["duplicates"].split()
+        group = [names[i] for i in [r["id"]] + r["duplicates"].split()]
         if all(seen.get(f) == sums[f] for f in group):
             continue
         foil = foil_name(foils[r["id"]])
         if r["v"] != "downwind":
-            print(f"  {r['v']}: {r['id']} ({r['why'] or 'not a downwinder'})", file=sys.stderr)
+            print(f"  {r['v']}: {group[0]} ({r['why'] or 'not a downwinder'})", file=sys.stderr)
         elif foil is None:
-            print(f"  unknown foil code {foils[r['id']]!r} in {r['id']}; add it to FOILS",
+            print(f"  unknown foil code {foils[r['id']]!r} in {group[0]}; add it to FOILS",
                   file=sys.stderr)
             held.update(group)
             continue
         else:
             note = f" ({r['pick_note']})" if r["pick_note"] else ""
-            print(f"  import: {local(r['w_start'])} {r['id']} as {foil}{note}", file=sys.stderr)
+            print(f"  import: {local(r['w_start'])} {group[0]} as {foil}{note}", file=sys.stderr)
             todo.append((r, foil, group))
             continue
         for f in group:  # review/skip: don't report it again until it changes
@@ -177,7 +181,7 @@ def main(argv=None):
     for r, foil, group in todo:
         if import_sessions([r], tracks, args.rider, args.board, foil, args.retries):
             failed += 1
-            print(f"  failed: {r['id']}", file=sys.stderr)
+            print(f"  failed: {group[0]}", file=sys.stderr)
         else:
             for f in group:
                 seen[f] = sums[f]
