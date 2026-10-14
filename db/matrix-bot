@@ -1032,8 +1032,8 @@ class Bot:
             rows = ask.sandboxed(parquet, sql)
             if p["kind"] == "query":
                 said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
-                self.mx.notice(room, f"{said}\n\n{sql}", reply_to=eid,
-                               html=f"{escape(said)}<details><summary>SQL</summary>"
+                self.mx.notice(room, f"{said}\n\nSQL over {rider}'s runs: {sql}", reply_to=eid,
+                               html=f"{escape(said)}<details><summary>SQL over {rider}'s runs</summary>"
                                     f"<pre><code>{escape(sql)}</code></pre></details>")
                 return
             self.propose(eid, rider, question, p, rows, parquet)
