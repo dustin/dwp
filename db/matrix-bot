@@ -1,4 +1,0 @@
-#!/bin/sh
-# The bot moved to ../bot/matrix-bot; this keeps launchd agents that still
-# run db/matrix-bot working until home-manager picks up the new path.
-exec "$(dirname "$0")/../bot/matrix-bot" "$@"
