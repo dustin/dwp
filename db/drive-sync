@@ -1,0 +1,194 @@
+#!/usr/bin/env python3
+"""Import a rider's downwinders from a shared Google Drive folder.
+
+    ./drive-sync walter              # import what's new or changed
+    ./drive-sync walter --dry-run    # just say what it would do
+    ./drive-sync walter --adopt      # mark everything there as done
+
+The folder is an rclone remote named after the rider (override with
+--remote), e.g. in rclone.conf:
+
+    [walter]
+    type = drive
+    scope = drive.readonly
+    root_folder_id = <the shared folder's id>
+
+Files are named like
+
+    2026-10-13 Downwind_Maliko_Harbor_watch_Or_685.gpx
+
+i.e. date, route, device, foil code. The folder is mirrored into
+~/.cache/dwp/drive/<rider> (rclone sync, so only changed files are
+fetched), every GPX there is triaged with strava/triage.py, the same as the
+Strava importers (phone and watch copies of one session collapse to one,
+watch preferred, trimmed to the water), and a session is imported when
+any of its files is new or has changed since the last run. import.sql
+replaces the rider's overlapping run, so a re-import (or a run that
+came in from Strava first) is replaced, not duplicated.
+
+The foil comes from the picked file's name via FOILS below; a session
+with a code not listed there is reported and retried on the next run.
+What's been seen is kept in ~/.config/dwp/drive/<rider>.json.
+
+Run it from db's nix dev shell (python3, duckdb, rclone).
+"""
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import subprocess
+import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ for jj to sweep up
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "strava"))
+from triage import die, import_sessions, load_geo, local, parse_gpx, triage, upload  # noqa: E402
+
+STATE_DIR = os.path.expanduser(os.environ.get("DWP_DRIVE_DIR", "~/.config/dwp/drive"))
+CACHE_DIR = os.path.expanduser(os.environ.get("DWP_DRIVE_CACHE", "~/.cache/dwp/drive"))
+
+# Foil codes (lowercased, letters and digits only) -> foil names, from
+# Walter's foil log.
+FOILS = {
+    "art999": "Axis ART 999", "art899": "Axis ART 899", "ap1001": "Axis ART Pro 1001",
+    "png1300": "Axis PNG 1300", "fb940": "Axis Fireball 940", "fb1000": "Axis Fireball 1000",
+    "fb1070": "Axis Fireball 1070", "fb950ch": "Axis Fireball 950 Chopped",
+    "kt790": "KT Atlas 790", "or685": "F4 Orca 685", "orc800": "F4 Orca 800",
+    "hh510": "F4 Hammerhead 510", "hh688": "F4 Hammerhead 688", "code680r": "Code 680R",
+}
+
+NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}) (.+?)_(watch|phone)_(.+)\.gpx$", re.I)
+
+
+def foil_name(code):
+    key = re.sub(r"[^a-z0-9]", "", code.lower())
+    if key in FOILS:
+        return FOILS[key]
+    for k, v in FOILS.items():  # e.g. AP1001.359
+        if key.startswith(k):
+            return v
+    return None
+
+
+def state_path(rider):
+    if not rider.replace("-", "").isalnum():
+        die(f"odd rider name: {rider}")
+    return os.path.join(STATE_DIR, f"{rider}.json")
+
+
+def load_state(rider):
+    try:
+        with open(state_path(rider)) as fh:
+            return json.load(fh)
+    except FileNotFoundError:
+        return {"files": {}}
+
+
+def save_state(rider, st):
+    os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
+    path = state_path(rider)
+    with open(path + ".tmp", "w") as fh:
+        json.dump(st, fh, indent=2, sort_keys=True)
+    os.replace(path + ".tmp", path)
+
+
+def md5(path):
+    h = hashlib.md5()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("rider")
+    ap.add_argument("--remote", help="rclone remote (default: <rider>:)")
+    ap.add_argument("--board", default="", help="board to record (default: the rider's latest)")
+    ap.add_argument("--dry-run", action="store_true", help="triage only, import nothing")
+    ap.add_argument("--adopt", action="store_true",
+                    help="record every file as imported without importing anything")
+    ap.add_argument("--no-fetch", action="store_true", help="use the cache as it is")
+    ap.add_argument("--retries", type=int, default=3)
+    args = ap.parse_args(argv)
+
+    st = load_state(args.rider)
+    cache = os.path.join(CACHE_DIR, args.rider)
+    os.makedirs(cache, exist_ok=True)
+    if not args.no_fetch:
+        r = subprocess.run(["rclone", "sync", args.remote or f"{args.rider}:", cache,
+                            "--include", "*.gpx", "--include", "*.GPX"])
+        if r.returncode != 0:
+            die(f"rclone sync failed (exit {r.returncode})")
+
+    metas, tracks, sums, foils = [], {}, {}, {}
+    for fn in sorted(os.listdir(cache)):
+        m = NAME.match(fn)
+        if not m:
+            if fn.lower().endswith(".gpx"):
+                print(f"skipping {fn}: name isn't 'date Route_watch|phone_foil.gpx'",
+                      file=sys.stderr)
+            continue
+        path = os.path.join(cache, fn)
+        sums[fn] = md5(path)
+        with open(path, "rb") as fh:
+            pts = parse_gpx(fh.read())
+        if len(pts) < 10:
+            continue
+        tracks[fn] = pts
+        foils[fn] = m.group(4)
+        # Named after the route so triage.verdict treats it as a SUP downwind.
+        metas.append(dict(id=fn, name=m.group(2).replace("_", " "), type="Stand Up Paddling"))
+
+    seen = st["files"]
+    if args.adopt:
+        st["files"] = sums
+        save_state(args.rider, st)
+        print(f"{args.rider}: recorded {len(sums)} files as imported", file=sys.stderr)
+        return
+
+    picked = triage(metas, tracks, *load_geo())
+    todo, held = [], set()
+    for r in picked:
+        group = [r["id"]] + r["duplicates"].split()
+        if all(seen.get(f) == sums[f] for f in group):
+            continue
+        foil = foil_name(foils[r["id"]])
+        if r["v"] != "downwind":
+            print(f"  {r['v']}: {r['id']} ({r['why'] or 'not a downwinder'})", file=sys.stderr)
+        elif foil is None:
+            print(f"  unknown foil code {foils[r['id']]!r} in {r['id']}; add it to FOILS",
+                  file=sys.stderr)
+            held.update(group)
+            continue
+        else:
+            note = f" ({r['pick_note']})" if r["pick_note"] else ""
+            print(f"  import: {local(r['w_start'])} {r['id']} as {foil}{note}", file=sys.stderr)
+            todo.append((r, foil, group))
+            continue
+        for f in group:  # review/skip: don't report it again until it changes
+            seen[f] = sums[f]
+    if args.dry_run:
+        return
+
+    failed = 0
+    for r, foil, group in todo:
+        if import_sessions([r], tracks, args.rider, args.board, foil, args.retries):
+            failed += 1
+            print(f"  failed: {r['id']}", file=sys.stderr)
+        else:
+            for f in group:
+                seen[f] = sums[f]
+            save_state(args.rider, st)
+    save_state(args.rider, st)
+    if len(todo) > failed:
+        upload()
+    print(f"imported {len(todo) - failed}, failed {failed}", file=sys.stderr)
+    if failed or held:
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
