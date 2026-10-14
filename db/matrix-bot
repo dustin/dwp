@@ -1030,9 +1030,20 @@ class Bot:
             sql = p["sql"]
             if p["kind"] == "query":
                 said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
-                self.mx.notice(room, f"{said}\n\nSQL over {rider}'s runs: {sql}", reply_to=eid,
-                               html=f"{escape(said)}<details><summary>SQL over {rider}'s runs</summary>"
-                                    f"<pre><code>{escape(sql)}</code></pre></details>")
+                ids = [r["id"] for r in rows if isinstance(r.get("id"), str)
+                       and re.fullmatch(r"[0-9a-f-]{36}", r["id"])][:5]
+                linked = ask.sandboxed(parquet, "select * from runs where id in ("
+                                       + ", ".join(map(ask.sql_str, ids))
+                                       + ") order by date, time") if ids else []
+                links = [(ask.run_line(r), f"https://{rider}.downwind.pro/run.html?id={r['id']}")
+                         for r in linked]
+                self.mx.notice(room, "\n".join([said, *(f"{l}: {u}" for l, u in links),
+                                                f"\nSQL over {rider}'s runs: {sql}"]),
+                               reply_to=eid,
+                               html=escape(said)
+                               + "".join(f'<br>🔗 <a href="{u}">{escape(l)}</a>' for l, u in links)
+                               + f"<details><summary>SQL over {rider}'s runs</summary>"
+                                 f"<pre><code>{escape(sql)}</code></pre></details>")
                 return
             self.propose(eid, rider, question, p, rows, parquet)
         except ask.AskError as e:

@@ -68,6 +68,8 @@ An edit may set only: foil, foil_confidence ('high', 'medium' or 'low':
 how sure the rider is of the foil), board, name, description. Write foil
 as the rider wrote it; the bot matches it to a known foil. Use only the
 columns above, and keep SELECTs to what the answer needs (at most 20 rows).
+When the answer is particular runs (the first, the longest, last week's),
+select their id too, so the bot can link them.
 """
 
 ANSWER = """\
@@ -76,7 +78,8 @@ The bot ran this SQL over their runs:
 {sql}
 and got these rows (JSON): {rows}
 Answer the rider in one or two short, plain sentences from those rows only.
-Use 24-hour times, km to one decimal, and dates like 3 Oct 2025. If there
+Use 24-hour times without seconds, km to one decimal, and ISO 8601 dates
+(2025-05-23). Don't mention ids; the bot links the runs itself. If there
 are no rows, say so plainly. No preamble."""
 
 
@@ -230,11 +233,9 @@ def apply_sql(rider, ids, fields, request):
 
 
 def run_line(r):
-    """A run picked for a change, in a line: 3 Oct 2025 07:12 Maliko → Kanaha 12.3 km."""
-    from datetime import date
-    d = date.fromisoformat(str(r["date"])[:10])
+    """A run in a line: 2025-10-03 07:12 Maliko → Kanaha 12.3 km."""
     km = r.get("distance_km")
-    return (f"{d.day} {d:%b %Y} {str(r.get('time') or '')[:5]} "
+    return (f"{str(r['date'])[:10]} {str(r.get('time') or '')[:5]} "
             f"{r.get('start_beach') or '?'} → {r.get('end_beach') or '?'}"
             + (f" {km:.1f} km" if isinstance(km, (int, float)) else ""))
 
