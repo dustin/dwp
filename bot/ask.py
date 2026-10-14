@@ -55,7 +55,9 @@ duration_* seconds, speeds km/h (max_speed_1k is the fastest 1 km),
 heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
 dayname(date) for days of the week (isodow(date) to order them, Monday
 first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
-"went to X" means either one. foil is null or 'unknown' when not known.
+"went to X" means either one, and a loose place name means the closest
+beach in the list below ("the harbor" is Kahului Harbor). The table holds
+only {rider}'s runs, so a question naming {rider} needs no filter for it. foil is null or 'unknown' when not known.
 Today is {today} (Hawaii). Beaches: {beaches}.
 This rider's foils: {foils}. Boards: {boards}.
 
@@ -260,7 +262,7 @@ def main():
         snapshot(lake, a.rider, parquet)
         distinct = lambda col: ", ".join(r["v"] for r in sandboxed(
             parquet, f"select distinct {col} as v from runs where {col} is not null order by 1"))
-        context = {"today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
+        context = {"rider": a.rider, "today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
                    "beaches": distinct("start_beach") + ", " + distinct("end_beach"),
                    "foils": distinct("foil"), "boards": distinct("board")}
         p, rows = plan(a.ollama, a.model, question, context, parquet)

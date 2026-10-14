@@ -1234,12 +1234,19 @@ class Bot:
                                      "(or !foil walter orca 685)", reply_to=eid)
         elif text.startswith("!ask"):
             words = text.split()[1:]
-            target = rider
-            if words and words[0] in self.riders() and words[0] != rider:
-                if not self.room_admin(room, sender):
-                    self.mx.notice(room, "You can only ask about your own runs.", reply_to=eid)
-                    return
-                target, words = words[0], words[1:]
+            # Whose runs: another rider named anywhere ("walter's longest
+            # run"), else the sender's. Anyone may ask about anyone (their
+            # runs are on their site anyway); changes still need an admin's ✅.
+            named = {w for w in re.findall(r"[a-z][a-z0-9-]*", " ".join(words).lower()
+                                           .replace("'s", "").replace("’s", ""))
+                     if w in self.riders() and w != rider}
+            if len(named) > 1:
+                self.mx.notice(room, f"🤔 One rider at a time, please: {', '.join(sorted(named))}?",
+                               reply_to=eid)
+                return
+            target = named.pop() if named else rider
+            if words and words[0] == target:
+                words = words[1:]
             if words:
                 # The model takes a while; keep the room's other commands going.
                 threading.Thread(target=self.ask_runs, args=(room, eid, target, " ".join(words)),
@@ -1287,6 +1294,7 @@ class Bot:
         try:
             ask.snapshot(LAKE_DIR, rider, parquet)
             context = {
+                "rider": rider,
                 "today": f"{datetime.now(HST):%A %Y-%m-%d}",
                 "beaches": ", ".join(r["name"] for r in query(
                     "select name from beaches order by name")),
