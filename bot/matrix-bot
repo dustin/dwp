@@ -855,8 +855,10 @@ class Bot:
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
         self.status, self.status_at, self.edited = None, 0, 0
         self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
-        self.invites = {}  # question event id -> invited room: see invited
-        self.asked = set()  # rooms whose invite has been asked about
+        # question event id -> invited room (see invited), kept across
+        # restarts: a sync only mentions an invite once.
+        self.invites_file = os.path.join(args.state_dir, "invites.json")
+        self.invites = json.loads(load_state(self.invites_file) or "{}")
         self.rooms_file = os.path.join(args.state_dir, "rooms")
         self.rooms = list(dict.fromkeys(args.room + (load_state(self.rooms_file) or "").split()))
         self.settings_file = os.path.join(args.state_dir, "room-settings.json")
@@ -929,9 +931,8 @@ class Bot:
 
     def invited(self, room, invite):
         """Ask the first room whether to join room, once per invite."""
-        if room in self.asked:
+        if room in self.invites.values():
             return
-        self.asked.add(room)
         state = {(e.get("type"), e.get("state_key")): e
                  for e in invite.get("invite_state", {}).get("events", [])}
         name = state.get(("m.room.name", ""), {}).get("content", {}).get("name")
@@ -946,6 +947,7 @@ class Bot:
         qid = self.mx.notice(self.rooms[0], text)
         if qid:
             self.invites[qid] = room
+            self.save_invites()
         log(f"invited to {room} by {by}")
 
     def accept(self, room, ev):
@@ -955,26 +957,34 @@ class Bot:
         if not target or room != self.rooms[0] or rel.get("key") not in APPROVE \
                 or not self.room_admin(room, ev["sender"]):
             return False
-        del self.invites[rel["event_id"]]
         try:
             self.mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(target)}", {})
-        except urllib.error.URLError as e:
+        except urllib.error.URLError as e:  # the question stays for another ✅
+            log(f"joining {target} failed: {e}")
             self.mx.notice(room, f"❌ couldn't join {target}: {e}", reply_to=rel["event_id"])
-            self.asked.discard(target)
             return True
         self.joined(target)
-        self.mx.notice(room, f"✅ joined {target}", reply_to=rel["event_id"])
+        self.mx.notice(room, f"✅ joined {self.room_name(target)}", reply_to=rel["event_id"])
         return True
+
+    def save_invites(self):
+        save_state(self.invites_file, json.dumps(self.invites))
+
+    def forget_invite(self, room):
+        if room in self.invites.values():
+            self.invites = {q: r for q, r in self.invites.items() if r != room}
+            self.save_invites()
 
     def joined(self, room):
         if room not in self.rooms:
             self.rooms.append(room)
             self.save_rooms()
-        self.asked.discard(room)
+        self.forget_invite(room)
 
     def left(self, room):
-        """Forget a room the bot was kicked from or left (not --room ones)."""
-        self.asked.discard(room)
+        """Forget a room the bot was kicked from or left (not --room ones),
+        or an invite that was taken back."""
+        self.forget_invite(room)
         if room in self.rooms and room not in self.args.room:
             self.rooms.remove(room)
             self.save_rooms()
@@ -1407,6 +1417,18 @@ def main(argv=None):
     log(f"also in {', '.join(bot.rooms[len(args.room):]) or 'no rooms by invite'}")
     since = load_state(state)
     first = since is None
+    if since:  # invites from before a restart: later syncs won't mention them
+        try:
+            pending = mx.call("GET", "/_matrix/client/v3/sync", params={"filter": json.dumps(
+                {"room": {"timeline": {"limit": 0}, "state": {"types": []},
+                          "ephemeral": {"not_types": ["*"]}, "account_data": {"not_types": ["*"]}},
+                 "presence": {"not_types": ["*"]}, "account_data": {"not_types": ["*"]}}),
+                "timeout": 0}, timeout=90).get("rooms", {}).get("invite", {})
+            for room, invite in pending.items():
+                if room not in bot.rooms:
+                    bot.invited(room, invite)
+        except Exception as e:
+            log(f"looking for pending invites failed: {e!r}")
     backoff = 5
     while True:
         filt = json.dumps({"room": {"timeline": {"limit": 50},
