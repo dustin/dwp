@@ -1,6 +1,6 @@
 # `dwp-bot-env CMD...`: run CMD with the bot's tools on PATH, for things
 # run outside the dev shell (hm-module.nix runs matrix-bot this way). The
-# bot runs db's add-run, publish and strava/sync, so this is db's tools
+# bot runs db's add-run, publish and drive-sync, so this is db's tools
 # plus rsvg-convert for the spectrum images (spectrum_svg.py), with DejaVu
 # Sans so they render the same everywhere. Node and d3's bundle run the
 # web's achievements code (achievements.mjs) for the import replies.

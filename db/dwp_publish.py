@@ -482,7 +482,7 @@ def remove(keys, dry_run):
 
 
 def locked(path):
-    """Hold the publish lock, so add-run, the bot, Strava sync and the
+    """Hold the publish lock, so add-run, the bot, drive-sync and the
     conditions job don't race on the manifest."""
     lock = open(path + ".lock", "w")
     fcntl.flock(lock, fcntl.LOCK_EX)

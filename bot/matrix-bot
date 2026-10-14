@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Import runs (and kick Strava syncs) from a Matrix room.
+"""Import runs (and kick Drive syncs) from a Matrix room.
 
     ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
         --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter
@@ -14,10 +14,9 @@ from the room each time) can act for any rider and publish:
     the bot asks for the foil; answer with one, or "-" for the rider's
     last foil from that start beach. A foil they haven't used before
     takes its full name after "new": "new Axis Spitfire 1180".
-  * "!sync" runs strava/sync run for the sender's rider, and drive-sync
-    if there's an rclone remote named after them (a shared Google Drive
-    folder). A room admin's "!sync" syncs every rider, and "!sync
-    walter" just Walter.
+  * "!sync" runs drive-sync for the sender's rider: their shared Google
+    Drive folder, an rclone remote named after them. A room admin's
+    "!sync" syncs every rider, and "!sync walter" just Walter.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
     Imports reply with the same summary, plus any records the run set
     (bot/achievements.mjs, the web's achievements as JSON).
@@ -86,8 +85,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 BOT_DIR = os.path.dirname(os.path.realpath(__file__))
-DB_DIR = os.path.join(os.path.dirname(BOT_DIR), "db")  # add-run, publish, strava/sync, drive-sync
-STRAVA_DIR = os.path.expanduser(os.environ.get("DWP_STRAVA_DIR", "~/.config/dwp/strava"))
+DB_DIR = os.path.join(os.path.dirname(BOT_DIR), "db")  # add-run, publish, drive-sync
 sys.dont_write_bytecode = True
 sys.path.insert(0, BOT_DIR)
 sys.path.insert(0, DB_DIR)  # dwp_publish, shared with publish and add-run
@@ -122,7 +120,7 @@ HELP_RIDER = [
     ("!last", "your latest run"),
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
-    ("!sync", "import your new runs from Strava or Drive"),
+    ("!sync", "import your new runs from your Drive folder"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
     ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
 ]
@@ -517,12 +515,6 @@ def publish(mx, room, event_id, words):
               html=f"{mark} {escape(what)}<pre><code>{escape(body)}</code></pre>")
 
 
-def strava_riders():
-    if not os.path.isdir(STRAVA_DIR):
-        return set()
-    return {f[:-5] for f in os.listdir(STRAVA_DIR) if f.endswith(".json")}
-
-
 def drive_riders():
     """Riders with an rclone remote of their own name (see db/drive-sync)."""
     ok, out = run(["rclone", "listremotes"])
@@ -531,18 +523,17 @@ def drive_riders():
 
 
 def sync(mx, room, event_id, riders):
-    """strava/sync and/or drive-sync for riders (everyone if empty)."""
+    """drive-sync for riders (everyone with a Drive folder if empty)."""
     mx.react(room, event_id, "👀")
-    strava, drive = strava_riders(), drive_riders()
-    want = riders or sorted(strava | drive)
-    # A named rider with neither still goes to strava/sync, for its error.
-    jobs = []
-    s = [r for r in want if r in strava or (riders and r not in drive)]
-    if s:
-        jobs.append(("Strava", ["./strava/sync", "run", *s]))
-    jobs += [(f"Drive ({r})", ["./drive-sync", r]) for r in want if r in drive]
-    if not jobs:
-        mx.notice(room, "Nobody is set up to sync.", reply_to=event_id)
+    drive = drive_riders()
+    missing = [r for r in riders if r not in drive]
+    if missing:
+        mx.notice(room, f"No Drive folder (rclone remote) for {', '.join(missing)}.",
+                  reply_to=event_id)
+    want = [r for r in riders if r in drive] if riders else sorted(drive)
+    if not want and not missing:
+        mx.notice(room, "Nobody has a Drive folder to sync.", reply_to=event_id)
+    jobs = [(f"Drive ({r})", ["./drive-sync", r]) for r in want]
     before = {r: runs(r) for r in want}
     for what, cmd in jobs:
         ok, out = run(cmd)

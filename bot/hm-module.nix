@@ -16,7 +16,7 @@
 #   };
 #
 # bot/matrix-bot, and the db/ commands it runs (add-run, publish,
-# strava/sync), run from the checkout, so edits there take effect on the
+# drive-sync), run from the checkout, so edits there take effect on the
 # bot's next restart; only their tools come from the package.
 { config, lib, pkgs, ... }:
 let
