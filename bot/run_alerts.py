@@ -90,7 +90,9 @@ class Alerts:
             else:
                 while st["level"] and score < DOWN[st["level"] - 1]:
                     st["level"] -= 1
-            if st["level"] > st["said"]:
+            # A morning "worth considering" isn't said, and isn't marked said
+            # either, so it's announced once the morning is over.
+            if st["level"] > st["said"] and not (morning and KINDS[st["level"]] == "consider"):
                 back = not st["said"] and now - st["off_at"] < COOLDOWN
                 st["said"] = st["level"]
                 st["hushed"] = back
@@ -101,7 +103,7 @@ class Alerts:
         self.save()
         if quiet:
             return []
-        out = [(k, rose[k]) for k in KINDS[1:] if k in rose and not (morning and k == "consider")]
+        out = [(k, rose[k]) for k in KINDS[1:] if k in rose]
         if was_on and not morning and not any(self.state[s]["said"] for s in SIDES):
             out.append(("off", was_on))
         return out
