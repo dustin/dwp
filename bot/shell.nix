@@ -9,8 +9,10 @@ mkShell {
     python3
     tzdata
     librsvg  # rsvg-convert, for the spectrum images (spectrum_svg.py)
+    nodejs  # achievements.mjs
   ];
   shellHook = ''
+    export DWP_D3="${callPackage ./d3.nix { }}"
     export TZDIR="${tzdata}/share/zoneinfo"
     export FONTCONFIG_FILE="${makeFontsConf { fontDirectories = [ dejavu_fonts ]; }}"
   '';

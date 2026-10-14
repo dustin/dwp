@@ -16,7 +16,8 @@ from the room each time) can act for any rider and publish:
   * "!sync" runs strava/sync run for the sender's rider. A room admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
-    Imports reply with the same summary.
+    Imports reply with the same summary, plus any records the run set
+    (bot/achievements.mjs, the web's achievements as JSON).
   * "!foil 585" changes the foil on the sender's latest run (matched like
     add-run's, or "new <full name>"), then re-exports. A room admin
     can name a rider first: "!foil walter orca 685".
@@ -338,6 +339,40 @@ def summary(r, rider):
     return text, html
 
 
+def achievements(rider, dwid):
+    """Lines for the records run dwid set, from achievements.mjs (the web's
+    own achievements code) over a fresh export of the rider's runs.csv."""
+    try:
+        with tempfile.TemporaryDirectory(prefix="dwp-ach-") as tmp:
+            dwp_publish.export_lists(rider, tmp)
+            r = subprocess.run(["node", os.path.join(BOT_DIR, "achievements.mjs"),
+                                os.path.join(tmp, "runs.csv"), "--run", dwid],
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                               timeout=120)
+        if r.returncode != 0:
+            log(f"achievements.mjs failed:\n{r.stderr}")
+            return []
+        found = json.loads(r.stdout)
+    except (dwp_publish.PublishError, OSError, subprocess.SubprocessError, ValueError) as e:
+        log(f"achievements failed: {e}")
+        return []
+    lines = []
+    for a in found[0]["records"] if found else []:
+        if a["event"]:
+            lines.append(f"🎉 {a['note'] or a['label']}")
+            continue
+        what = a["label"] + (f" ({a['group']})" if a["group"] else "")
+        prev = a["prev"]
+        on = prev and datetime.fromisoformat(prev["ts"].replace("Z", "+00:00")).astimezone(HST)
+        if a["matched"]:
+            lines.append(f"🤝 matched {what}: {a['display']} (from {on:%Y-%m-%d})")
+        elif prev:
+            lines.append(f"🏆 {what}: {a['display']} (was {prev['display']}, {on:%Y-%m-%d})")
+        else:
+            lines.append(f"🏆 {what}: {a['display']} (first)")
+    return lines
+
+
 def tail(out, n=15):
     return "\n".join(out.rstrip().splitlines()[-n:])
 
@@ -370,6 +405,10 @@ def import_gpx(mx, room, event_id, path, foil, rider):
         mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
         return True
     text, html = summary(r, rider)
+    new = achievements(rider, r["id"])
+    if new:
+        text += "\n" + "\n".join(new)
+        html += "<br>" + "<br>".join(map(escape, new))
     mx.notice(room, "✅ " + text, reply_to=event_id, html="✅ " + html)
     return True
 
