@@ -11,7 +11,7 @@ A message looks like (avg/gust/lull in knots, stamp Hawaii local time):
                    "dir_deg":7,"stamp":"2026-10-11T19:52:35","label":"Kihei",
                    "aux1":"","aux2":"0952L0.6~1524H1.7","shortLabel":"kihei"}
 
-A bare MQTT 3.1.1 client (QoS 0, subscribe only), since db/ sticks to the
+A bare MQTT 3.1.1 client (QoS 0, subscribe only), since dwp's Python sticks to the
 Python standard library.
 """
 

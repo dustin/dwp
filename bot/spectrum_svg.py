@@ -6,7 +6,7 @@ the direction it comes from (the same sinebow), the reading six hours
 earlier dashed over it, and the web's mini rose, bigger, beside it.
 to_png() turns it into a PNG with rsvg-convert (librsvg, in db-env.nix).
 
-Only the Python standard library, like the rest of db/.
+Only the Python standard library, like db/.
 """
 
 import math

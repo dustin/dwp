@@ -1,0 +1,1248 @@
+#!/usr/bin/env python3
+"""Import runs (and kick Strava syncs) from a Matrix room.
+
+    ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
+        --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter
+
+Listens in one room, to the Matrix users --user maps to riders (and to
+anyone for !conditions and !help). Room admins (power level 100, read
+from the room each time) can act for any rider and publish:
+
+  * a .gpx file, captioned with a foil ("585"), is imported with add-run
+    as the sender's run, then the reply links it. Sent without a caption,
+    the bot asks for the foil; answer with one, or "-" for the rider's
+    last foil from that start beach. A foil they haven't used before
+    takes its full name after "new": "new Axis Spitfire 1180".
+  * "!sync" runs strava/sync run for the sender's rider. A room admin's
+    "!sync" syncs every rider, and "!sync walter" just Walter.
+  * "!last" summarizes the sender's latest run, "!last walter" Walter's.
+    Imports reply with the same summary.
+  * "!foil 585" changes the foil on the sender's latest run (matched like
+    add-run's, or "new <full name>"), then re-exports. A room admin
+    can name a rider first: "!foil walter orca 685".
+  * "!publish" runs ./publish for a room admin, with
+    the same words and flags: "!publish --dry-run", "!publish verify
+    --fix", "!publish orphans --delete". Long lists in the output are cut
+    short; the full output is in the bot's log.
+  * "!conditions" (anyone) shows the latest wind at each station with
+    its trend over the last hour, Kihei's tides, and each buoy's swells
+    with an image of its spectrum and direction rose. Wind and tides come
+    live from the weather/+ feed on --mqtt (default host mqtt) when it's
+    up, on top of the lake's half-hourly wind. The bot also keeps
+    live/wind.json in the bucket (each station's last 24 hours, for the
+    hub's live wind cards) replaced at most every 30 seconds as readings
+    arrive.
+  * "!ask" takes plain English, read by a local model (--ollama,
+    --ask-model; see ask.py). A question ("!ask when did I last go to
+    Ulua?") is answered from the sender's own runs. A change ("!ask the 2
+    runs with an unknown foil were the ART 999") is shown as the runs it
+    would change, before and after, and a room admin's ✅ on that message
+    applies it. A room admin can ask about another rider: "!ask walter
+    ...".
+  * "!help" says the above.
+
+When the conditions/rating feed (Node-RED's 0-4 score per side) says a
+run is getting good, the bot says so in the room, once per session per
+side, plus once if it gets really good and once when it drops off: see
+run_alerts.py. And once a day, when Kīhei is starting to look good (a
+rating of LOOK or more) and the Wailea cam reads lively (Node-RED's vision
+read of the frame on weather/conditions/wailea), it suggests a look at the
+cam, with the frame.
+
+The bot also pins a one-line version of !conditions in the room and edits
+it in place every few minutes (Element X shows the pinned message in a
+banner atop the room). Pinning needs the bot to have the power to change
+m.room.pinned_events (moderator, 50, by default).
+
+Start it from db's nix dev shell (or the flake's matrix-bot package, which
+the home-manager module runs). It reads the bot account's access token
+from --token-file (default ~/.config/dwp/matrix-token, mode 600) and
+remembers where it got to in --state-dir, so a restart neither replays
+old files nor misses ones sent while it was down. Use an unencrypted
+room: it doesn't speak E2EE.
+
+Only the Python standard library, like db/.
+"""
+
+import argparse
+import gzip
+import json
+import math
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+BOT_DIR = os.path.dirname(os.path.realpath(__file__))
+DB_DIR = os.path.join(os.path.dirname(BOT_DIR), "db")  # add-run, publish, strava/sync
+sys.dont_write_bytecode = True
+sys.path.insert(0, BOT_DIR)
+sys.path.insert(0, DB_DIR)  # dwp_publish, shared with publish and add-run
+import dwp_publish  # noqa: E402
+import spectrum_svg  # noqa: E402
+from mqtt_weather import Weather, tides  # noqa: E402
+import run_alerts  # noqa: E402
+import ask  # noqa: E402
+
+LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
+EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
+CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
+CAM_STALE = 30 * 60  # a cam reading older than this isn't shown
+LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea values worth a look
+LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
+G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
+PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
+ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
+APPROVE = {"✅", "✔️", "✔"}
+# (command, what it does) for each permission level; !help shows the
+# sender the ones they may use.
+HELP_ANYONE = [
+    ("!conditions", "best bet and run scores, latest wind, buoys and the Wailea cam (sea and water motion), with the cam frame"),
+    ("!conditions chart", "the same, plus each buoy's spectrum chart"),
+    ("!help", "this"),
+]
+HELP_RIDER = [
+    ("📎 a .gpx captioned 585", "import it as your run, on foil 585"),
+    ("📎 a .gpx, no caption", "I'll ask which foil; \"-\" reuses your last one from that beach"),
+    ("new Axis Spitfire 1180", "as the foil, for one nobody has ridden yet"),
+    ("!last", "your latest run"),
+    ("!last walter", "someone else's latest run"),
+    ("!foil 585", "change your latest run's foil"),
+    ("!sync", "run your Strava sync"),
+    ("!ask how many km on Sundays?", "ask about your runs in plain English"),
+    ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
+]
+HELP_ADMIN = [
+    ("!sync", "sync every rider"),
+    ("!sync walter", "sync one rider"),
+    ("!foil walter orca 685", "change another rider's latest foil"),
+    ("!ask walter ...", "ask about (or change) another rider's runs"),
+]
+HELP_ROOM_ADMIN = [
+    ("!publish", "publish whatever changed (--dry-run to just look)"),
+    ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
+    ("!publish orphans", "list objects nothing makes any more"),
+    ("!publish orphans --delete", "delete them (--force if over 5% of the bucket)"),
+]
+
+
+def help_text(sections):
+    """(text, html) for [(heading, [(command, what)])]."""
+    text, html = [], []
+    for head, cmds in sections:
+        text += [head, *(f"  {c}: {w}" for c, w in cmds)]
+        html.append(f"<b>{escape(head)}</b><ul>"
+                    + "".join(f"<li><code>{escape(c)}</code> {escape(w)}</li>" for c, w in cmds)
+                    + "</ul>")
+    return "\n".join(text), "".join(html)
+
+
+RIDER = re.compile(r"[a-z][a-z0-9-]*")
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} {msg}", file=sys.stderr, flush=True)
+
+
+class Matrix:
+    def __init__(self, homeserver, token):
+        self.base = homeserver.rstrip("/")
+        self.token = token
+        self.txn = int(time.time() * 1000)
+
+    def call(self, method, path, body=None, params=None, raw=False, timeout=60):
+        url = self.base + path
+        if params:
+            url += "?" + urllib.parse.urlencode(params)
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(url, data=data, method=method,
+                                     headers={"Authorization": f"Bearer {self.token}",
+                                              "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read() if raw else json.load(r)
+
+    def send(self, room, content, kind="m.room.message"):
+        self.txn += 1
+        path = (f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                f"/send/{kind}/{self.txn}")
+        try:
+            return self.call("PUT", path, content).get("event_id")
+        except (urllib.error.URLError, OSError) as e:
+            log(f"send failed: {e}")
+            return None
+
+    def notice(self, room, text, reply_to=None, html=None):
+        content = {"msgtype": "m.notice", "body": text}
+        if html:
+            content.update(format="org.matrix.custom.html", formatted_body=html)
+        if reply_to:
+            content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+        return self.send(room, content)
+
+    def react(self, room, event_id, key):
+        self.send(room, {"m.relates_to": {"rel_type": "m.annotation",
+                                          "event_id": event_id, "key": key}},
+                  kind="m.reaction")
+
+    def upload(self, data, filename, mimetype):
+        """mxc:// URL of data, uploaded to the homeserver's media store."""
+        req = urllib.request.Request(
+            self.base + "/_matrix/media/v3/upload?" + urllib.parse.urlencode({"filename": filename}),
+            data=data, method="POST",
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": mimetype})
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return json.load(r)["content_uri"]
+
+    def image(self, room, mxc, filename, size, w, h, reply_to=None, mimetype="image/png"):
+        content = {"msgtype": "m.image", "body": filename, "url": mxc,
+                   "info": {"mimetype": mimetype, "size": size, "w": w, "h": h}}
+        if reply_to:
+            content["m.relates_to"] = {"m.in_reply_to": {"event_id": reply_to}}
+        self.send(room, content)
+
+    def edit(self, room, event_id, text):
+        """Replace a notice's text in place (no notification)."""
+        self.send(room, {"msgtype": "m.notice", "body": "* " + text,
+                         "m.new_content": {"msgtype": "m.notice", "body": text},
+                         "m.relates_to": {"rel_type": "m.replace", "event_id": event_id}})
+
+    def pinned(self, room):
+        try:
+            return self.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                                    "/state/m.room.pinned_events").get("pinned", [])
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return []
+            raise
+
+    def pin(self, room, event_id):
+        """Pin event_id first; needs the power to send m.room.pinned_events."""
+        self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                         "/state/m.room.pinned_events",
+                  {"pinned": [event_id] + [e for e in self.pinned(room) if e != event_id]})
+
+    def download(self, mxc):
+        server, media = mxc[len("mxc://"):].split("/", 1)
+        tail = f"/download/{urllib.parse.quote(server)}/{urllib.parse.quote(media)}"
+        try:  # authenticated media (Matrix 1.11), then the old unauthenticated path
+            return self.call("GET", "/_matrix/client/v1/media" + tail, raw=True)
+        except urllib.error.HTTPError as e:
+            if e.code not in (400, 404, 405):
+                raise
+            return self.call("GET", "/_matrix/media/v3" + tail, raw=True)
+
+
+def client_url(homeserver):
+    """The client API base for a server name (e.g. sallings.org), from its
+    .well-known; a full https:// URL is taken as is."""
+    if "://" in homeserver:
+        return homeserver
+    try:
+        with urllib.request.urlopen(f"https://{homeserver}/.well-known/matrix/client",
+                                    timeout=30) as r:
+            return json.load(r)["m.homeserver"]["base_url"]
+    except (urllib.error.URLError, OSError, KeyError, ValueError) as e:
+        log(f"no .well-known for {homeserver} ({e}), trying it directly")
+        return f"https://{homeserver}"
+
+
+# --- the work -------------------------------------------------------------
+
+def run(cmd, env=None, cwd=DB_DIR):
+    """Run cmd (in db/ by default); (ok, combined output)."""
+    log("+ " + " ".join(cmd))
+    r = subprocess.run(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                       stderr=subprocess.STDOUT, text=True)
+    sys.stderr.write(r.stdout)
+    return r.returncode == 0, r.stdout
+
+
+def query(sql):
+    """Rows of a query against the lake, as dicts."""
+    r = subprocess.run(["duckdb", "--init", "init.sql", "-json", "-c", "use lake; " + sql],
+                       cwd=LAKE_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                       text=True)
+    out = r.stdout[r.stdout.find("["):] if "[" in r.stdout else "[]"
+    try:
+        return json.loads(out)
+    except json.JSONDecodeError:
+        return []
+
+
+def runs(rider):
+    """The rider's run ids."""
+    return {row["id"] for row in query(
+        f"select id::varchar as id from dwlist where rider = '{rider}'")}
+
+
+# --- run summaries ----------------------------------------------------------
+
+DRY_LIMIT = 0.97  # dryLimit in web/lib/components/data.js
+HST = ZoneInfo("Pacific/Honolulu")
+
+
+def latest(rider, dwid=None):
+    """A run's summary fields: dwid's, else the rider's latest."""
+    which = f"id = '{dwid}'" if dwid else f"rider = '{rider}' order by ts desc limit 1"
+    rows = query(
+        "select id::varchar as id, ts, start_beach, end_beach, foil, distance_km, "
+        "distance_on_foil, duration_on_foil, avg_foiling_hr, min_foiling_hr, max_speed_1k, "
+        f"longest_segment_distance from dwlist_resolved where {which}")
+    return rows[0] if rows else None
+
+
+def dur(sec):
+    h, m = divmod(round(sec / 60), 60)
+    return f"{h}h {m:02d}m" if h else f"{m}m"
+
+
+def pace(kmh):
+    m, s = divmod(round(3600 / kmh), 60)
+    return f"{m}:{s:02d}/km"
+
+
+def summary(r, rider):
+    """(text, html) describing run r."""
+    when = datetime.fromtimestamp(r["ts"], HST)
+    head = (f"{r['start_beach']} → {r['end_beach']} · "
+            f"{when:%a %b} {when.day} {when:%H:%M}")
+    lines = []
+    foil_m, foil_s = r.get("distance_on_foil"), r.get("duration_on_foil")
+    if foil_m and foil_s:
+        lines.append(f"🏄 {foil_m / 1000:.1f} km on foil in {dur(foil_s)}")
+        lines.append(f"⚡ {foil_m / foil_s * 3.6:.1f} km/h foiling"
+                     + (f" · best km {pace(r['max_speed_1k'])}" if r.get("max_speed_1k") else ""))
+    elif r.get("distance_km"):
+        lines.append(f"📏 {r['distance_km']:.1f} km")
+    if r.get("avg_foiling_hr"):
+        lines.append(f"❤️ {r['avg_foiling_hr']:.0f} avg · {r['min_foiling_hr']:.0f} min bpm")
+    if foil_m and r.get("longest_segment_distance") is not None:
+        frac = r["longest_segment_distance"] / foil_m
+        lines.append("★ dry!" if frac > DRY_LIMIT
+                     else f"💦 not dry: longest flight {frac:.0%} of foiling")
+    if r.get("foil"):
+        lines.append(f"🪽 {r['foil']}")
+    url = f"https://{rider}.downwind.pro/run.html?id={r['id']}"
+    text = "\n".join([head, *lines, url])
+    html = "<br>".join([f'<a href="{url}"><b>{escape(head)}</b></a>',
+                        *map(escape, lines)])
+    return text, html
+
+
+def tail(out, n=15):
+    return "\n".join(out.rstrip().splitlines()[-n:])
+
+
+def import_gpx(mx, room, event_id, path, foil, rider):
+    mx.react(room, event_id, "👀")
+    before = runs(rider)
+    cmd = ["./add-run", path, "--rider", rider]
+    new_foil = re.match(r"new\s+(.+)", foil, re.I)
+    if new_foil:
+        cmd[2:2] = [new_foil.group(1), "--new-foil"]
+    elif foil and foil != "-":
+        cmd.insert(2, foil)
+    ok, out = run(cmd)
+    if not ok:
+        why = next((ln for ln in reversed(out.splitlines())
+                    if "foil matches" in ln or "foil from" in ln), None)
+        if why:  # the foil lookup failed: ask again, the file waits
+            why = why.split("Error: ")[-1].strip()
+            mx.notice(room, f"🤔 {why}\nWhich foil? If it's one you haven't ridden "
+                            "before, send its full name after \"new\", e.g. "
+                            "new Axis Spitfire 1180.", reply_to=event_id)
+        else:
+            mx.notice(room, f"❌ add-run failed:\n{tail(out)}", reply_to=event_id,
+                      html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>")
+        return False
+    new = runs(rider) - before
+    r = latest(rider, new.pop()) if len(new) == 1 else None
+    if not r:
+        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
+        return True
+    text, html = summary(r, rider)
+    mx.notice(room, "✅ " + text, reply_to=event_id, html="✅ " + html)
+    return True
+
+
+def sql_str(v):
+    return "'" + v.replace("'", "''") + "'"
+
+
+def resolve_foil(rider, name):
+    """(foil, None) for the one known foil name names, else (None, why).
+
+    Matches like import.sql: a case-insensitive piece of the name, an exact
+    name always winning; the rider's own foils first, then everyone's (a
+    rider whose runs say "unknown" may share a foil with someone else)."""
+    new = re.match(r"new\s+(.+)", name, re.I)
+    if new:
+        return new.group(1).strip(), None
+    for where in (f"rider = '{rider}' and ", ""):
+        known = [row["foil"] for row in query(
+            f"select distinct foil from dwlist where {where}foil is not null")]
+        exact = [f for f in known if f.lower() == name.lower()]
+        hits = exact or [f for f in known if name.lower() in f.lower()]
+        if len(hits) == 1:
+            return hits[0], None
+        if len(hits) > 1:
+            return None, f"'{name}' matches more than one foil: {', '.join(sorted(hits))}"
+    return None, f"no foil matches '{name}'"
+
+
+def set_foil(mx, room, event_id, rider, name):
+    """Record foil name on the rider's latest run, then re-export."""
+    r = latest(rider)
+    if not r:
+        mx.notice(room, f"No runs for {rider}.", reply_to=event_id)
+        return
+    foil, why = resolve_foil(rider, name)
+    if why:
+        mx.notice(room, f"🤔 {why}. If it's a foil nobody has ridden yet, send its "
+                        "full name after \"new\", e.g. !foil new Axis Spitfire 1180.",
+                  reply_to=event_id)
+        return
+    mx.react(room, event_id, "👀")
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', 'matrix-bot: foil of {r['id']}'); "
+           f"update dwlist set foil = {sql_str(foil)} where id = '{r['id']}'; commit;")
+    ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        try:
+            dwp_publish.run()
+        except dwp_publish.PublishError as e:
+            ok, out = False, str(e)
+    if not ok:
+        mx.notice(room, f"❌ couldn't change the foil:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't change the foil:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    text, html = summary(latest(rider, r["id"]), rider)
+    was = r.get("foil") or "none"
+    mx.notice(room, f"✅ foil was {was}\n{text}", reply_to=event_id,
+              html=f"✅ foil was {escape(was)}<br>{html}")
+
+
+PUBLISH_WORDS = {"publish", "verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
+LISTED = re.compile(r"(orphan|not in inventory|missing from S3|size differs|"
+                    r"publish: would upload|publish: would delete): |/")
+
+
+def condense(out, keep=5):
+    """out with each run of more than keep similar lines (orphan: ...,
+    would upload ..., an invalidation path) cut to its first keep."""
+    lines, kind, n = [], None, 0
+    for ln in out.rstrip().splitlines():
+        m = LISTED.match(ln)
+        k = m.group(0) if m else None
+        if k != kind:
+            if n > keep:
+                lines.append(f"… and {n - keep} more")
+            kind, n = k, 0
+        n += 1
+        if k is None or n <= keep:
+            lines.append(ln)
+    if n > keep:
+        lines.append(f"… and {n - keep} more")
+    return "\n".join(lines)
+
+
+def publish(mx, room, event_id, words):
+    """./publish with words, replying with its (condensed) output."""
+    mx.react(room, event_id, "👀")
+    ok, out = run(["./publish", *words])
+    what = " ".join(["publish", *words])
+    body = tail(condense(out), 25) or "(no output)"
+    mark = "✅" if ok else "⚠️"
+    mx.notice(room, f"{mark} {what}\n{body}", reply_to=event_id,
+              html=f"{mark} {escape(what)}<pre><code>{escape(body)}</code></pre>")
+
+
+def strava_sync(mx, room, event_id, riders):
+    mx.react(room, event_id, "👀")
+    ok, out = run(["./strava/sync", "run", *riders])
+    summary = next((ln for ln in reversed(out.splitlines()) if ln.startswith("imported ")),
+                   "")
+    if ok:
+        mx.notice(room, f"✅ {summary or 'synced'}", reply_to=event_id)
+    else:
+        mx.notice(room, f"❌ sync failed:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ sync failed:<pre><code>{escape(tail(out))}</code></pre>")
+
+
+# --- conditions -------------------------------------------------------------
+
+# Wind stations in the order !conditions lists them (any others after).
+WIND_ORDER = ["kihei", "wailea", "hookipa"]
+SITE_NAMES = {"kihei": "Kihei", "wailea": "Wailea", "hookipa": "Ho'okipa", "pauwela": "Pauwela",
+              "kanaha": "Kanaha"}
+
+
+def site_name(site):
+    return SITE_NAMES.get(site, site.replace("_", " ").title())
+
+
+def hst(epoch):
+    return datetime.fromtimestamp(epoch, HST)
+
+
+def when(epoch):
+    """"18:52" today in Hawaii, "Sun 18:52" otherwise."""
+    t = hst(epoch)
+    return f"{t:%H:%M}" if t.date() == datetime.now(HST).date() else f"{t:%a %H:%M}"
+
+
+WEATHER = None  # a Weather once main starts it: live readings over MQTT
+LIVE_KEY = "live/wind.json"  # outside publish's prefixes, so orphans leaves it be
+LIVE_EVERY = 30  # at most one write of it per this many seconds
+LIVE_HEADERS = ["Content-Encoding: gzip", "Content-Type: application/json",
+                "Cache-Control: public, max-age=30"]
+
+
+def seed_weather(weather):
+    """The lake's last day of wind under the live feed, so a restart
+    doesn't start the live object over empty."""
+    by = {}
+    for r in query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
+                   "where ts > now() - interval 1 day and wavg is not null order by ts"):
+        by.setdefault(r.pop("site"), []).append(r)
+    for site, rows in by.items():
+        weather.seed(site, rows)
+    log(f"seeded live wind from the lake: {', '.join(f'{s} {len(r)}' for s, r in by.items())}")
+
+
+def write_live(weather, dry_run=False):
+    """Keep LIVE_KEY in the bucket replaced with weather's last 24 hours,
+    within LIVE_EVERY seconds of each new reading. Runs in its own thread."""
+    while True:
+        weather.changed.wait()
+        weather.changed.clear()
+        body = gzip.compress(json.dumps(weather.snapshot(), separators=(",", ":")).encode(),
+                             mtime=0)
+        args = ["rclone", "rcat", dwp_publish.DEST + LIVE_KEY]
+        for h in LIVE_HEADERS:
+            args += ["--header-upload", h]
+        if dry_run:
+            log(f"would write {LIVE_KEY}: {len(body)} bytes")
+        else:
+            r = subprocess.run(args, input=body, capture_output=True)
+            if r.returncode != 0:
+                log(f"writing {LIVE_KEY} failed: {r.stderr.decode(errors='replace').strip()}")
+        time.sleep(LIVE_EVERY)
+
+
+def wind_now():
+    """Per station with readings in the last day: (site, latest reading,
+    its average an hour earlier), in WIND_ORDER. The lake's readings, then
+    the live feed's newer ones on top."""
+    rows = query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
+                 "where ts > now() - interval 1 day and wavg is not null order by ts")
+    by = {}
+    for r in rows:
+        by.setdefault(r["site"], []).append(r)
+    for site, live in (WEATHER.recent() if WEATHER else {}).items():
+        rs = by.setdefault(site, [])
+        newest = rs[-1]["t"] if rs else 0
+        rs += [r for r in live if r["t"] > newest]
+    out = []
+    for site, rs in by.items():
+        last = rs[-1]
+        hour_ago = [r["wavg"] for r in rs if 3000 <= last["t"] - r["t"] <= 4200]
+        out.append((site, last, sum(hour_ago) / len(hour_ago) if hour_ago else None))
+    return sorted(out, key=lambda x: (WIND_ORDER.index(x[0]) if x[0] in WIND_ORDER
+                                      else len(WIND_ORDER), -x[1]["t"]))
+
+
+def wind_line(site, r, before):
+    # "Kīhei 15g20 @350". Gust or direction can be missing (a station's row
+    # can lack them); lulls aren't shown.
+    s = (f"{site_name(site)} {r['wavg']:.0f}"
+         + (f"g{r['wgust']:.0f}" if r.get("wgust") is not None else "")
+         + (f" @{r['wdir']:.0f}" if r.get("wdir") is not None else ""))
+    if before is not None:
+        d = r["wavg"] - before
+        s += (f" · building from {before:.0f}" if d >= 3 else
+              f" · dropping from {before:.0f}" if d <= -3 else " · steady")
+    return s + f" · {'live ' if r.get('live') else ''}{when(r['t'])}"
+
+
+def tide_line():
+    """Kihei's tides today, from the live feed's aux2: "low 09:52 0.6 ft ·
+    high 15:24 1.7 ft", the next one marked."""
+    ts = tides(WEATHER.info("kihei").get("aux2")) if WEATHER else []
+    if not ts:
+        return None
+    now = time.time()
+    nxt = next((t for t, _, _ in ts if t > now), None)
+    return "Kihei tide: " + " · ".join(
+        f"{'next ' if t == nxt else ''}{'high' if hl == 'H' else 'low'} {hst(t):%H:%M} {ft:.1f} ft"
+        for t, hl, ft in ts)
+
+
+def swells_now():
+    """Per buoy with a reading in the last day: (site, epoch, [(ft, s, °, kJ)])
+    from swell_partition's latest full reading, rank 1 (NDBC's own) first.
+    The spectral components (rank 2+) come with the :56 readings, so a
+    newer reading with rank 1 alone loses to the one before it. kJ is the
+    Surfline-style figure the web shows: rank 1's surfline_kj for the whole
+    reading, and each component's share of it (swellKJShares in
+    web/lib/components/spectral-partitions.js); None when there's no total."""
+    rows = query("with latest as (select site, arg_max(ts, (n > 1)::int * 1e10 + epoch(ts)) as ts "
+                 "from (select site, ts, count(*) as n from swell_partition "
+                 "where ts > now() - interval 1 day group by all) group by site) "
+                 "select p.site, epoch(p.ts) as t, p.rank, p.height, p.period, p.direction, "
+                 "p.energy, p.surfline_kj "
+                 "from swell_partition p join latest using (site, ts) order by p.site, p.rank")
+    by = {}
+    for r in rows:
+        if r["height"] and r["period"] and r["direction"] is not None:
+            by.setdefault((r["site"], r["t"]), []).append(r)
+    out = []
+    for (site, t), rs in by.items():
+        total = next((r["surfline_kj"] for r in rs if r["rank"] == 1), None)
+        parts = [r for r in rs if r["rank"] > 1]
+        raw = [(r["energy"] or 0) * G * r["period"] ** 2 / math.pi for r in parts]
+        scale = total / sum(raw) if total is not None and sum(raw) > 0 else None
+        kj = {id(r): k * scale if scale else None for r, k in zip(parts, raw)}
+        out.append((site, t, [(r["height"] * 3.28084, r["period"], r["direction"],
+                               total if r["rank"] == 1 else kj[id(r)]) for r in rs]))
+    return out
+
+
+def swell_text(swells, n=3):
+    return ", ".join(f"{ft:.1f} ft {per:.0f} s {spectrum_svg.compass(d)}"
+                     if per >= 10 else f"{ft:.1f} ft {per:.1f} s {spectrum_svg.compass(d)}"
+                     for ft, per, d, _ in swells[:n])
+
+
+def swell_kj_text(swells, n=4):
+    """swell_text with each swell's kJ, as the web's buoy cards show it."""
+    return ", ".join(swell_text([sw], 1) + (f" ({sw[3]:.0f} kJ)" if sw[3] is not None else "")
+                     for sw in swells[:n])
+
+
+def spectrum_rows(site, epoch):
+    return [(r["freq"], r["energy"], r["direction"]) for r in query(
+        f"select freq, energy, direction from swell_spectrum where site = {sql_str(site)} "
+        f"and ts = to_timestamp({epoch}) order by freq")]
+
+
+def nearest_spectrum(site, epoch):
+    """The epoch of the buoy's spectrum within an hour of epoch, or None."""
+    near = query(f"select epoch(ts) as t from swell_spectrum where site = {sql_str(site)} "
+                 f"and ts between to_timestamp({epoch - 3600}) and to_timestamp({epoch + 3600}) "
+                 f"order by abs(epoch(ts) - {epoch}) limit 1")
+    return near[0]["t"] if near else None
+
+
+def spectrum_png(site, epoch, swells):
+    """PNG bytes of the buoy's spectrum at epoch, with the reading nearest
+    six hours before it dashed over it; None if there's no spectrum."""
+    epoch = nearest_spectrum(site, epoch)
+    if epoch is None:
+        return None
+    rows = spectrum_rows(site, epoch)
+    prev = query(f"select epoch(ts) as t from swell_spectrum where site = {sql_str(site)} "
+                 f"and ts between to_timestamp({epoch - 7 * 3600}) and to_timestamp({epoch - 5 * 3600}) "
+                 f"order by abs(epoch(ts) - {epoch - 6 * 3600}) limit 1")
+    earlier = spectrum_rows(site, prev[0]["t"]) if prev else None
+    t = hst(epoch)
+    title = f"{site_name(site)} {t:%a %b} {t.day} {t:%H:%M} · {swell_text(swells)}"
+    label = f"{hst(prev[0]['t']):%H:%M} (6h earlier)" if prev else ""
+    return spectrum_svg.to_png(spectrum_svg.spectrum_svg(rows, title, earlier, label))
+
+
+def status_line():
+    """One line of the latest conditions, for the bot's pinned message."""
+    wind = wind_now()
+    parts = [f"{site_name(s)} {r['wavg']:.0f}"
+             + (f"g{r['wgust']:.0f}" if r.get("wgust") is not None else "") + " kn"
+             + (f" {spectrum_svg.compass(r['wdir'])}" if r.get("wdir") is not None else "")
+             for s, r, _ in wind]
+    parts += [f"{site_name(s)} {swell_text(sw, 2)}"
+              + (f" {sw[0][3]:.0f} kJ" if sw[0][3] is not None else "") for s, _, sw in swells_now()]
+    if wind:
+        parts.append(f"as of {when(max(r['t'] for _, r, _ in wind))}")
+    return " · ".join(parts)
+
+
+def fresh_cam(site="wailea"):
+    """The site's cam reading if it's recent and in daylight, else None."""
+    cam = WEATHER.cam(site) if WEATHER else None
+    if cam and cam["daylight"] and time.time() - cam["t"] < CAM_STALE:
+        return cam
+    return None
+
+
+def cam_line(cam, site="wailea"):
+    return (f"{site_name(site)} cam: {cam['sea']}"
+            + (f", shorebreak {cam['shorebreak']}" if cam["shorebreak"] else "")
+            + f" · {when(cam['t'])}")
+
+
+def motion_line(site="wailea"):
+    """The cam's water motion, if there's a recent measurement: right to
+    left (dx < 0) is energy running down the coast toward Makena."""
+    m = WEATHER.water_motion(site) if WEATHER else None
+    if not m or m["dx"] is None or time.time() - m["t"] > CAM_STALE:
+        return None
+    way = "down the coast" if m["dx"] < 0 else "up the coast"
+    share = m["left"] if m["dx"] < 0 else 1 - m["left"]
+    caps = f", {m['whitecaps']} whitecaps" if m.get("whitecaps") else ""
+    return (f"{site_name(site)} water moving {way}, {abs(m['dx']):.1f} px/s "
+            f"({share:.0%}){caps} · {when(m['t'])}")
+
+
+def send_cam_frame(mx, room, cam, cache, reply_to=None):
+    """Post the frame the cam reading was made from, if Node-RED gave its
+    URL (fetched from here, so a LAN address is fine); cache maps the
+    reading's time to its upload, so it goes up once."""
+    if not cam.get("image"):
+        return
+    if cam["t"] not in cache:
+        try:
+            with urllib.request.urlopen(cam["image"], timeout=20) as r:
+                jpg = r.read()
+        except (OSError, urllib.error.URLError) as e:
+            log(f"cam frame {cam['image']}: {e}")
+            return
+        cache.clear()
+        cache[cam["t"]] = (mx.upload(jpg, "wailea-cam.jpg", "image/jpeg"), len(jpg))
+    mxc, size = cache[cam["t"]]
+    mx.image(room, mxc, "wailea-cam.jpg", size, 1920, 1080, reply_to=reply_to, mimetype="image/jpeg")
+
+
+def escape(s):
+    return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def rating_line():
+    """Node-RED's best bet and both sides' scores, or None if there's no
+    rating newer than run_alerts.STALE."""
+    r = WEATHER.rating if WEATHER else None
+    if not r or time.time() - r["t"] > run_alerts.STALE:
+        return None
+    # The better side first, with its score: "North shore 4/10 · Kīhei 3/10".
+    sides = sorted(run_alerts.SIDES.items(), key=lambda kv: -r[kv[0]])
+    scores = " · ".join(f"{name} {run_alerts.out_of_10(r[side])}" for side, name in sides)
+    rec = r["rec"].lower()
+    lead = "go paddleboarding · " if rec.startswith("no can") else "either, " if rec.startswith("either") else ""
+    return f"Best bet: {lead}{scores} ({when(r['t'])})"
+
+
+def conditions(mx, room, event_id, images, frames, charts=False):
+    """Reply with the run rating, wind and buoys, the cam frame and, with
+    charts, each buoy's spectrum image. images caches (site, epoch) ->
+    uploaded mxc, so asking again before the next reading doesn't upload
+    the same picture again."""
+    lines, cam = [], fresh_cam()
+    best = rating_line()
+    if best:
+        lines.append(("🏄 ", best))
+    for w in wind_now():
+        lines.append(("🌬️ ", wind_line(*w)))
+        if w[0] == "wailea" and cam:  # the cam goes under Wailea's wind
+            lines.append(("📷 ", cam_line(cam)))
+        if w[0] == "wailea" and motion_line():
+            lines.append(("〰️ ", motion_line()))
+    if cam and not any(a == "📷 " for a, _ in lines):
+        lines.append(("📷 ", cam_line(cam)))
+    tide = tide_line()
+    if tide:
+        lines.append(("↕️ ", tide))
+    buoys = swells_now()
+    lines += [("🌊 ", f"{site_name(s)} {when(t)}: {swell_kj_text(sw)}") for s, t, sw in buoys]
+    if not lines:
+        mx.notice(room, "No wind or buoy readings in the last day.", reply_to=event_id)
+        return
+    mx.notice(room, "\n".join(a + b for a, b in lines), reply_to=event_id,
+              html="<br>".join(a + (f'<a href="{CAM_PAGE}">{escape(b)}</a>' if a == "📷 " else escape(b))
+                               for a, b in lines))
+    if cam:
+        send_cam_frame(mx, room, cam, frames, reply_to=event_id)
+    for site, t, sw in buoys if charts else ():
+        key = (site, t)
+        if key not in images:
+            try:
+                png = spectrum_png(site, t, sw)
+            except (OSError, subprocess.CalledProcessError) as e:
+                log(f"spectrum image failed: {e}")
+                continue
+            if not png:
+                continue
+            images[key] = (mx.upload(png, f"{site}-spectrum.png", "image/png"), len(png))
+        mxc, size = images[key]
+        mx.image(room, mxc, f"{site}-spectrum.png", size, 1800, 760, reply_to=event_id)
+
+
+# --- the room -------------------------------------------------------------
+
+def is_gpx(c):
+    name = (c.get("filename") or c.get("body") or "").lower()
+    return c.get("msgtype") == "m.file" and "url" in c and (
+        name.endswith(".gpx") or "gpx" in c.get("info", {}).get("mimetype", ""))
+
+
+def caption(c):
+    """A file's caption (Matrix 1.10: a body that differs from filename)."""
+    fn, body = c.get("filename"), c.get("body", "")
+    return body.strip() if fn and body != fn else ""
+
+
+FOIL = re.compile(r"^(-|[\w .'-]{1,60})$")
+
+
+class Bot:
+    def __init__(self, mx, args):
+        self.mx, self.args = mx, args
+        self.pending = {}  # sender -> (event_id, gpx path, received at)
+        self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
+        self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
+        self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
+        self.status, self.status_at, self.edited = None, 0, 0
+        self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
+
+    def refresh_status(self):
+        """Every STATUS_EVERY seconds, edit the latest conditions into the
+        bot's pinned message (Element X shows it in a banner atop the room),
+        if they've changed (not just their time) and it's been EDIT_EVERY
+        since the last edit, posting it the first time and pinning it again
+        if someone unpinned it. Each edit is an event in the room, so
+        fewer of them is less churn for everyone's clients."""
+        if time.time() - self.status_at < STATUS_EVERY:
+            return
+        self.status_at = time.time()
+        line = status_line()
+        if not line:
+            return
+        room, path = self.args.room, os.path.join(self.args.state_dir, "pinned")
+        pinned, now = load_state(path), time.time()
+        if not pinned:
+            pinned = self.mx.notice(room, line)
+            if not pinned:
+                return
+            save_state(path, pinned)
+            self.status, self.edited = line, now
+        elif (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
+              and now - self.edited >= EDIT_EVERY):
+            self.mx.edit(room, pinned, line)
+            self.status, self.edited = line, now
+        # The message is saved before it's pinned, so a bot without the
+        # power to pin (403) keeps editing its one message rather than
+        # posting a new one every few minutes.
+        if pinned not in self.mx.pinned(room):
+            self.mx.pin(room, pinned)
+
+    def announce_ratings(self):
+        """Tell the room when a run's getting good (see run_alerts.py), as
+        plain text rather than a notice, so it notifies like a person would."""
+        if not WEATHER:
+            return
+        if not hasattr(self, "alerts"):
+            self.alerts = run_alerts.Alerts(os.path.join(self.args.state_dir, "rating.json"))
+        while not WEATHER.ratings.empty():
+            rating = WEATHER.ratings.get()
+            said = self.alerts.see(rating)
+            if not said:
+                continue
+            wind = {site: wind_line(site, r, before) for site, r, before in wind_now()}
+            cam = fresh_cam()
+            lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind]
+                     + ([cam_line(cam)] if cam else [])
+                     + [m for m in (motion_line(),) if m],
+                     "ns": [wind[s] for s in ("hookipa",) if s in wind]}
+            for kind, sides in said:
+                self.mx.send(self.args.room, {"msgtype": "m.text", "body": run_alerts.message(
+                    kind, sides, rating, lines)})
+
+    def suggest_cam(self):
+        """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
+        cam reads LIVELY (both fresh), suggest a look at the cam."""
+        cam, rating = fresh_cam(), WEATHER.rating if WEATHER else None
+        if not cam or cam["sea"] not in LIVELY or not rating:
+            return
+        if time.time() - rating["t"] > run_alerts.STALE or rating["kihei"] < LOOK:
+            return
+        path, today = os.path.join(self.args.state_dir, "cam-nudge"), f"{hst(time.time()):%F}"
+        if load_state(path) == today:
+            return
+        save_state(path, today)
+        text = (f"👀 The Wailea cam shows {cam['sea']} and Kīhei is at "
+                f"{run_alerts.out_of_10(rating['kihei'])}. Worth a look: {CAM_PAGE}")
+        self.mx.send(self.args.room, {"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
+                                      "formatted_body": escape(text).replace(
+                                          CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
+        send_cam_frame(self.mx, self.args.room, cam, self.frames)
+
+    def handle(self, ev):
+        room = self.args.room
+        c = ev.get("content", {})
+        if ev.get("type") == "m.room.encrypted":
+            self.mx.notice(room, "This room is encrypted, and I can only read "
+                                 "unencrypted rooms.")
+            return
+        if ev.get("type") == "m.reaction":
+            self.approve(ev)
+            return
+        if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
+                c["m.relates_to"].get("rel_type") == "m.replace":
+            return
+        eid, sender = ev["event_id"], ev["sender"]
+        rider = self.args.users.get(sender)
+        text = c.get("body", "").strip() if c.get("msgtype") == "m.text" else ""
+        if text.startswith("!conditions"):  # anyone in the room
+            conditions(self.mx, room, eid, self.images, self.frames,
+                       charts="chart" in text[len("!conditions"):])
+            return
+        if text.startswith("!help") and not rider:
+            body, html = help_text([("Anyone", HELP_ANYONE)])
+            self.mx.notice(room, body, reply_to=eid, html=html)
+            return
+        if not rider:
+            return
+        if is_gpx(c):
+            fd, path = tempfile.mkstemp(suffix=".gpx", dir=self.tmp)
+            try:
+                with os.fdopen(fd, "wb") as fh:
+                    fh.write(self.mx.download(c["url"]))
+            except (urllib.error.URLError, OSError) as e:
+                self.mx.notice(room, f"❌ couldn't download that file: {e}", reply_to=eid)
+                return
+            foil = caption(c)
+            if sender in self.pending:  # a newer file replaces one still waiting
+                os.unlink(self.pending.pop(sender)[1])
+            if foil and FOIL.match(foil):
+                self.attempt(sender, eid, path, foil, rider)
+            else:
+                self.pending[sender] = (eid, path, time.time())
+                self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
+                                     "one from that beach)", reply_to=eid)
+            return
+        if c.get("msgtype") != "m.text":
+            return
+        text = c.get("body", "").strip()
+        if text.startswith("!sync"):
+            riders = text.split()[1:]
+            if not self.room_admin(sender):
+                if riders and riders != [rider]:
+                    self.mx.notice(room, "You can only sync yourself.", reply_to=eid)
+                    return
+                riders = [rider]
+            if all(RIDER.fullmatch(r) for r in riders):
+                strava_sync(self.mx, room, eid, riders)
+            else:
+                self.mx.notice(room, "!sync takes rider names, like !sync walter",
+                               reply_to=eid)
+        elif text.startswith("!last"):
+            who = text.split()[1:2] or [rider]
+            r = latest(who[0]) if RIDER.fullmatch(who[0]) else None
+            if r:
+                body, html = summary(r, who[0])
+                self.mx.notice(room, body, reply_to=eid, html=html)
+            else:
+                self.mx.notice(room, f"No runs for {who[0]}.", reply_to=eid)
+        elif text.startswith("!foil"):
+            words = text.split()[1:]
+            target = rider
+            if len(words) > 1 and words[0] in self.riders():
+                if words[0] != rider and not self.room_admin(sender):
+                    self.mx.notice(room, "You can only change your own runs.",
+                                   reply_to=eid)
+                    return
+                target, words = words[0], words[1:]
+            name = " ".join(words)
+            if FOIL.match(name):
+                set_foil(self.mx, room, eid, target, name)
+            else:
+                self.mx.notice(room, "!foil takes a foil, like !foil 585 "
+                                     "(or !foil walter orca 685)", reply_to=eid)
+        elif text.startswith("!ask"):
+            words = text.split()[1:]
+            target = rider
+            if words and words[0] in self.riders() and words[0] != rider:
+                if not self.room_admin(sender):
+                    self.mx.notice(room, "You can only ask about your own runs.", reply_to=eid)
+                    return
+                target, words = words[0], words[1:]
+            if words:
+                # The model takes a while; keep the room's other commands going.
+                threading.Thread(target=self.ask_runs, args=(eid, target, " ".join(words)),
+                                 name="ask", daemon=True).start()
+            else:
+                self.mx.notice(room, "!ask takes a question or a change, like "
+                                     "!ask when did I last go to Ulua?", reply_to=eid)
+        elif text.startswith("!publish"):
+            words = text.split()[1:]
+            if not self.room_admin(sender):
+                self.mx.notice(room, "Only room admins can publish.", reply_to=eid)
+            elif not set(words) <= PUBLISH_WORDS or words[1:] and \
+                    set(words[1:]) & {"publish", "verify", "orphans"}:
+                self.mx.notice(room, "!publish takes ./publish's words: [verify | orphans] "
+                                     "[--dry-run] [--fix] [--delete] [--force]",
+                               reply_to=eid)
+            else:
+                publish(self.mx, room, eid, words)
+        elif text.startswith("!help"):
+            sections = [("Anyone", HELP_ANYONE), ("Your runs", HELP_RIDER)]
+            admin = self.room_admin(sender)
+            if admin:  # their bare !sync syncs everyone
+                sections = [("Anyone", HELP_ANYONE),
+                            ("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
+                            ("Room admins: any rider", HELP_ADMIN),
+                            ("Room admins: publishing", HELP_ROOM_ADMIN)]
+            body, html = help_text(sections)
+            self.mx.notice(room, body, reply_to=eid, html=html)
+        elif sender in self.pending and FOIL.match(text):
+            gpx_eid, path, at = self.pending.pop(sender)
+            if time.time() - at < PENDING_TTL:
+                self.attempt(sender, gpx_eid, path, text, rider)
+            else:
+                os.unlink(path)
+
+    def ask_runs(self, eid, rider, question):
+        """Answer question about rider's runs, or propose the change it asks
+        for (applied by approve), via the model and ask.py's sandbox."""
+        room, a = self.args.room, self.args
+        self.mx.react(room, eid, "👀")
+        fd, parquet = tempfile.mkstemp(suffix=".parquet", dir=self.tmp)
+        os.close(fd)
+        try:
+            ask.snapshot(LAKE_DIR, rider, parquet)
+            context = {
+                "today": f"{datetime.now(HST):%A %Y-%m-%d}",
+                "beaches": ", ".join(r["name"] for r in query(
+                    "select name from beaches order by name")),
+                "foils": ", ".join(r["v"] for r in ask.sandboxed(
+                    parquet, "select distinct foil as v from runs where foil is not null order by 1")),
+                "boards": ", ".join(r["v"] for r in ask.sandboxed(
+                    parquet, "select distinct board as v from runs where board is not null order by 1")),
+            }
+            p, rows = ask.plan(a.ollama, a.ask_model, question, context, parquet)
+            if p["kind"] == "unclear":
+                self.mx.notice(room, f"🤔 {p.get('say') or 'I did not follow that.'}", reply_to=eid)
+                return
+            sql = p["sql"]
+            if p["kind"] == "query":
+                said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
+                ids = [r["id"] for r in rows if isinstance(r.get("id"), str)
+                       and re.fullmatch(r"[0-9a-f-]{36}", r["id"])][:5]
+                linked = ask.sandboxed(parquet, "select * from runs where id in ("
+                                       + ", ".join(map(ask.sql_str, ids))
+                                       + ") order by date, time") if ids else []
+                links = [(ask.run_line(r), f"https://{rider}.downwind.pro/run.html?id={r['id']}")
+                         for r in linked]
+                self.mx.notice(room, "\n".join([said, *(f"{l}: {u}" for l, u in links),
+                                                f"\nSQL over {rider}'s runs: {sql}"]),
+                               reply_to=eid,
+                               html=escape(said)
+                               + "".join(f'<br>🔗 <a href="{u}">{escape(l)}</a>' for l, u in links)
+                               + f"<details><summary>SQL over {rider}'s runs</summary>"
+                                 f"<pre><code>{escape(sql)}</code></pre></details>")
+                return
+            self.propose(eid, rider, question, p, rows, parquet)
+        except ask.AskError as e:
+            self.mx.notice(room, f"🤔 {e}", reply_to=eid)
+        except (urllib.error.URLError, OSError) as e:
+            self.mx.notice(room, f"❌ couldn't reach the model: {e}", reply_to=eid)
+        finally:
+            os.unlink(parquet)
+
+    def propose(self, eid, rider, question, p, rows, parquet):
+        """Show the change plan p would make, and keep it for a ✅."""
+        room = self.args.room
+        ids = [r["id"] for r in rows if r.get("id")]
+        if len(ids) != len(rows):
+            raise ask.AskError("the change's SELECT has to pick runs by id")
+        fields = ask.check_set(p.get("set"), lambda f: resolve_foil(rider, f))
+        if not ids:
+            raise ask.AskError("no runs match that")
+        picked = ask.sandboxed(parquet, "select * from runs where id in ("
+                               + ", ".join(ask.sql_str(i) for i in ids) + ") order by date, time")
+        lines = [ask.run_line(r) + ": " + ", ".join(
+            f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
+        if len(picked) > 20:
+            lines.append(f"… and {len(picked) - 20} more")
+        n = len(picked)
+        head = f"✏️ Change {n} of {rider}'s runs"
+        if p.get("count") and p["count"] != n:
+            self.mx.notice(room, f"🤔 You said {p['count']}, but that picks {n}:\n"
+                                 + "\n".join(lines) + "\nTry saying which ones another way.",
+                           reply_to=eid)
+            return
+        foot = "A room admin's ✅ on this runs exactly this SQL:"
+        sql = ask.apply_sql(rider, ids, fields, question)
+        pid = self.mx.notice(room, "\n".join([head + ":", *lines, foot, sql]), reply_to=eid,
+                             html=f"<b>{escape(head)}:</b><ul>"
+                                  + "".join(f"<li>{escape(l)}</li>" for l in lines)
+                                  + f"</ul><details><summary>{escape(foot)}</summary>"
+                                    f"<pre><code>{escape(sql)}</code></pre></details>")
+        if pid:  # the SQL shown is the SQL run
+            self.asks[pid] = {"rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
+
+    def approve(self, ev):
+        """Apply the change a room admin's ✅ reacts to (see propose)."""
+        rel = ev.get("content", {}).get("m.relates_to", {})
+        change = self.asks.get(rel.get("event_id"))
+        if not change or rel.get("key") not in APPROVE:
+            return
+        room, pid = self.args.room, rel["event_id"]
+        if time.time() - change["at"] > ASK_TTL:
+            del self.asks[pid]
+            self.mx.notice(room, "That change is too old now; ask again.", reply_to=pid)
+            return
+        if not self.room_admin(ev["sender"]):
+            return
+        del self.asks[pid]
+        ok, out = run(["duckdb", "--init", "init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
+        if ok:
+            try:
+                dwp_publish.run()
+            except dwp_publish.PublishError as e:
+                ok, out = False, str(e)
+        if ok:
+            self.mx.notice(room, f"✅ changed {change['n']} of {change['rider']}'s runs",
+                           reply_to=pid)
+        else:
+            self.mx.notice(room, f"❌ couldn't apply it:\n{tail(out)}", reply_to=pid,
+                           html=f"❌ couldn't apply it:<pre><code>{escape(tail(out))}</code></pre>")
+
+    def room_admin(self, sender):
+        """Whether sender has admin power (100) in the room, read fresh."""
+        pl = self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(self.args.room)}"
+                                 "/state/m.room.power_levels")
+        return pl.get("users", {}).get(sender, pl.get("users_default", 0)) >= 100
+
+    def riders(self):
+        """Every rider: the users' and any others with runs in the lake."""
+        return set(self.args.users.values()) | {
+            row["rider"] for row in query(
+                "select distinct rider from dwlist where rider is not null")}
+
+    def attempt(self, sender, eid, path, foil, rider):
+        """Import; if that fails, the file waits for another foil."""
+        if import_gpx(self.mx, self.args.room, eid, path, foil, rider):
+            os.unlink(path)
+        else:
+            self.pending[sender] = (eid, path, time.time())
+
+
+def load_state(path):
+    try:
+        with open(path) as fh:
+            return fh.read().strip() or None
+    except FileNotFoundError:
+        return None
+
+
+def save_state(path, since):
+    tmp = path + ".tmp"
+    with open(tmp, "w") as fh:
+        fh.write(since)
+    os.replace(tmp, path)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--homeserver", required=True,
+                    help="server name (e.g. sallings.org) or client API URL")
+    ap.add_argument("--room", required=True, help="room id, e.g. !abc:matrix.org")
+    ap.add_argument("--user", action="append", required=True, metavar="MXID=RIDER",
+                    help="a Matrix user it listens to, and whose runs their GPX files "
+                         "are, e.g. @dustin:sallings.org=dustin (repeatable)")
+    ap.add_argument("--admin", action="append", default=[], metavar="MXID",
+                    help=argparse.SUPPRESS)  # ignored: room power levels decide now
+    ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
+                    help="the bot account's access token")
+    ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
+    ap.add_argument("--ollama", default="http://localhost:11434",
+                    help="Ollama's URL, for !ask")
+    ap.add_argument("--ask-model", default="qwen3-coder-next:latest",
+                    help="the Ollama model !ask uses")
+    ap.add_argument("--mqtt", default="mqtt", metavar="HOST[:PORT]",
+                    help="broker with the weather/+ station feed (\"\" for none)")
+    args = ap.parse_args(argv)
+    args.users = {}
+    for u in args.user:
+        mxid, _, rider = u.partition("=")
+        if not mxid.startswith("@") or not RIDER.fullmatch(rider):
+            ap.error(f"--user wants @someone:server=rider, not {u}")
+        args.users[mxid] = rider
+
+    with open(os.path.expanduser(args.token_file)) as fh:
+        mx = Matrix(client_url(args.homeserver), fh.read().strip())
+    state_dir = args.state_dir = os.path.expanduser(args.state_dir)
+    os.makedirs(state_dir, exist_ok=True)
+    state = os.path.join(state_dir, "since")
+    bot = Bot(mx, args)
+    if args.mqtt:
+        global WEATHER
+        host, _, port = args.mqtt.partition(":")
+        WEATHER = Weather(host, int(port or 1883))
+        try:
+            seed_weather(WEATHER)
+        except Exception as e:  # live wind without history beats none
+            log(f"seeding live wind failed: {e!r}")
+        WEATHER.start()
+        threading.Thread(target=write_live, args=(WEATHER,), name="live", daemon=True).start()
+
+    me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
+    log(f"{me} listening to {', '.join(args.users)} in {args.room}")
+    filt = json.dumps({"room": {"rooms": [args.room], "timeline": {"limit": 50},
+                                "state": {"lazy_load_members": True}},
+                       "presence": {"not_types": ["*"]},
+                       "account_data": {"not_types": ["*"]}})
+    since = load_state(state)
+    first = since is None
+    backoff = 5
+    while True:
+        params = {"filter": filt, "timeout": 0 if first else 30000}
+        if since:
+            params["since"] = since
+        try:
+            resp = mx.call("GET", "/_matrix/client/v3/sync", params=params, timeout=90)
+        except (urllib.error.URLError, OSError, json.JSONDecodeError) as e:
+            log(f"sync failed: {e}; retrying in {backoff}s")
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
+            continue
+        backoff = 5
+        rooms = resp.get("rooms", {})
+        if args.room in rooms.get("invite", {}):
+            log(f"joining {args.room}")
+            mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(args.room)}", {})
+        if not first:  # the first sync only finds where "now" is
+            timeline = rooms.get("join", {}).get(args.room, {}).get("timeline", {})
+            for ev in timeline.get("events", []):
+                if ev.get("sender") != me:
+                    try:
+                        bot.handle(ev)
+                    except Exception as e:  # keep listening whatever one message does
+                        log(f"error handling {ev.get('event_id')}: {e!r}")
+                        mx.notice(args.room, f"❌ {e!r}")
+        try:
+            bot.announce_ratings()
+        except Exception as e:
+            log(f"run alert failed: {e!r}")
+        try:
+            bot.suggest_cam()
+        except Exception as e:
+            log(f"cam suggestion failed: {e!r}")
+        try:
+            bot.refresh_status()
+        except Exception as e:  # the pinned conditions are nice to have
+            log(f"pinned conditions update failed: {e!r}")
+        since, first = resp["next_batch"], False
+        save_state(state, since)
+
+
+if __name__ == "__main__":
+    main()

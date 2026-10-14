@@ -15,7 +15,7 @@ the lake directly:
     commit that updates those ids for that rider and the EDITABLE fields
     only (see apply_sql).
 
-Only the Python standard library, like the rest of db/.
+Only the Python standard library, like db/.
 """
 
 import json
@@ -242,7 +242,7 @@ def run_line(r):
 
 def main():
     """Try a question against the lake without the bot, writing nothing:
-    ./ask.py [--model M] [--ollama URL] walter 'the 2 runs with an unknown foil were the ART 999'"""
+    bot/ask.py [--model M] [--ollama URL] walter 'the 2 runs with an unknown foil were the ART 999'"""
     import argparse
     import tempfile
     from datetime import datetime

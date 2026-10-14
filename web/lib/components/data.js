@@ -261,7 +261,7 @@ export async function fetchWind(meta) {
 }
 
 // live/wind.json, which matrix-bot replaces as the stations' MQTT feed
-// reports (see db/mqtt_weather.py): {stations: site -> readings, oldest
+// reports (see db/bot/mqtt_weather.py): {stations: site -> readings, oldest
 // first, over the last 24 hours; rating: Node-RED's latest run rating
 // ({ts, rec, kihei, ns}, sides scored 0-4) or null}. null if it's missing
 // or unreadable.

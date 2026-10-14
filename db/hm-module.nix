@@ -15,7 +15,7 @@
 #     tokenFile = config.sops.secrets.dwp-matrix-token.path;
 #   };
 #
-# matrix-bot, add-run and strava/sync run from dbDir (a checkout), so
+# bot/matrix-bot (beside dbDir), add-run and strava/sync run from a checkout, so
 # edits there take effect on the bot's next restart; only their tools come
 # from the package.
 { config, lib, pkgs, ... }:
@@ -23,7 +23,7 @@ let
   cfg = config.services.dwp-matrix-bot;
   command = [
     "${cfg.package}/bin/dwp-db-env"
-    "${cfg.dbDir}/matrix-bot"
+    "${cfg.dbDir}/../bot/matrix-bot"
     "--homeserver" cfg.homeserver
     "--room" cfg.room
     "--token-file" cfg.tokenFile

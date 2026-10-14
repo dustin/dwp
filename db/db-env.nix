@@ -4,7 +4,7 @@
 , librsvg, makeFontsConf, dejavu_fonts }:
 writeShellApplication {
   name = "dwp-db-env";
-  # librsvg: rsvg-convert, for matrix-bot's spectrum images (spectrum_svg.py),
+  # librsvg: rsvg-convert, for matrix-bot's spectrum images (bot/spectrum_svg.py in the repo root),
   # with DejaVu Sans so they render the same everywhere.
   runtimeInputs = [ duckdb rclone python3 librsvg ];
   text = ''
