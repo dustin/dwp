@@ -129,6 +129,12 @@ HELP_ADMIN = [
     ("!foil walter orca 685", "change another rider's latest foil"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
+HELP_ROOMS = [
+    ("!rooms", "list my rooms and what each one gets"),
+    ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), on or off"),
+    ("!room 2 leave", "leave a room (invite me back to rejoin)"),
+]
+ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
     ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
@@ -853,6 +859,65 @@ class Bot:
         self.asked = set()  # rooms whose invite has been asked about
         self.rooms_file = os.path.join(args.state_dir, "rooms")
         self.rooms = list(dict.fromkeys(args.room + (load_state(self.rooms_file) or "").split()))
+        self.settings_file = os.path.join(args.state_dir, "room-settings.json")
+        self.settings = json.loads(load_state(self.settings_file) or "{}")
+
+    def on(self, room, key):
+        """Whether room gets key (see ROOM_SETTINGS); everything's on by default."""
+        return self.settings.get(room, {}).get(key, True)
+
+    def room_name(self, room):
+        try:
+            return self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                                       "/state/m.room.name").get("name") or room
+        except (urllib.error.URLError, OSError):
+            return room
+
+    def list_rooms(self, room, eid):
+        lines = []
+        for i, r in enumerate(self.rooms, 1):
+            what = ", ".join(f"{v} {'on' if self.on(r, k) else 'off'}"
+                             for k, v in ROOM_SETTINGS.items())
+            lines.append(f"{i}. {self.room_name(r)}{' (this room)' if r == room else ''}: {what}")
+        self.mx.notice(room, "\n".join(lines + ["Change one with !room N alerts off "
+                                                "(or cam, pinned; on; leave)."]), reply_to=eid)
+
+    def room_command(self, room, eid, words):
+        """!room N (alerts|cam|pinned) (on|off), or !room N leave."""
+        usage = "!room takes a number from !rooms and a setting, like !room 2 alerts off or !room 2 leave"
+        if not words or not words[0].isdigit() or not 1 <= int(words[0]) <= len(self.rooms):
+            self.mx.notice(room, usage, reply_to=eid)
+            return
+        target = self.rooms[int(words[0]) - 1]
+        if words[1:] == ["leave"]:
+            if target in self.args.room:
+                self.mx.notice(room, "That room is in my config; it stays.", reply_to=eid)
+                return
+            self.mx.call("POST", f"/_matrix/client/v3/rooms/{urllib.parse.quote(target)}/leave", {})
+            name = self.room_name(target)
+            self.left(target)
+            self.mx.notice(room, f"✅ left {name}", reply_to=eid)
+            return
+        if len(words) != 3 or words[1] not in ROOM_SETTINGS or words[2] not in ("on", "off"):
+            self.mx.notice(room, usage, reply_to=eid)
+            return
+        key, want = words[1], words[2] == "on"
+        self.settings.setdefault(target, {})[key] = want
+        save_state(self.settings_file, json.dumps(self.settings))
+        if key == "pinned" and not want:  # take its conditions message down
+            path = self.state_path("pinned", target)
+            pinned = load_state(path)
+            if pinned and pinned in self.mx.pinned(target):
+                try:
+                    self.mx.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(target)}"
+                                        "/state/m.room.pinned_events",
+                                 {"pinned": [e for e in self.mx.pinned(target) if e != pinned]})
+                except urllib.error.URLError as e:
+                    log(f"unpinning in {target} failed: {e}")
+            if pinned:
+                os.unlink(path)
+        self.mx.notice(room, f"✅ {ROOM_SETTINGS[key]} {words[2]} in {self.room_name(target)}",
+                       reply_to=eid)
 
     def save_rooms(self):
         """Keep the rooms joined by invite (the --room ones are always in)."""
@@ -871,7 +936,7 @@ class Bot:
                   "someone")
         text = (f"📨 {by} invited me to {name} ({room}). A room admin's ✅ here "
                 "and I'll join; I'll answer commands there and post run alerts and "
-                "conditions there too.")
+                "conditions there too (!rooms to change what it gets).")
         qid = self.mx.notice(self.rooms[0], text)
         if qid:
             self.invites[qid] = room
@@ -926,6 +991,8 @@ class Bot:
         edit = (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
                 and now - self.edited >= EDIT_EVERY)
         for room in self.rooms:
+            if not self.on(room, "pinned"):
+                continue
             try:
                 self.pin_status(room, line, edit)
             except Exception as e:  # one room's trouble shouldn't stop the others
@@ -957,10 +1024,11 @@ class Bot:
             name += "-" + urllib.parse.quote(room, safe="")
         return os.path.join(self.args.state_dir, name)
 
-    def broadcast(self, content):
-        """Send content to every room."""
+    def broadcast(self, content, key):
+        """Send content to every room that has key (see ROOM_SETTINGS) on."""
         for room in self.rooms:
-            self.mx.send(room, content)
+            if self.on(room, key):
+                self.mx.send(room, content)
 
     def announce_ratings(self):
         """Tell the room when a run's getting good (see run_alerts.py), as
@@ -982,7 +1050,7 @@ class Bot:
                      "ns": [wind[s] for s in ("hookipa",) if s in wind]}
             for kind, sides in said:
                 self.broadcast({"msgtype": "m.text", "body": run_alerts.message(
-                    kind, sides, rating, lines)})
+                    kind, sides, rating, lines)}, "alerts")
 
     def suggest_cam(self):
         """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
@@ -1000,8 +1068,8 @@ class Bot:
                 f"{run_alerts.out_of_10(rating['kihei'])}. Worth a look: {CAM_PAGE}")
         self.broadcast({"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
                         "formatted_body": escape(text).replace(
-                            CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
-        for room in self.rooms:
+                            CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')}, "cam")
+        for room in (r for r in self.rooms if self.on(r, "cam")):
             send_cam_frame(self.mx, room, cam, self.frames)
 
     def handle(self, room, ev):
@@ -1027,6 +1095,14 @@ class Bot:
         if text.startswith("!help") and not rider:
             body, html = help_text([("Anyone", HELP_ANYONE)])
             self.mx.notice(room, body, reply_to=eid, html=html)
+            return
+        if room == self.rooms[0] and re.match(r"!rooms?\b", text):
+            if not self.room_admin(room, sender):
+                self.mx.notice(room, "Only room admins can change rooms.", reply_to=eid)
+            elif text.split()[0] == "!rooms":
+                self.list_rooms(room, eid)
+            else:
+                self.room_command(room, eid, text.split()[1:])
             return
         if not rider:
             return
@@ -1120,6 +1196,8 @@ class Bot:
                             ("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
                             ("Room admins: any rider", HELP_ADMIN),
                             ("Room admins: publishing", HELP_ROOM_ADMIN)]
+                if room == self.rooms[0]:
+                    sections.append(("Room admins: rooms", HELP_ROOMS))
             body, html = help_text(sections)
             self.mx.notice(room, body, reply_to=eid, html=html)
         elif (room, sender) in self.pending and FOIL.match(text):
