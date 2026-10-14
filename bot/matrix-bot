@@ -4,8 +4,9 @@
     ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
         --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter
 
-Listens in each --room (repeatable), to the Matrix users --user maps to riders (and to
-anyone for !conditions and !help). Room admins (power level 100, read
+Listens in each --room (repeatable), and in rooms it's invited to once a
+room admin ✅s its question about the invite in the first room, to the
+Matrix users --user maps to riders (and to anyone for !conditions and !help). Room admins (power level 100, read
 from the room each time) can act for any rider and publish:
 
   * a .gpx file, captioned with a foil ("585"), is imported with add-run
@@ -848,6 +849,65 @@ class Bot:
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
         self.status, self.status_at, self.edited = None, 0, 0
         self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
+        self.invites = {}  # question event id -> invited room: see invited
+        self.asked = set()  # rooms whose invite has been asked about
+        self.rooms_file = os.path.join(args.state_dir, "rooms")
+        self.rooms = list(dict.fromkeys(args.room + (load_state(self.rooms_file) or "").split()))
+
+    def save_rooms(self):
+        """Keep the rooms joined by invite (the --room ones are always in)."""
+        save_state(self.rooms_file, "\n".join(r for r in self.rooms if r not in self.args.room))
+
+    def invited(self, room, invite):
+        """Ask the first room whether to join room, once per invite."""
+        if room in self.asked:
+            return
+        self.asked.add(room)
+        state = {(e.get("type"), e.get("state_key")): e
+                 for e in invite.get("invite_state", {}).get("events", [])}
+        name = state.get(("m.room.name", ""), {}).get("content", {}).get("name") or room
+        by = next((e.get("sender") for (t, _), e in state.items()
+                   if t == "m.room.member" and e.get("content", {}).get("membership") == "invite"),
+                  "someone")
+        text = (f"📨 {by} invited me to {name} ({room}). A room admin's ✅ here "
+                "and I'll join; I'll answer commands there and post run alerts and "
+                "conditions there too.")
+        qid = self.mx.notice(self.rooms[0], text)
+        if qid:
+            self.invites[qid] = room
+        log(f"invited to {room} by {by}")
+
+    def accept(self, room, ev):
+        """Join the room a room admin's ✅ on an invite question names."""
+        rel = ev.get("content", {}).get("m.relates_to", {})
+        target = self.invites.get(rel.get("event_id"))
+        if not target or room != self.rooms[0] or rel.get("key") not in APPROVE \
+                or not self.room_admin(room, ev["sender"]):
+            return False
+        del self.invites[rel["event_id"]]
+        try:
+            self.mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(target)}", {})
+        except urllib.error.URLError as e:
+            self.mx.notice(room, f"❌ couldn't join {target}: {e}", reply_to=rel["event_id"])
+            self.asked.discard(target)
+            return True
+        self.joined(target)
+        self.mx.notice(room, f"✅ joined {target}", reply_to=rel["event_id"])
+        return True
+
+    def joined(self, room):
+        if room not in self.rooms:
+            self.rooms.append(room)
+            self.save_rooms()
+        self.asked.discard(room)
+
+    def left(self, room):
+        """Forget a room the bot was kicked from or left (not --room ones)."""
+        self.asked.discard(room)
+        if room in self.rooms and room not in self.args.room:
+            self.rooms.remove(room)
+            self.save_rooms()
+            log(f"left {room}")
 
     def refresh_status(self):
         """Every STATUS_EVERY seconds, edit the latest conditions into the
@@ -865,7 +925,7 @@ class Bot:
         now = time.time()
         edit = (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
                 and now - self.edited >= EDIT_EVERY)
-        for room in self.args.room:
+        for room in self.rooms:
             try:
                 self.pin_status(room, line, edit)
             except Exception as e:  # one room's trouble shouldn't stop the others
@@ -893,13 +953,13 @@ class Bot:
     def state_path(self, name, room):
         """state-dir/name for the first room (where it always was), else
         state-dir/name-<room id>."""
-        if room != self.args.room[0]:
+        if room != self.rooms[0]:
             name += "-" + urllib.parse.quote(room, safe="")
         return os.path.join(self.args.state_dir, name)
 
     def broadcast(self, content):
         """Send content to every room."""
-        for room in self.args.room:
+        for room in self.rooms:
             self.mx.send(room, content)
 
     def announce_ratings(self):
@@ -941,7 +1001,7 @@ class Bot:
         self.broadcast({"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
                         "formatted_body": escape(text).replace(
                             CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
-        for room in self.args.room:
+        for room in self.rooms:
             send_cam_frame(self.mx, room, cam, self.frames)
 
     def handle(self, room, ev):
@@ -951,7 +1011,8 @@ class Bot:
                                  "unencrypted rooms.")
             return
         if ev.get("type") == "m.reaction":
-            self.approve(room, ev)
+            if not self.accept(room, ev):
+                self.approve(room, ev)
             return
         if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
                 c["m.relates_to"].get("rel_type") == "m.replace":
@@ -1216,7 +1277,8 @@ def main(argv=None):
                     help="server name (e.g. sallings.org) or client API URL")
     ap.add_argument("--room", action="append", required=True,
                     help="room id, e.g. !abc:matrix.org (repeatable; run alerts and "
-                         "the pinned conditions go to every room)")
+                         "the pinned conditions go to every room). Invites to other "
+                         "rooms are asked about in the first; a room admin's ✅ joins")
     ap.add_argument("--user", action="append", required=True, metavar="MXID=RIDER",
                     help="a Matrix user it listens to, and whose runs their GPX files "
                          "are, e.g. @dustin:sallings.org=dustin (repeatable)")
@@ -1258,14 +1320,15 @@ def main(argv=None):
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
     log(f"{me} listening to {', '.join(args.users)} in {', '.join(args.room)}")
-    filt = json.dumps({"room": {"rooms": args.room, "timeline": {"limit": 50},
-                                "state": {"lazy_load_members": True}},
-                       "presence": {"not_types": ["*"]},
-                       "account_data": {"not_types": ["*"]}})
+    log(f"also in {', '.join(bot.rooms[len(args.room):]) or 'no rooms by invite'}")
     since = load_state(state)
     first = since is None
     backoff = 5
     while True:
+        filt = json.dumps({"room": {"timeline": {"limit": 50},
+                                    "state": {"lazy_load_members": True}},
+                           "presence": {"not_types": ["*"]},
+                           "account_data": {"not_types": ["*"]}})
         params = {"filter": filt, "timeout": 0 if first else 30000}
         if since:
             params["since"] = since
@@ -1278,16 +1341,25 @@ def main(argv=None):
             continue
         backoff = 5
         rooms = resp.get("rooms", {})
-        for room in rooms.get("invite", {}):
-            if room in args.room:
+        for room, invite in rooms.get("invite", {}).items():
+            if room in bot.rooms:
                 log(f"joining {room}")
                 try:
                     mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(room)}", {})
                 except urllib.error.URLError as e:
                     log(f"joining {room} failed: {e}")
+            else:
+                try:
+                    bot.invited(room, invite)
+                except Exception as e:
+                    log(f"asking about {room}'s invite failed: {e!r}")
+        for room in rooms.get("leave", {}):
+            bot.left(room)
         for room, joined in rooms.get("join", {}).items():
             if first:  # the first sync only finds where "now" is
                 break
+            if room not in bot.rooms:  # joined some other way; not ours to answer
+                continue
             for ev in joined.get("timeline", {}).get("events", []):
                 if ev.get("sender") != me:
                     try:
