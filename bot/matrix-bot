@@ -103,6 +103,7 @@ CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
 CAM_STALE = 30 * 60  # a cam reading older than this isn't shown
 LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea values worth a look
 LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
+WATCH_FROM, WATCH_TO = 7.5, 17.0  # HST hours when Node-RED should be rating (its window is 07:00-17:00)
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
@@ -1121,6 +1122,29 @@ class Bot:
                 self.broadcast({"msgtype": "m.text", "body": run_alerts.message(
                     kind, sides, rating, lines)}, "alerts")
 
+    def watch_ratings(self):
+        """Tell the first room once when Node-RED's run ratings stop arriving
+        in the daytime (none for run_alerts.STALE between WATCH_FROM and
+        WATCH_TO HST), and quietly when they're back."""
+        if not WEATHER:
+            return
+        now, path = time.time(), os.path.join(self.args.state_dir, "ratings-down")
+        rating = WEATHER.rating
+        last = rating["t"] if rating else None
+        down = last is None or now - last > run_alerts.STALE
+        h = hst(now)
+        daytime = WATCH_FROM <= h.hour + h.minute / 60 < WATCH_TO
+        said = load_state(path)
+        if down and daytime and not said:
+            save_state(path, "1")
+            since = f"since {when(last)}" if last else "since the bot started"
+            self.mx.send(self.args.room[0], {"msgtype": "m.text", "body": (
+                f"⚠️ No run rating from Node-RED {since}, so no run alerts. "
+                "Check Features and Ask Clef on the Weathery Things tab.")})
+        elif said and not down:
+            save_state(path, "")
+            self.mx.notice(self.args.room[0], f"✅ Run ratings are back ({when(last)}).")
+
     def suggest_cam(self):
         """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
         cam reads LIVELY (both fresh), suggest a look at the cam."""
@@ -1529,6 +1553,10 @@ def main(argv=None):
             bot.announce_ratings()
         except Exception as e:
             log(f"run alert failed: {e!r}")
+        try:
+            bot.watch_ratings()
+        except Exception as e:
+            log(f"rating watch failed: {e!r}")
         try:
             bot.suggest_cam()
         except Exception as e:
