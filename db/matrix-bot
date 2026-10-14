@@ -1012,7 +1012,6 @@ class Bot:
         self.mx.react(room, eid, "👀")
         fd, parquet = tempfile.mkstemp(suffix=".parquet", dir=self.tmp)
         os.close(fd)
-        sql = None
         try:
             ask.snapshot(LAKE_DIR, rider, parquet)
             context = {
@@ -1024,12 +1023,11 @@ class Bot:
                 "boards": ", ".join(r["v"] for r in ask.sandboxed(
                     parquet, "select distinct board as v from runs where board is not null order by 1")),
             }
-            p = ask.plan(a.ollama, a.ask_model, question, context)
+            p, rows = ask.plan(a.ollama, a.ask_model, question, context, parquet)
             if p["kind"] == "unclear":
                 self.mx.notice(room, f"🤔 {p.get('say') or 'I did not follow that.'}", reply_to=eid)
                 return
             sql = p["sql"]
-            rows = ask.sandboxed(parquet, sql)
             if p["kind"] == "query":
                 said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
                 self.mx.notice(room, f"{said}\n\nSQL over {rider}'s runs: {sql}", reply_to=eid,
@@ -1038,7 +1036,7 @@ class Bot:
                 return
             self.propose(eid, rider, question, p, rows, parquet)
         except ask.AskError as e:
-            self.mx.notice(room, f"🤔 {e}" + (f"\n{sql}" if sql else ""), reply_to=eid)
+            self.mx.notice(room, f"🤔 {e}", reply_to=eid)
         except (urllib.error.URLError, OSError) as e:
             self.mx.notice(room, f"❌ couldn't reach the model: {e}", reply_to=eid)
         finally:

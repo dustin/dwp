@@ -53,7 +53,8 @@ runs your SQL in DuckDB against one table holding only this rider's runs:
 distance_km is km, distance_on_foil METRES (divide by 1000 for km),
 duration_* seconds, speeds km/h (max_speed_1k is the fastest 1 km),
 heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
-dayname(date) for days of the week and monthname(date) for months. A run goes from start_beach to end_beach;
+dayname(date) for days of the week (isodow(date) to order them, Monday
+first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
 "went to X" means either one. foil is null or 'unknown' when not known.
 Today is {today} (Hawaii). Beaches: {beaches}.
 This rider's foils: {foils}. Boards: {boards}.
@@ -114,17 +115,31 @@ def chat(url, model, messages, schema=None, timeout=180):
         return json.load(resp)["message"]["content"]
 
 
-def plan(url, model, question, context):
-    """The model's JSON plan for question (see SYSTEM); context fills SYSTEM."""
-    out = chat(url, model, [{"role": "system", "content": SYSTEM.format(columns=RUN_COLUMNS, **context)},
-                            {"role": "user", "content": question}], PLAN_SCHEMA)
-    try:
-        p = json.loads(out)
-    except json.JSONDecodeError:
-        raise AskError(f"the model didn't answer in JSON: {out[:200]}")
-    if p.get("kind") in ("query", "edit") and not p.get("sql"):
-        raise AskError("the model gave no SQL")
-    return p
+def plan(url, model, question, context, parquet, tries=3):
+    """(plan, rows): the model's JSON plan for question (see SYSTEM, which
+    context fills) and the rows its SQL gives over parquet's runs (None for
+    "unclear"). SQL that fails goes back to the model with its error, up
+    to tries times in all."""
+    msgs = [{"role": "system", "content": SYSTEM.format(columns=RUN_COLUMNS, **context)},
+            {"role": "user", "content": question}]
+    for attempt in range(tries):
+        out = chat(url, model, msgs, PLAN_SCHEMA)
+        try:
+            p = json.loads(out)
+        except json.JSONDecodeError:
+            raise AskError(f"the model didn't answer in JSON: {out[:200]}")
+        if p.get("kind") not in ("query", "edit"):
+            return p, None
+        if not p.get("sql"):
+            raise AskError("the model gave no SQL")
+        try:
+            return p, sandboxed(parquet, p["sql"])
+        except AskError as e:
+            if attempt == tries - 1:
+                raise AskError(f"{e}\n{p['sql']}")
+            msgs += [{"role": "assistant", "content": out},
+                     {"role": "user", "content": f"That SQL failed in DuckDB:\n{e}\n"
+                                                 "Fix it (DuckDB SQL only) and answer in the same JSON."}]
 
 
 def answer(url, model, question, sql, rows):
@@ -239,10 +254,9 @@ def main():
         context = {"today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
                    "beaches": distinct("start_beach") + ", " + distinct("end_beach"),
                    "foils": distinct("foil"), "boards": distinct("board")}
-        p = plan(a.ollama, a.model, question, context)
+        p, rows = plan(a.ollama, a.model, question, context, parquet)
         print(json.dumps(p, indent=2))
-        if p["kind"] in ("query", "edit"):
-            rows = sandboxed(parquet, p["sql"])
+        if rows is not None:
             print(json.dumps(rows[:20], indent=2, default=str))
             if p["kind"] == "query":
                 print(answer(a.ollama, a.model, question, p["sql"], rows))
