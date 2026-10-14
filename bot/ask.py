@@ -293,6 +293,37 @@ def link(path, r, together=False):
     return run_line(r), f"{url}run.html?id={r['id']}"
 
 
+def cell(v):
+    """A result value for a table: floats to one decimal, times to the minute."""
+    if isinstance(v, float):
+        return f"{v:.1f}"
+    if v is None:
+        return ""
+    v = str(v)
+    return v[:5] if re.fullmatch(r"\d\d:\d\d:\d\d(\.\d+)?", v) else v
+
+
+def table(rows, most=10):
+    """(text, html) of the first most rows as a table (ids left out), or
+    None for a single row, which the answer already says."""
+    if len(rows) < 2:
+        return None
+    cols = [c for c in rows[0] if c not in ("id", "other_id")]
+    if not cols:
+        return None
+    body = [[cell(r.get(c)) for c in cols] for r in rows[:most]]
+    more = f"… {len(rows) - most} more rows" if len(rows) > most else ""
+    w = [max(len(c), *(len(b[i]) for b in body)) for i, c in enumerate(cols)]
+    text = "\n".join(["  ".join(c.ljust(w[i]) for i, c in enumerate(cols)),
+                      *("  ".join(v.ljust(w[i]) for i, v in enumerate(b)) for b in body)]
+                     + ([more] if more else []))
+    esc = lambda x: x.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    html = ("<table><tr>" + "".join(f"<th>{esc(c)}</th>" for c in cols) + "</tr>"
+            + "".join("<tr>" + "".join(f"<td>{esc(v)}</td>" for v in b) + "</tr>" for b in body)
+            + "</table>" + (f"<i>{esc(more)}</i>" if more else ""))
+    return text, html
+
+
 def run_line(r):
     """A run in a line: 2025-10-03 07:12 Maliko → Kanaha 12.3 km."""
     km = r.get("distance_km")

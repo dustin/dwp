@@ -1303,10 +1303,12 @@ class Bot:
             said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
             together = bool(re.search(r"\btogether\b", sql, re.I))
             links = [ask.link(snap, r, together) for r in ask.answered_runs(snap, rows, me)]
-            self.mx.notice(room, "\n".join([said, *(f"{l}: {u}" for l, u in links),
+            tab = ask.table(rows)
+            self.mx.notice(room, "\n".join([said, *([tab[0]] if tab else []),
+                                            *(f"{l}: {u}" for l, u in links),
                                             f"\nSQL over {whose}: {sql}"]),
                            reply_to=eid,
-                           html=escape(said)
+                           html=escape(said) + (tab[1] if tab else "")
                            + "".join(f'<br>🔗 <a href="{u}">{escape(l)}</a>' for l, u in links)
                            + f"<details><summary>SQL over {escape(whose)}</summary>"
                              f"<pre><code>{escape(sql)}</code></pre></details>")
