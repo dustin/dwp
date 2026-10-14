@@ -867,11 +867,15 @@ class Bot:
         return self.settings.get(room, {}).get(key, True)
 
     def room_name(self, room):
-        try:
-            return self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
-                                       "/state/m.room.name").get("name") or room
-        except (urllib.error.URLError, OSError):
-            return room
+        """"name (#alias)", or whichever of them it has, or the room id."""
+        def get(kind, key):
+            try:
+                return self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                                           f"/state/{kind}").get(key)
+            except (urllib.error.URLError, OSError):
+                return None
+        name, alias = get("m.room.name", "name"), get("m.room.canonical_alias", "alias")
+        return f"{name} ({alias})" if name and alias else name or alias or room
 
     def list_rooms(self, room, eid):
         lines = []
@@ -930,11 +934,13 @@ class Bot:
         self.asked.add(room)
         state = {(e.get("type"), e.get("state_key")): e
                  for e in invite.get("invite_state", {}).get("events", [])}
-        name = state.get(("m.room.name", ""), {}).get("content", {}).get("name") or room
+        name = state.get(("m.room.name", ""), {}).get("content", {}).get("name")
+        alias = state.get(("m.room.canonical_alias", ""), {}).get("content", {}).get("alias")
+        where = f"{name} ({alias or room})" if name else alias or room
         by = next((e.get("sender") for (t, _), e in state.items()
                    if t == "m.room.member" and e.get("content", {}).get("membership") == "invite"),
                   "someone")
-        text = (f"📨 {by} invited me to {name} ({room}). A room admin's ✅ here "
+        text = (f"📨 {by} invited me to {where}. A room admin's ✅ here "
                 "and I'll join; I'll answer commands there and post run alerts and "
                 "conditions there too (!rooms to change what it gets).")
         qid = self.mx.notice(self.rooms[0], text)
