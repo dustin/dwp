@@ -129,6 +129,8 @@ HELP_ADMIN = [
     ("!foil walter orca 685", "change another rider's latest foil"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
+# Commands only --user riders can run; anyone else gets a 🚫.
+RIDER_COMMANDS = {"!sync", "!last", "!foil", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), on or off"),
@@ -1127,6 +1129,8 @@ class Bot:
                 self.room_command(room, eid, text.split()[1:])
             return
         if not rider:
+            if text.split()[:1] and text.split()[0] in RIDER_COMMANDS:
+                self.mx.react(room, eid, "🚫")  # seen, and not for them
             return
         if is_gpx(c):
             fd, path = tempfile.mkstemp(suffix=".gpx", dir=self.tmp)
