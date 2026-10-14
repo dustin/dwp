@@ -14,8 +14,10 @@ from the room each time) can act for any rider and publish:
     the bot asks for the foil; answer with one, or "-" for the rider's
     last foil from that start beach. A foil they haven't used before
     takes its full name after "new": "new Axis Spitfire 1180".
-  * "!sync" runs strava/sync run for the sender's rider. A room admin's
-    "!sync" syncs every rider, and "!sync walter" just Walter.
+  * "!sync" runs strava/sync run for the sender's rider, and drive-sync
+    if there's an rclone remote named after them (a shared Google Drive
+    folder). A room admin's "!sync" syncs every rider, and "!sync
+    walter" just Walter.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
     Imports reply with the same summary, plus any records the run set
     (bot/achievements.mjs, the web's achievements as JSON).
@@ -84,7 +86,8 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 BOT_DIR = os.path.dirname(os.path.realpath(__file__))
-DB_DIR = os.path.join(os.path.dirname(BOT_DIR), "db")  # add-run, publish, strava/sync
+DB_DIR = os.path.join(os.path.dirname(BOT_DIR), "db")  # add-run, publish, strava/sync, drive-sync
+STRAVA_DIR = os.path.expanduser(os.environ.get("DWP_STRAVA_DIR", "~/.config/dwp/strava"))
 sys.dont_write_bytecode = True
 sys.path.insert(0, BOT_DIR)
 sys.path.insert(0, DB_DIR)  # dwp_publish, shared with publish and add-run
@@ -119,7 +122,7 @@ HELP_RIDER = [
     ("!last", "your latest run"),
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
-    ("!sync", "run your Strava sync"),
+    ("!sync", "import your new runs from Strava or Drive"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
     ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
 ]
@@ -514,16 +517,65 @@ def publish(mx, room, event_id, words):
               html=f"{mark} {escape(what)}<pre><code>{escape(body)}</code></pre>")
 
 
-def strava_sync(mx, room, event_id, riders):
+def strava_riders():
+    if not os.path.isdir(STRAVA_DIR):
+        return set()
+    return {f[:-5] for f in os.listdir(STRAVA_DIR) if f.endswith(".json")}
+
+
+def drive_riders():
+    """Riders with an rclone remote of their own name (see db/drive-sync)."""
+    ok, out = run(["rclone", "listremotes"])
+    remotes = {ln.strip().rstrip(":") for ln in out.splitlines()} if ok else set()
+    return remotes & {r["rider"] for r in query("select distinct rider from dwlist")}
+
+
+def sync(mx, room, event_id, riders):
+    """strava/sync and/or drive-sync for riders (everyone if empty)."""
     mx.react(room, event_id, "👀")
-    ok, out = run(["./strava/sync", "run", *riders])
-    summary = next((ln for ln in reversed(out.splitlines()) if ln.startswith("imported ")),
-                   "")
-    if ok:
-        mx.notice(room, f"✅ {summary or 'synced'}", reply_to=event_id)
-    else:
-        mx.notice(room, f"❌ sync failed:\n{tail(out)}", reply_to=event_id,
-                  html=f"❌ sync failed:<pre><code>{escape(tail(out))}</code></pre>")
+    strava, drive = strava_riders(), drive_riders()
+    want = riders or sorted(strava | drive)
+    # A named rider with neither still goes to strava/sync, for its error.
+    jobs = []
+    s = [r for r in want if r in strava or (riders and r not in drive)]
+    if s:
+        jobs.append(("Strava", ["./strava/sync", "run", *s]))
+    jobs += [(f"Drive ({r})", ["./drive-sync", r]) for r in want if r in drive]
+    if not jobs:
+        mx.notice(room, "Nobody is set up to sync.", reply_to=event_id)
+    before = {r: runs(r) for r in want}
+    for what, cmd in jobs:
+        ok, out = run(cmd)
+        summary = next((ln for ln in reversed(out.splitlines()) if ln.startswith("imported ")),
+                       "")
+        if ok:
+            mx.notice(room, f"✅ {what}: {summary or 'synced'}", reply_to=event_id)
+        else:
+            mx.notice(room, f"❌ {what} sync failed:\n{tail(out)}", reply_to=event_id,
+                      html=f"❌ {escape(what)} sync failed:"
+                           f"<pre><code>{escape(tail(out))}</code></pre>")
+        for r in want:  # describe what came in, like a GPX import
+            new = runs(r) - before[r]
+            before[r] |= new
+            announce(mx, room, event_id, r, new)
+
+
+SYNC_SUMMARIES = 5  # a first sync can bring in dozens; describe only the latest
+
+
+def announce(mx, room, event_id, rider, dwids):
+    """A summary plus records for each newly imported run, oldest first."""
+    rows = sorted(filter(None, (latest(rider, d) for d in dwids)), key=lambda r: r["ts"])
+    if len(rows) > SYNC_SUMMARIES:
+        mx.notice(room, f"{rider}: {len(rows)} runs imported, describing the latest "
+                        f"{SYNC_SUMMARIES}", reply_to=event_id)
+    for r in rows[-SYNC_SUMMARIES:]:
+        text, html = summary(r, rider)
+        recs = achievements(rider, r["id"])
+        if recs:
+            text += "\n" + "\n".join(recs)
+            html += "<br>" + "<br>".join(map(escape, recs))
+        mx.notice(room, text, reply_to=event_id, html=html)
 
 
 # --- conditions -------------------------------------------------------------
@@ -1161,7 +1213,7 @@ class Bot:
                     return
                 riders = [rider]
             if all(RIDER.fullmatch(r) for r in riders):
-                strava_sync(self.mx, room, eid, riders)
+                sync(self.mx, room, eid, riders)
             else:
                 self.mx.notice(room, "!sync takes rider names, like !sync walter",
                                reply_to=eid)
