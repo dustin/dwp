@@ -104,7 +104,7 @@ LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("do
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
-APPROVE = {"✅", "✔️", "✔"}
+APPROVE = {"✅", "✔️", "✔", "👍"}
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
@@ -954,9 +954,15 @@ class Bot:
         """Join the room a room admin's ✅ on an invite question names."""
         rel = ev.get("content", {}).get("m.relates_to", {})
         target = self.invites.get(rel.get("event_id"))
-        if not target or room != self.rooms[0] or rel.get("key") not in APPROVE \
-                or not self.room_admin(room, ev["sender"]):
+        if not target or room != self.rooms[0]:
             return False
+        key = (rel.get("key") or "").replace("\ufe0f", "")
+        log(f"{ev['sender']} reacted {key!r} to the invite to {target}")
+        if key not in APPROVE:
+            return True
+        if not self.room_admin(room, ev["sender"]):
+            self.mx.notice(room, "Only a room admin's ✅ lets me join.", reply_to=rel["event_id"])
+            return True
         try:
             self.mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(target)}", {})
         except urllib.error.URLError as e:  # the question stays for another ✅
