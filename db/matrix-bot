@@ -1064,14 +1064,15 @@ class Bot:
                                  + "\n".join(lines) + "\nTry saying which ones another way.",
                            reply_to=eid)
             return
-        foot = "A room admin's ✅ on this applies it."
-        pid = self.mx.notice(room, "\n".join([head + ":", *lines, foot]), reply_to=eid,
+        foot = "A room admin's ✅ on this runs exactly this SQL:"
+        sql = ask.apply_sql(rider, ids, fields, question)
+        pid = self.mx.notice(room, "\n".join([head + ":", *lines, foot, sql]), reply_to=eid,
                              html=f"<b>{escape(head)}:</b><ul>"
                                   + "".join(f"<li>{escape(l)}</li>" for l in lines)
-                                  + f"</ul>{escape(foot)}")
-        if pid:
-            self.asks[pid] = {"rider": rider, "ids": ids, "set": fields, "question": question,
-                              "eid": eid, "at": time.time()}
+                                  + f"</ul><details><summary>{escape(foot)}</summary>"
+                                    f"<pre><code>{escape(sql)}</code></pre></details>")
+        if pid:  # the SQL shown is the SQL run
+            self.asks[pid] = {"rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
 
     def approve(self, ev):
         """Apply the change a room admin's ✅ reacts to (see propose)."""
@@ -1087,15 +1088,14 @@ class Bot:
         if not self.room_admin(ev["sender"]):
             return
         del self.asks[pid]
-        sql = ask.apply_sql(change["rider"], change["ids"], change["set"], change["question"])
-        ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+        ok, out = run(["duckdb", "--init", "init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
         if ok:
             try:
                 dwp_publish.run()
             except dwp_publish.PublishError as e:
                 ok, out = False, str(e)
         if ok:
-            self.mx.notice(room, f"✅ changed {len(change['ids'])} of {change['rider']}'s runs",
+            self.mx.notice(room, f"✅ changed {change['n']} of {change['rider']}'s runs",
                            reply_to=pid)
         else:
             self.mx.notice(room, f"❌ couldn't apply it:\n{tail(out)}", reply_to=pid,
