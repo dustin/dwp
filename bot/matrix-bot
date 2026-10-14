@@ -4,7 +4,7 @@
     ./matrix-bot --homeserver sallings.org --room '!abc:sallings.org' \
         --user @dustin:sallings.org=dustin --user @walter:matrix.org=walter
 
-Listens in one room, to the Matrix users --user maps to riders (and to
+Listens in each --room (repeatable), to the Matrix users --user maps to riders (and to
 anyone for !conditions and !help). Room admins (power level 100, read
 from the room each time) can act for any rider and publish:
 
@@ -842,7 +842,7 @@ FOIL = re.compile(r"^(-|[\w .'-]{1,60})$")
 class Bot:
     def __init__(self, mx, args):
         self.mx, self.args = mx, args
-        self.pending = {}  # sender -> (event_id, gpx path, received at)
+        self.pending = {}  # (room, sender) -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
@@ -862,23 +862,45 @@ class Bot:
         line = status_line()
         if not line:
             return
-        room, path = self.args.room, os.path.join(self.args.state_dir, "pinned")
-        pinned, now = load_state(path), time.time()
+        now = time.time()
+        edit = (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
+                and now - self.edited >= EDIT_EVERY)
+        for room in self.args.room:
+            try:
+                self.pin_status(room, line, edit)
+            except Exception as e:  # one room's trouble shouldn't stop the others
+                log(f"pinned conditions in {room} failed: {e!r}")
+        if edit:
+            self.status, self.edited = line, now
+
+    def pin_status(self, room, line, edit):
+        """Post, edit (if edit) and pin room's conditions message."""
+        path = self.state_path("pinned", room)
+        pinned = load_state(path)
         if not pinned:
             pinned = self.mx.notice(room, line)
             if not pinned:
                 return
             save_state(path, pinned)
-            self.status, self.edited = line, now
-        elif (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
-              and now - self.edited >= EDIT_EVERY):
+        elif edit:
             self.mx.edit(room, pinned, line)
-            self.status, self.edited = line, now
         # The message is saved before it's pinned, so a bot without the
         # power to pin (403) keeps editing its one message rather than
         # posting a new one every few minutes.
         if pinned not in self.mx.pinned(room):
             self.mx.pin(room, pinned)
+
+    def state_path(self, name, room):
+        """state-dir/name for the first room (where it always was), else
+        state-dir/name-<room id>."""
+        if room != self.args.room[0]:
+            name += "-" + urllib.parse.quote(room, safe="")
+        return os.path.join(self.args.state_dir, name)
+
+    def broadcast(self, content):
+        """Send content to every room."""
+        for room in self.args.room:
+            self.mx.send(room, content)
 
     def announce_ratings(self):
         """Tell the room when a run's getting good (see run_alerts.py), as
@@ -899,7 +921,7 @@ class Bot:
                      + [m for m in (motion_line(),) if m],
                      "ns": [wind[s] for s in ("hookipa",) if s in wind]}
             for kind, sides in said:
-                self.mx.send(self.args.room, {"msgtype": "m.text", "body": run_alerts.message(
+                self.broadcast({"msgtype": "m.text", "body": run_alerts.message(
                     kind, sides, rating, lines)})
 
     def suggest_cam(self):
@@ -916,20 +938,20 @@ class Bot:
         save_state(path, today)
         text = (f"👀 The Wailea cam shows {cam['sea']} and Kīhei is at "
                 f"{run_alerts.out_of_10(rating['kihei'])}. Worth a look: {CAM_PAGE}")
-        self.mx.send(self.args.room, {"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
-                                      "formatted_body": escape(text).replace(
-                                          CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
-        send_cam_frame(self.mx, self.args.room, cam, self.frames)
+        self.broadcast({"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
+                        "formatted_body": escape(text).replace(
+                            CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')})
+        for room in self.args.room:
+            send_cam_frame(self.mx, room, cam, self.frames)
 
-    def handle(self, ev):
-        room = self.args.room
+    def handle(self, room, ev):
         c = ev.get("content", {})
         if ev.get("type") == "m.room.encrypted":
             self.mx.notice(room, "This room is encrypted, and I can only read "
                                  "unencrypted rooms.")
             return
         if ev.get("type") == "m.reaction":
-            self.approve(ev)
+            self.approve(room, ev)
             return
         if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
                 c["m.relates_to"].get("rel_type") == "m.replace":
@@ -956,12 +978,12 @@ class Bot:
                 self.mx.notice(room, f"❌ couldn't download that file: {e}", reply_to=eid)
                 return
             foil = caption(c)
-            if sender in self.pending:  # a newer file replaces one still waiting
-                os.unlink(self.pending.pop(sender)[1])
+            if (room, sender) in self.pending:  # a newer file replaces one still waiting
+                os.unlink(self.pending.pop((room, sender))[1])
             if foil and FOIL.match(foil):
-                self.attempt(sender, eid, path, foil, rider)
+                self.attempt(room, sender, eid, path, foil, rider)
             else:
-                self.pending[sender] = (eid, path, time.time())
+                self.pending[room, sender] = (eid, path, time.time())
                 self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
                                      "one from that beach)", reply_to=eid)
             return
@@ -970,7 +992,7 @@ class Bot:
         text = c.get("body", "").strip()
         if text.startswith("!sync"):
             riders = text.split()[1:]
-            if not self.room_admin(sender):
+            if not self.room_admin(room, sender):
                 if riders and riders != [rider]:
                     self.mx.notice(room, "You can only sync yourself.", reply_to=eid)
                     return
@@ -992,7 +1014,7 @@ class Bot:
             words = text.split()[1:]
             target = rider
             if len(words) > 1 and words[0] in self.riders():
-                if words[0] != rider and not self.room_admin(sender):
+                if words[0] != rider and not self.room_admin(room, sender):
                     self.mx.notice(room, "You can only change your own runs.",
                                    reply_to=eid)
                     return
@@ -1007,20 +1029,20 @@ class Bot:
             words = text.split()[1:]
             target = rider
             if words and words[0] in self.riders() and words[0] != rider:
-                if not self.room_admin(sender):
+                if not self.room_admin(room, sender):
                     self.mx.notice(room, "You can only ask about your own runs.", reply_to=eid)
                     return
                 target, words = words[0], words[1:]
             if words:
                 # The model takes a while; keep the room's other commands going.
-                threading.Thread(target=self.ask_runs, args=(eid, target, " ".join(words)),
+                threading.Thread(target=self.ask_runs, args=(room, eid, target, " ".join(words)),
                                  name="ask", daemon=True).start()
             else:
                 self.mx.notice(room, "!ask takes a question or a change, like "
                                      "!ask when did I last go to Ulua?", reply_to=eid)
         elif text.startswith("!publish"):
             words = text.split()[1:]
-            if not self.room_admin(sender):
+            if not self.room_admin(room, sender):
                 self.mx.notice(room, "Only room admins can publish.", reply_to=eid)
             elif not set(words) <= PUBLISH_WORDS or words[1:] and \
                     set(words[1:]) & {"publish", "verify", "orphans"}:
@@ -1031,7 +1053,7 @@ class Bot:
                 publish(self.mx, room, eid, words)
         elif text.startswith("!help"):
             sections = [("Anyone", HELP_ANYONE), ("Your runs", HELP_RIDER)]
-            admin = self.room_admin(sender)
+            admin = self.room_admin(room, sender)
             if admin:  # their bare !sync syncs everyone
                 sections = [("Anyone", HELP_ANYONE),
                             ("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
@@ -1039,17 +1061,17 @@ class Bot:
                             ("Room admins: publishing", HELP_ROOM_ADMIN)]
             body, html = help_text(sections)
             self.mx.notice(room, body, reply_to=eid, html=html)
-        elif sender in self.pending and FOIL.match(text):
-            gpx_eid, path, at = self.pending.pop(sender)
+        elif (room, sender) in self.pending and FOIL.match(text):
+            gpx_eid, path, at = self.pending.pop((room, sender))
             if time.time() - at < PENDING_TTL:
-                self.attempt(sender, gpx_eid, path, text, rider)
+                self.attempt(room, sender, gpx_eid, path, text, rider)
             else:
                 os.unlink(path)
 
-    def ask_runs(self, eid, rider, question):
+    def ask_runs(self, room, eid, rider, question):
         """Answer question about rider's runs, or propose the change it asks
         for (applied by approve), via the model and ask.py's sandbox."""
-        room, a = self.args.room, self.args
+        a = self.args
         self.mx.react(room, eid, "👀")
         fd, parquet = tempfile.mkstemp(suffix=".parquet", dir=self.tmp)
         os.close(fd)
@@ -1086,7 +1108,7 @@ class Bot:
                                + f"<details><summary>SQL over {rider}'s runs</summary>"
                                  f"<pre><code>{escape(sql)}</code></pre></details>")
                 return
-            self.propose(eid, rider, question, p, rows, parquet)
+            self.propose(room, eid, rider, question, p, rows, parquet)
         except ask.AskError as e:
             self.mx.notice(room, f"🤔 {e}", reply_to=eid)
         except (urllib.error.URLError, OSError) as e:
@@ -1094,9 +1116,8 @@ class Bot:
         finally:
             os.unlink(parquet)
 
-    def propose(self, eid, rider, question, p, rows, parquet):
+    def propose(self, room, eid, rider, question, p, rows, parquet):
         """Show the change plan p would make, and keep it for a ✅."""
-        room = self.args.room
         ids = [r["id"] for r in rows if r.get("id")]
         if len(ids) != len(rows):
             raise ask.AskError("the change's SELECT has to pick runs by id")
@@ -1124,15 +1145,15 @@ class Bot:
                                   + f"</ul><details><summary>{escape(foot)}</summary>"
                                     f"<pre><code>{escape(sql)}</code></pre></details>")
         if pid:  # the SQL shown is the SQL run
-            self.asks[pid] = {"rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
+            self.asks[pid] = {"room": room, "rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
 
-    def approve(self, ev):
+    def approve(self, room, ev):
         """Apply the change a room admin's ✅ reacts to (see propose)."""
         rel = ev.get("content", {}).get("m.relates_to", {})
         change = self.asks.get(rel.get("event_id"))
-        if not change or rel.get("key") not in APPROVE:
+        if not change or change["room"] != room or rel.get("key") not in APPROVE:
             return
-        room, pid = self.args.room, rel["event_id"]
+        pid = rel["event_id"]
         if time.time() - change["at"] > ASK_TTL:
             del self.asks[pid]
             self.mx.notice(room, "That change is too old now; ask again.", reply_to=pid)
@@ -1153,9 +1174,9 @@ class Bot:
             self.mx.notice(room, f"❌ couldn't apply it:\n{tail(out)}", reply_to=pid,
                            html=f"❌ couldn't apply it:<pre><code>{escape(tail(out))}</code></pre>")
 
-    def room_admin(self, sender):
-        """Whether sender has admin power (100) in the room, read fresh."""
-        pl = self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(self.args.room)}"
+    def room_admin(self, room, sender):
+        """Whether sender has admin power (100) in room, read fresh."""
+        pl = self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
                                  "/state/m.room.power_levels")
         return pl.get("users", {}).get(sender, pl.get("users_default", 0)) >= 100
 
@@ -1165,12 +1186,12 @@ class Bot:
             row["rider"] for row in query(
                 "select distinct rider from dwlist where rider is not null")}
 
-    def attempt(self, sender, eid, path, foil, rider):
+    def attempt(self, room, sender, eid, path, foil, rider):
         """Import; if that fails, the file waits for another foil."""
-        if import_gpx(self.mx, self.args.room, eid, path, foil, rider):
+        if import_gpx(self.mx, room, eid, path, foil, rider):
             os.unlink(path)
         else:
-            self.pending[sender] = (eid, path, time.time())
+            self.pending[room, sender] = (eid, path, time.time())
 
 
 def load_state(path):
@@ -1193,7 +1214,9 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--homeserver", required=True,
                     help="server name (e.g. sallings.org) or client API URL")
-    ap.add_argument("--room", required=True, help="room id, e.g. !abc:matrix.org")
+    ap.add_argument("--room", action="append", required=True,
+                    help="room id, e.g. !abc:matrix.org (repeatable; run alerts and "
+                         "the pinned conditions go to every room)")
     ap.add_argument("--user", action="append", required=True, metavar="MXID=RIDER",
                     help="a Matrix user it listens to, and whose runs their GPX files "
                          "are, e.g. @dustin:sallings.org=dustin (repeatable)")
@@ -1234,8 +1257,8 @@ def main(argv=None):
         threading.Thread(target=write_live, args=(WEATHER,), name="live", daemon=True).start()
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
-    log(f"{me} listening to {', '.join(args.users)} in {args.room}")
-    filt = json.dumps({"room": {"rooms": [args.room], "timeline": {"limit": 50},
+    log(f"{me} listening to {', '.join(args.users)} in {', '.join(args.room)}")
+    filt = json.dumps({"room": {"rooms": args.room, "timeline": {"limit": 50},
                                 "state": {"lazy_load_members": True}},
                        "presence": {"not_types": ["*"]},
                        "account_data": {"not_types": ["*"]}})
@@ -1255,18 +1278,23 @@ def main(argv=None):
             continue
         backoff = 5
         rooms = resp.get("rooms", {})
-        if args.room in rooms.get("invite", {}):
-            log(f"joining {args.room}")
-            mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(args.room)}", {})
-        if not first:  # the first sync only finds where "now" is
-            timeline = rooms.get("join", {}).get(args.room, {}).get("timeline", {})
-            for ev in timeline.get("events", []):
+        for room in rooms.get("invite", {}):
+            if room in args.room:
+                log(f"joining {room}")
+                try:
+                    mx.call("POST", f"/_matrix/client/v3/join/{urllib.parse.quote(room)}", {})
+                except urllib.error.URLError as e:
+                    log(f"joining {room} failed: {e}")
+        for room, joined in rooms.get("join", {}).items():
+            if first:  # the first sync only finds where "now" is
+                break
+            for ev in joined.get("timeline", {}).get("events", []):
                 if ev.get("sender") != me:
                     try:
-                        bot.handle(ev)
+                        bot.handle(room, ev)
                     except Exception as e:  # keep listening whatever one message does
                         log(f"error handling {ev.get('event_id')}: {e!r}")
-                        mx.notice(args.room, f"❌ {e!r}")
+                        mx.notice(room, f"❌ {e!r}")
         try:
             bot.announce_ratings()
         except Exception as e:

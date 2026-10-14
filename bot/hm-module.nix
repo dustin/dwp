@@ -9,7 +9,7 @@
 #     enable = true;
 #     checkout = "/Users/dustin/prog/dwp";
 #     homeserver = "sallings.org";
-#     room = "!abc:sallings.org";
+#     rooms = [ "!abc:sallings.org" ];
 #     users."@dustin:sallings.org" = "dustin";
 #     users."@walter:matrix.org" = "walter";
 #     tokenFile = config.sops.secrets.dwp-matrix-token.path;
@@ -25,10 +25,10 @@ let
     "${cfg.package}/bin/dwp-bot-env"
     "${cfg.checkout}/bot/matrix-bot"
     "--homeserver" cfg.homeserver
-    "--room" cfg.room
     "--token-file" cfg.tokenFile
     "--mqtt" cfg.mqtt
   ]
+  ++ lib.concatMap (room: [ "--room" room ]) (lib.optional (cfg.room != null) cfg.room ++ cfg.rooms)
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
 in
 {
@@ -45,7 +45,17 @@ in
       description = "A dwp checkout; the bot runs its bot/matrix-bot.";
     };
     homeserver = mkOption { type = types.str; example = "sallings.org"; };
-    room = mkOption { type = types.str; example = "!abc:sallings.org"; };
+    rooms = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      example = [ "!abc:sallings.org" ];
+      description = "Rooms the bot listens in; run alerts and the pinned conditions go to all of them.";
+    };
+    room = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "One more room, before rooms (the bot's first room keeps its old state files).";
+    };
     users = mkOption {
       type = types.attrsOf types.str;
       example = { "@dustin:sallings.org" = "dustin"; };
