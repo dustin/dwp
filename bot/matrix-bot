@@ -562,6 +562,7 @@ def announce(mx, room, event_id, rider, dwids):
                         f"{SYNC_SUMMARIES}", reply_to=event_id)
     for r in rows[-SYNC_SUMMARIES:]:
         text, html = summary(r, rider)
+        text, html = f"{rider.title()}: {text}", f"{escape(rider.title())}: {html}"
         recs = achievements(rider, r["id"])
         if recs:
             text += "\n" + "\n".join(recs)
