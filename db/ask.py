@@ -136,7 +136,7 @@ def plan(url, model, question, context, parquet, tries=3):
             return p, sandboxed(parquet, p["sql"])
         except AskError as e:
             if attempt == tries - 1:
-                raise AskError(f"{e}\n{p['sql']}")
+                raise AskError(f"{e}\n(after {tries} tries) {p['sql']}")
             msgs += [{"role": "assistant", "content": out},
                      {"role": "user", "content": f"That SQL failed in DuckDB:\n{e}\n"
                                                  "Fix it (DuckDB SQL only) and answer in the same JSON."}]
@@ -169,10 +169,18 @@ def snapshot(lake_dir, rider, path):
         raise AskError(f"couldn't read the runs: {r.stdout.strip()[-300:]}")
 
 
+# MySQL's FIELD(x, a, b, ...): x's 1-based place among up to 12 values (0
+# if absent), which models reach for to order weekdays and months.
+FIELD_MACRO = ("create macro field(x, " + ", ".join(f"v{i} := null" for i in range(12))
+               + ") as coalesce(list_position([" + ", ".join(f"v{i}" for i in range(12))
+               + "], x), 0);")
+
+
 def sandboxed(parquet, sql, duckdb="duckdb"):
     """Rows of sql over table runs (from parquet), in a fresh in-memory
     duckdb that can read no other file once runs is loaded."""
     script = (f"create table runs as from read_parquet({sql_str(parquet)});\n"
+              f"{FIELD_MACRO}\n"
               "set enable_external_access = false;\n"
               "set lock_configuration = true;\n"
               f"{one_select(sql)};\n")
