@@ -52,7 +52,8 @@ runs your SQL in DuckDB against one table holding only this rider's runs:
 
 distance_km is km, distance_on_foil METRES (divide by 1000 for km),
 duration_* seconds, speeds km/h (max_speed_1k is the fastest 1 km),
-heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. A run goes from start_beach to end_beach;
+heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
+dayname(date) for days of the week and monthname(date) for months. A run goes from start_beach to end_beach;
 "went to X" means either one. foil is null or 'unknown' when not known.
 Today is {today} (Hawaii). Beaches: {beaches}.
 This rider's foils: {foils}. Boards: {boards}.
