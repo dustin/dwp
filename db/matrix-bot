@@ -32,6 +32,13 @@ from the room each time) can act for any rider and publish:
     live/wind.json in the bucket (each station's last 24 hours, for the
     hub's live wind cards) replaced at most every 30 seconds as readings
     arrive.
+  * "!ask" takes plain English, read by a local model (--ollama,
+    --ask-model; see ask.py). A question ("!ask when did I last go to
+    Ulua?") is answered from the sender's own runs. A change ("!ask the 2
+    runs with an unknown foil were the ART 999") is shown as the runs it
+    would change, before and after, and a room admin's ✅ on that message
+    applies it. A room admin can ask about another rider: "!ask walter
+    ...".
   * "!help" says the above.
 
 When the conditions/rating feed (Node-RED's 0-4 score per side) says a
@@ -81,6 +88,7 @@ import dwp_publish  # noqa: E402
 import spectrum_svg  # noqa: E402
 from mqtt_weather import Weather, tides  # noqa: E402
 import run_alerts  # noqa: E402
+import ask  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
@@ -91,6 +99,8 @@ LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea 
 LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
+ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
+APPROVE = {"✅", "✔️", "✔"}
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
@@ -106,11 +116,14 @@ HELP_RIDER = [
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
     ("!sync", "run your Strava sync"),
+    ("!ask how many km on Sundays?", "ask about your runs in plain English"),
+    ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
 ]
 HELP_ADMIN = [
     ("!sync", "sync every rider"),
     ("!sync walter", "sync one rider"),
     ("!foil walter orca 685", "change another rider's latest foil"),
+    ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
@@ -793,6 +806,7 @@ class Bot:
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
         self.status, self.status_at, self.edited = None, 0, 0
+        self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
 
     def refresh_status(self):
         """Every STATUS_EVERY seconds, edit the latest conditions into the
@@ -873,6 +887,9 @@ class Bot:
             self.mx.notice(room, "This room is encrypted, and I can only read "
                                  "unencrypted rooms.")
             return
+        if ev.get("type") == "m.reaction":
+            self.approve(ev)
+            return
         if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
                 c["m.relates_to"].get("rel_type") == "m.replace":
             return
@@ -945,6 +962,21 @@ class Bot:
             else:
                 self.mx.notice(room, "!foil takes a foil, like !foil 585 "
                                      "(or !foil walter orca 685)", reply_to=eid)
+        elif text.startswith("!ask"):
+            words = text.split()[1:]
+            target = rider
+            if words and words[0] in self.riders() and words[0] != rider:
+                if not self.room_admin(sender):
+                    self.mx.notice(room, "You can only ask about your own runs.", reply_to=eid)
+                    return
+                target, words = words[0], words[1:]
+            if words:
+                # The model takes a while; keep the room's other commands going.
+                threading.Thread(target=self.ask_runs, args=(eid, target, " ".join(words)),
+                                 name="ask", daemon=True).start()
+            else:
+                self.mx.notice(room, "!ask takes a question or a change, like "
+                                     "!ask when did I last go to Ulua?", reply_to=eid)
         elif text.startswith("!publish"):
             words = text.split()[1:]
             if not self.room_admin(sender):
@@ -972,6 +1004,104 @@ class Bot:
                 self.attempt(sender, gpx_eid, path, text, rider)
             else:
                 os.unlink(path)
+
+    def ask_runs(self, eid, rider, question):
+        """Answer question about rider's runs, or propose the change it asks
+        for (applied by approve), via the model and ask.py's sandbox."""
+        room, a = self.args.room, self.args
+        self.mx.react(room, eid, "👀")
+        fd, parquet = tempfile.mkstemp(suffix=".parquet", dir=self.tmp)
+        os.close(fd)
+        sql = None
+        try:
+            ask.snapshot(LAKE_DIR, rider, parquet)
+            context = {
+                "today": f"{datetime.now(HST):%A %Y-%m-%d}",
+                "beaches": ", ".join(r["name"] for r in query(
+                    "select name from beaches order by name")),
+                "foils": ", ".join(r["v"] for r in ask.sandboxed(
+                    parquet, "select distinct foil as v from runs where foil is not null order by 1")),
+                "boards": ", ".join(r["v"] for r in ask.sandboxed(
+                    parquet, "select distinct board as v from runs where board is not null order by 1")),
+            }
+            p = ask.plan(a.ollama, a.ask_model, question, context)
+            if p["kind"] == "unclear":
+                self.mx.notice(room, f"🤔 {p.get('say') or 'I did not follow that.'}", reply_to=eid)
+                return
+            sql = p["sql"]
+            rows = ask.sandboxed(parquet, sql)
+            if p["kind"] == "query":
+                said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
+                self.mx.notice(room, f"{said}\n\n{sql}", reply_to=eid,
+                               html=f"{escape(said)}<details><summary>SQL</summary>"
+                                    f"<pre><code>{escape(sql)}</code></pre></details>")
+                return
+            self.propose(eid, rider, question, p, rows, parquet)
+        except ask.AskError as e:
+            self.mx.notice(room, f"🤔 {e}" + (f"\n{sql}" if sql else ""), reply_to=eid)
+        except (urllib.error.URLError, OSError) as e:
+            self.mx.notice(room, f"❌ couldn't reach the model: {e}", reply_to=eid)
+        finally:
+            os.unlink(parquet)
+
+    def propose(self, eid, rider, question, p, rows, parquet):
+        """Show the change plan p would make, and keep it for a ✅."""
+        room = self.args.room
+        ids = [r["id"] for r in rows if r.get("id")]
+        if len(ids) != len(rows):
+            raise ask.AskError("the change's SELECT has to pick runs by id")
+        fields = ask.check_set(p.get("set"), lambda f: resolve_foil(rider, f))
+        if not ids:
+            raise ask.AskError("no runs match that")
+        picked = ask.sandboxed(parquet, "select * from runs where id in ("
+                               + ", ".join(ask.sql_str(i) for i in ids) + ") order by date, time")
+        lines = [ask.run_line(r) + ": " + ", ".join(
+            f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
+        if len(picked) > 20:
+            lines.append(f"… and {len(picked) - 20} more")
+        n = len(picked)
+        head = f"✏️ Change {n} of {rider}'s runs"
+        if p.get("count") and p["count"] != n:
+            self.mx.notice(room, f"🤔 You said {p['count']}, but that picks {n}:\n"
+                                 + "\n".join(lines) + "\nTry saying which ones another way.",
+                           reply_to=eid)
+            return
+        foot = "A room admin's ✅ on this applies it."
+        pid = self.mx.notice(room, "\n".join([head + ":", *lines, foot]), reply_to=eid,
+                             html=f"<b>{escape(head)}:</b><ul>"
+                                  + "".join(f"<li>{escape(l)}</li>" for l in lines)
+                                  + f"</ul>{escape(foot)}")
+        if pid:
+            self.asks[pid] = {"rider": rider, "ids": ids, "set": fields, "question": question,
+                              "eid": eid, "at": time.time()}
+
+    def approve(self, ev):
+        """Apply the change a room admin's ✅ reacts to (see propose)."""
+        rel = ev.get("content", {}).get("m.relates_to", {})
+        change = self.asks.get(rel.get("event_id"))
+        if not change or rel.get("key") not in APPROVE:
+            return
+        room, pid = self.args.room, rel["event_id"]
+        if time.time() - change["at"] > ASK_TTL:
+            del self.asks[pid]
+            self.mx.notice(room, "That change is too old now; ask again.", reply_to=pid)
+            return
+        if not self.room_admin(ev["sender"]):
+            return
+        del self.asks[pid]
+        sql = ask.apply_sql(change["rider"], change["ids"], change["set"], change["question"])
+        ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+        if ok:
+            try:
+                dwp_publish.run()
+            except dwp_publish.PublishError as e:
+                ok, out = False, str(e)
+        if ok:
+            self.mx.notice(room, f"✅ changed {len(change['ids'])} of {change['rider']}'s runs",
+                           reply_to=pid)
+        else:
+            self.mx.notice(room, f"❌ couldn't apply it:\n{tail(out)}", reply_to=pid,
+                           html=f"❌ couldn't apply it:<pre><code>{escape(tail(out))}</code></pre>")
 
     def room_admin(self, sender):
         """Whether sender has admin power (100) in the room, read fresh."""
@@ -1022,6 +1152,10 @@ def main(argv=None):
     ap.add_argument("--token-file", default="~/.config/dwp/matrix-token",
                     help="the bot account's access token")
     ap.add_argument("--state-dir", default="~/.local/state/dwp-matrix-bot")
+    ap.add_argument("--ollama", default="http://localhost:11434",
+                    help="Ollama's URL, for !ask")
+    ap.add_argument("--ask-model", default="qwen3-coder-next:latest",
+                    help="the Ollama model !ask uses")
     ap.add_argument("--mqtt", default="mqtt", metavar="HOST[:PORT]",
                     help="broker with the weather/+ station feed (\"\" for none)")
     args = ap.parse_args(argv)
