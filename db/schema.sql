@@ -67,4 +67,36 @@ join beaches bs on bs.id = start_pos
 join beaches be on be.id = end_pos
 order by date, time;
 
+
+-- Cam readings, one row per watcher reading (db/cam-ingest, from
+-- db/cams/wailea_motion.py's motion.jsonl). day is the Hawaii day. A
+-- reading the watcher skipped has only skipped set. Fields the watcher
+-- adds later need a column here before cam-ingest keeps them.
+CREATE TABLE cam_motion(
+  site VARCHAR,
+  ts TIMESTAMP WITH TIME ZONE,
+  day DATE,
+  dx DOUBLE, -- px/s, < 0 is right to left in the picture
+  dy DOUBLE, -- px/s, > 0 is toward the beach
+  "left" DOUBLE, -- share of moving water going left
+  "right" DOUBLE,
+  pairs INTEGER, -- frame pairs measured
+  seconds DOUBLE, -- clip length
+  whitecaps INTEGER, -- patches (db/cams/whitecaps.py)
+  skipped VARCHAR -- why there was no measurement, e.g. 'kihei light'
+);
+
+-- Cam images: the image manifest. key is the object in the CDN bucket,
+-- cams/site=<site>/day=<day>/<stamp>-<kind>.jpg; file is the local copy
+-- publish uploads it from (not published).
+CREATE TABLE cam_images(
+  site VARCHAR,
+  ts TIMESTAMP WITH TIME ZONE,
+  day DATE,
+  kind VARCHAR, -- flow (arrow overlay), frame, ...
+  key VARCHAR,
+  bytes BIGINT,
+  file VARCHAR
+);
+
 commit;

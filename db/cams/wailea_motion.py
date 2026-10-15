@@ -8,7 +8,8 @@ optical flow on it, and publishes (retained) to weather/conditions/wailea_motion
 
 dx < 0 is right to left in the picture (energy running down the coast toward
 Makena); dy > 0 is toward the beach. With --log DIR it also appends each reading
-to DIR/motion.jsonl and keeps an arrow overlay per reading, for calibration.
+(skips included) to DIR/motion.jsonl and keeps an arrow overlay per reading as
+DIR/<stamp>-flow.jpg; db/cam-ingest puts both in the lake, db/publish the images in S3.
 It skips the video (publishing {"stamp", "skipped": "kihei light"}) while the
 Kihei station (weather/kihei) reads under 9 kn. Run it every 10 min in daylight (launchd/cron); the stream is up 05:00-19:30 HST.
 
@@ -158,6 +159,13 @@ def kihei_light(host):
         return False
 
 
+def log(d, line):
+    d = os.path.expanduser(d)
+    os.makedirs(d, exist_ok=True)
+    with open(os.path.join(d, "motion.jsonl"), "a") as f:
+        f.write(line + "\n")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mqtt", help="broker host; without it, just print")
@@ -173,14 +181,17 @@ def main():
         # reading standing. (The cam's vision read isn't used: it calls
         # small, clearly moving water "glassy".)
         stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        publish(a.mqtt, TOPIC, json.dumps({"stamp": stamp, "skipped": "kihei light"}))
+        line = json.dumps({"stamp": stamp, "skipped": "kihei light"})
+        publish(a.mqtt, TOPIC, line)
+        if a.log:
+            log(a.log, line)
         return
     path, seconds = clip(a.segments)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     overlay = None
     if a.log:
         os.makedirs(os.path.expanduser(a.log), exist_ok=True)
-        overlay = os.path.join(os.path.expanduser(a.log), stamp.replace(":", "") + ".jpg")
+        overlay = os.path.join(os.path.expanduser(a.log), stamp.replace(":", "") + "-flow.jpg")
     try:
         m = water_motion.measure(path, overlay) or {"dx": 0.0, "dy": 0.0, "left": 0.0, "right": 0.0, "pairs": 0}
         m["whitecaps"] = caps(path)
@@ -190,8 +201,7 @@ def main():
     line = json.dumps(m)
     print(line)
     if a.log:
-        with open(os.path.join(os.path.expanduser(a.log), "motion.jsonl"), "a") as f:
-            f.write(line + "\n")
+        log(a.log, line)
     if a.mqtt:
         publish(a.mqtt, TOPIC, line)
 

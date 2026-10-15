@@ -12,6 +12,12 @@ Everything under s3:db.downwind.pro/ that comes from the lake goes through
 here: each run's track and each rider's lists under runs/, and one file per
 site and day under wind/, swell/, swell_partition/ and swell_spectrum/.
 
+Cam readings and images (cam_motion and cam_images, which cam-ingest
+fills) publish per site and day like the conditions, under cam_motion/ and
+cam_images/. Before them, every image cam_images lists that the manifest
+doesn't have goes to S3 at its key from the local file it names, once,
+cached a year (images never change). publish only reads the lake.
+
 A local manifest (--manifest, default ~/stuff/dwp-manifest.sqlite) records,
 for every object it has put in S3, the sha256 of its uncompressed CSV, its
 gzipped size, the headers it was uploaded with, and a fingerprint of the lake
@@ -71,6 +77,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -91,6 +98,7 @@ LISTS_DIR = "/Users/dustin/stuff/dwlists/"
 GZ_CSV = ["Content-Encoding: gzip", "Content-Type: text/csv; charset=utf-8"]
 SHORT = GZ_CSV + ["Cache-Control: public, max-age=300"]
 LONG = GZ_CSV + ["Cache-Control: public, max-age=31536000"]
+IMAGE = ["Content-Type: image/jpeg", "Cache-Control: public, max-age=31536000, immutable"]
 
 
 class Table:
@@ -138,6 +146,9 @@ TABLES = [
     conditions("swell_spectrum",
                day="x.ts at time zone 'Pacific/Honolulu'",
                cols="x.* exclude (site)", order="ts, freq"),
+    conditions("cam_motion"),
+    # file is where the image is on this machine; not published.
+    conditions("cam_images", cols="x.* exclude (site, day, file)", order="ts, kind"),
 ]
 
 
@@ -203,8 +214,15 @@ class Manifest:
             self.db.executemany("delete from objects where key = ?", [(k,) for k in keys])
 
 
+def has_table(name):
+    return bool(duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
+                       f"and table_name = {sql_str(name)};", json_out=True))
+
+
 def fingerprints(t):
     """key -> (fingerprint, recent) for every object t makes."""
+    if t.name.startswith("cam_") and not has_table(t.name):
+        return {}  # cam-ingest hasn't run on this lake yet
     rows = duckdb(f"""
         select {t.key} as k,
                count(*)::varchar || ':' || sum(hash(x))::varchar as fp,
@@ -322,7 +340,7 @@ def list_bucket():
     """key -> size for every object under the prefixes publish writes: one
     paginated LIST per prefix, no per-object requests."""
     out = {}
-    for prefix in ["runs"] + [t.name for t in TABLES if t.name != "tracks"]:
+    for prefix in ["runs", "cams"] + [t.name for t in TABLES if t.name != "tracks"]:
         r = subprocess.run(["rclone", "lsjson", "-R", "--files-only", "--fast-list",
                             "--no-modtime", "--no-mimetype", DEST + prefix + "/"],
                            capture_output=True, text=True)
@@ -348,6 +366,8 @@ def publish(manifest, dry_run=False):
         log("no manifest yet: adopting what's already in the bucket")
     in_s3 = list_bucket() if seed else {}
     today = datetime.now(ZoneInfo("Pacific/Honolulu")).date()
+    images = {r["key"]: r["file"] for r in duckdb(
+        "select key, file from cam_images;", json_out=True)} if has_table("cam_images") else {}
 
     # key -> (fingerprint, headers, adopt): what to export this time.
     todo = {}
@@ -378,6 +398,30 @@ def publish(manifest, dry_run=False):
             export_lists(rider, d)
             lists += [(f"runs/rider={rider}/{n}.csv", os.path.join(d, n + ".csv"), None, SHORT, False)
                       for n in LISTS]
+
+        # Images first: the cam_images files point at them. They never
+        # change, so one in the manifest is done.
+        new, record = [], []
+        for k, src in sorted(images.items()):
+            if k in have:
+                continue
+            if not os.path.exists(src):
+                log(f"skipping {k}: no {src} here")
+            elif k in in_s3:
+                record.append((k, sha256(src), in_s3[k], json.dumps(IMAGE), None))
+            else:
+                dst = os.path.join(stage_dir, k)
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                try:
+                    os.link(src, dst)  # rclone skips symlinks
+                except OSError:
+                    shutil.copyfile(src, dst)
+                new.append(k)
+                record.append((k, sha256(dst), os.path.getsize(dst), json.dumps(IMAGE), None))
+        log(f"{len(images)} cam images, {len(new)} to upload")
+        upload(stage_dir, new, IMAGE, dry_run)
+        if not dry_run:
+            manifest.record(record)
 
         invalidate = []
         # Tracks and conditions first, then the lists that point at tracks.

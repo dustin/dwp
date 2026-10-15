@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""Add the cam watchers' new readings and images to the lake.
+
+    ./cam-ingest
+
+Each folder in CAMS is a cam watcher's --log dir (db/cams/wailea_motion.py):
+a motion.jsonl, one reading per line, and images named <stamp>-<kind>.jpg
+(a bare <stamp>.jpg is an older arrow overlay, kind flow). Readings newer
+than the lake's newest for that site go into cam_motion; a field with no
+column there is left out (with a warning) until schema.sql gets one. Images
+the lake doesn't know go into cam_images (site, ts, day, kind, key, bytes,
+file): key is where publish puts it in S3,
+cams/site=<site>/day=<Hawaii day>/<stamp>-<kind>.jpg, and file is the local
+copy publish uploads it from. One lake commit; safe to rerun. It never
+creates or changes tables: both must already exist (schema.sql).
+
+Run it before ./publish (the conditions job), from db's nix dev shell.
+"""
+
+import os
+import re
+import sys
+import tempfile
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+
+# site -> the folder its cam watcher logs to (--log).
+CAMS = {"wailea": os.environ.get("DWP_WAILEA_CAM") or os.path.expanduser("~/.cache/wailea-motion")}
+CAM_IMAGE = re.compile(r"(\d{4}-\d\d-\d\dT\d{6}Z)(?:-([a-z]+))?\.jpg")
+
+
+def cam_images():
+    """key -> (site, stamp, kind, local path) for every image the cam folders hold."""
+    out = {}
+    for site, d in CAMS.items():
+        for name in sorted(os.listdir(d)) if os.path.isdir(d) else []:
+            m = CAM_IMAGE.fullmatch(name)
+            if not m:
+                continue
+            stamp, kind = m.group(1), m.group(2) or "flow"
+            ts = datetime.strptime(stamp, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=ZoneInfo("UTC"))
+            day = ts.astimezone(ZoneInfo("Pacific/Honolulu")).date().isoformat()
+            out[f"cams/site={site}/day={day}/{stamp}-{kind}.jpg"] = (site, stamp, kind, os.path.join(d, name))
+    return out
+
+
+def ingest(images, tmp):
+    """Add the cam folders' new readings to cam_motion and their images to
+    cam_images, in one lake commit. Both tables must exist (schema.sql)."""
+    have = [r["column_name"] for r in duckdb(
+        "select column_name from information_schema.columns "
+        "where table_catalog = 'lake' and table_name = 'cam_motion';", json_out=True)]
+    if not have:
+        raise PublishError("no cam_motion table in the lake (see schema.sql)")
+    stmts = ["begin;", "call lake.set_commit_message('dustin', 'cam readings and images');"]
+    for site, d in CAMS.items():
+        jsonl = os.path.join(d, "motion.jsonl")
+        if not os.path.exists(jsonl):
+            continue
+        src = f"read_json({sql_str(jsonl)}, format = 'newline_delimited', sample_size = -1)"
+        fields = [r["column_name"] for r in duckdb(f"describe select * from {src};", json_out=True)]
+        extra = sorted(set(fields) - set(have) - {"stamp"})
+        if extra:
+            print(f"cam-ingest: {site}: no column for {', '.join(extra)}; not kept", file=sys.stderr)
+        cols = ", ".join(f'"{c}"' for c in fields if c in have and c not in ("site", "ts", "day"))
+        stmts.append(f"""insert into cam_motion by name
+            select * from (
+                select {sql_str(site)} as site, stamp::timestamptz as ts,
+                       (stamp::timestamptz at time zone 'Pacific/Honolulu')::date as day{", " + cols if cols else ""}
+                from {src}
+            ) where ts > coalesce(
+                (select max(ts) from cam_motion where site = {sql_str(site)}), '-infinity'::timestamptz)
+            qualify row_number() over (partition by ts) = 1;""")
+    if images:
+        lst = os.path.join(tmp, "cam_images.csv")
+        with open(lst, "w") as f:
+            f.write("site,stamp,kind,key,bytes,file\n")
+            for k, (site, stamp, kind, path) in sorted(images.items()):
+                f.write(f"{site},{stamp},{kind},{k},{os.path.getsize(path)},{path}\n")
+        stmts.append(f"""insert into cam_images
+            select site, ts, (ts at time zone 'Pacific/Honolulu')::date, kind, key, bytes, file from (
+                select *, strptime(stamp, '%Y-%m-%dT%H%M%SZ') at time zone 'UTC' as ts
+                from read_csv({sql_str(lst)}, header = true,
+                              columns = {{'site': 'VARCHAR', 'stamp': 'VARCHAR', 'kind': 'VARCHAR',
+                                          'key': 'VARCHAR', 'bytes': 'BIGINT', 'file': 'VARCHAR'}})
+            ) where key not in (select key from cam_images);""")
+    stmts.append("commit;")
+    duckdb("\n".join(stmts))
+
+
+def main():
+    try:
+        with tempfile.TemporaryDirectory(prefix="dwp-cams-") as tmp:
+            ingest(cam_images(), tmp)
+    except PublishError as e:
+        print(f"cam-ingest: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
