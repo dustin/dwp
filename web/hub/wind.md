@@ -15,7 +15,7 @@ toc: false
 
 # What makes good wind
 
-The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. They're recomputed from the run logs every time this page loads. The run rating reads the same table, so the labels and the rating agree.
+The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. Only the last 18 months of runs count, since older ones show skills still developing. They're recomputed from the run logs every time this page loads. The run rating reads the same table, so the labels and the rating agree.
 
 ```js
 import {fetchMeta, riderFile} from "./components/data.js";
@@ -29,6 +29,8 @@ const STATIONS = [
   {site: "hookipa", name: "Hoʻokipa", region: "Maui North Shore", dirStep: 10, keep: () => true, what: "north shore runs, Hoʻokipa station"},
 ];
 const SPEED_STEP = 2;
+// Only recent runs: older ones show skills still being learned more than the wind.
+const SINCE = d3.timeMonth.offset(new Date(), -18);
 const MIN_RUNS = 3;
 ```
 
@@ -41,7 +43,7 @@ const runs = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
 // fast rider doesn't make their usual direction look good: z-scores of
 // on-foil share and foiling speed, minus paddle-ups per km.
 function scored(region, keep) {
-  const rs = runs.filter(d => d.region === region && keep(d) && d.avg_wdir != null && d.avg_wavg != null
+  const rs = runs.filter(d => d.ts >= SINCE && d.region === region && keep(d) && d.avg_wdir != null && d.avg_wavg != null
     && d.distance_km > 3 && d.duration_on_foil > 0);
   const feats = d => ({
     share: d.distance_on_foil / (d.distance_km * 1000),
