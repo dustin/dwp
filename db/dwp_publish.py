@@ -16,7 +16,9 @@ Cam readings and images (cam_motion and cam_images, which cam-ingest
 fills) publish per site and day like the conditions, under cam_motion/ and
 cam_images/. Before them, every image cam_images lists that the manifest
 doesn't have goes to S3 at its key from the local file it names, once,
-cached a year (images never change). publish only reads the lake.
+cached a year (images never change). Wind forecasts (wind_forecast, from
+forecast-ingest) publish the same way under wind_forecast/. publish only
+reads the lake.
 
 A local manifest (--manifest, default ~/stuff/dwp-manifest.sqlite) records,
 for every object it has put in S3, the sha256 of its uncompressed CSV, its
@@ -147,6 +149,7 @@ TABLES = [
                day="x.ts at time zone 'Pacific/Honolulu'",
                cols="x.* exclude (site)", order="ts, freq"),
     conditions("cam_motion"),
+    conditions("wind_forecast", order="ts, model, issued, lead_days"),
     # file is where the image is on this machine; not published.
     conditions("cam_images", cols="x.* exclude (site, day, file)", order="ts, kind"),
 ]
