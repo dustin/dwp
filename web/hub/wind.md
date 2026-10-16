@@ -24,6 +24,7 @@ toc: false
 The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. Only the last 18 months of runs count, since older ones show skills still developing. They're recomputed from the run logs every time this page loads. The run rating reads the same table, so the labels and the rating agree.
 
 ```js
+import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile} from "./components/data.js";
 import {WIND_QUALITY, CLASSES, windClass} from "./components/wind-quality.js";
 
@@ -76,13 +77,14 @@ function runList(title, runs) {
   return html`<div class="card">
     <h3>${title}: ${rows.length} run${rows.length === 1 ? "" : "s"}</h3>
     <div class="runs-wrap"><table class="runs">
-      <thead><tr><th>When</th><th>Who</th><th>Where</th><th>Foil</th><th class="num">km</th><th class="num">on foil</th><th class="num">paddle-ups</th><th class="num">foiling HR</th><th class="num">wind</th><th class="num">score</th></tr></thead>
+      <thead><tr><th>When</th><th>Who</th><th>Where</th><th>Foil</th><th class="num">km</th><th class="num">time</th><th class="num">on foil</th><th class="num">paddle-ups</th><th class="num">foiling HR</th><th class="num">wind</th><th class="num">score</th></tr></thead>
       <tbody>${rows.map(d => html`<tr>
         <td><a href=${runLink(d)}>${d3.utcFormat("%Y-%m-%d %H:%M")(new Date(+d.ts - 10 * 3600e3))}</a></td>
         <td>${d.riderName}</td>
         <td>${d.start_beach}${d.end_beach !== d.start_beach ? ` → ${d.end_beach}` : ""}</td>
         <td>${d.foil}</td>
         <td class="num">${d.distance_km.toFixed(1)}</td>
+        <td class="num">${d.duration_sec == null ? "" : fmt.seconds(Math.round(d.duration_sec / 60) * 60)}</td>
         <td class="num">${Math.round(100 * d.share)}%</td>
         <td class="num">${d.paddle_up_count ?? ""}</td>
         <td class="num">${d.avg_foiling_hr == null ? "" : Math.round(d.avg_foiling_hr)}</td>
