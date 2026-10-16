@@ -17,6 +17,8 @@ from the room each time) can act for any rider and publish:
   * "!sync" runs drive-sync for the sender's rider: their shared Google
     Drive folder, an rclone remote named after them. A room admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
+    The bot also syncs every rider by itself at 16:00, 18:00 and 23:00
+    Hawaii time, telling rooms with "runs" on about any new runs.
   * "!last" summarizes the sender's latest run, "!last walter" Walter's.
     Imports reply with the same summary, plus any records the run set
     (bot/achievements.mjs, the web's achievements as JSON).
@@ -83,7 +85,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 BOT_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -107,6 +109,7 @@ LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea 
 LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
 WATCH_EVERY = 2 * 60  # how often the bot checks its data sources (sources.py)
 WATCH_GRACE = 10 * 60  # after starting, so the live feed has a chance to arrive
+SYNC_HOURS = (16, 18, 23)  # Hawaii hours the bot syncs every Drive by itself
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
@@ -140,14 +143,15 @@ RIDER_COMMANDS = {"!sync", "!last", "!foil", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
-                           "sources (data going offline), on or off"),
+                           "sources (data going offline), runs (new runs from the 16:00, 18:00 "
+                           "and 23:00 syncs), on or off"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
 COMMANDS = ["conditions", "help", "last", "foil", "sync", "ask", "publish", "room", "rooms"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
-                 "sources": "data source alerts"}
+                 "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
     ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
@@ -558,7 +562,8 @@ def sync(mx, room, event_id, riders):
     jobs = [(f"Drive ({r})", ["./drive-sync", r]) for r in want]
     before = {r: runs(r) for r in want}
     for what, cmd in jobs:
-        ok, out = run(cmd)
+        with SYNC_LOCK:
+            ok, out = run(cmd)
         summary = next((ln for ln in reversed(out.splitlines()) if ln.startswith("imported ")),
                        "")
         if ok:
@@ -576,12 +581,22 @@ def sync(mx, room, event_id, riders):
 SYNC_SUMMARIES = 5  # a first sync can bring in dozens; describe only the latest
 
 
+SYNC_LOCK = threading.Lock()  # one drive-sync at a time, asked for or scheduled
+
+
 def announce(mx, room, event_id, rider, dwids):
     """A summary plus records for each newly imported run, oldest first."""
+    for text, html in new_runs(rider, dwids):
+        mx.notice(room, text, reply_to=event_id, html=html)
+
+
+def new_runs(rider, dwids):
+    """(text, html) messages describing newly imported runs (see announce)."""
     rows = sorted(filter(None, (latest(rider, d) for d in dwids)), key=lambda r: r["ts"])
+    msgs = []
     if len(rows) > SYNC_SUMMARIES:
-        mx.notice(room, f"{rider}: {len(rows)} runs imported, describing the latest "
-                        f"{SYNC_SUMMARIES}", reply_to=event_id)
+        msgs.append((f"{rider}: {len(rows)} runs imported, describing the latest "
+                     f"{SYNC_SUMMARIES}", None))
     for r in rows[-SYNC_SUMMARIES:]:
         text, html = summary(r, rider)
         text, html = f"{rider.title()}: {text}", f"{escape(rider.title())}: {html}"
@@ -589,7 +604,19 @@ def announce(mx, room, event_id, rider, dwids):
         if recs:
             text += "\n" + "\n".join(recs)
             html += "<br>" + "<br>".join(map(escape, recs))
-        mx.notice(room, text, reply_to=event_id, html=html)
+        msgs.append((text, html))
+    return msgs
+
+
+def last_sync_slot(now):
+    """The epoch of the latest SYNC_HOURS slot at or before now."""
+    h = hst(now)
+    for days in (0, 1):
+        day = h - timedelta(days=days)
+        slots = [day.replace(hour=hr, minute=0, second=0, microsecond=0) for hr in SYNC_HOURS]
+        past = [s for s in slots if s <= h]
+        if past:
+            return max(past).timestamp()
 
 
 # --- conditions -------------------------------------------------------------
@@ -1170,6 +1197,45 @@ class Bot:
             self.broadcast({"msgtype": "m.text",
                             "body": sources.message(kind, key, t, when)}, "sources")
 
+    def scheduled_sync(self):
+        """At each of SYNC_HOURS (Hawaii), sync every rider's Drive in the
+        background and tell rooms with "runs" on about any new runs; quiet
+        when there are none. The last slot done is kept in state-dir, so a
+        restart neither repeats one nor misses one it was down for."""
+        if getattr(self, "syncing", None) and self.syncing.is_alive():
+            return
+        path = os.path.join(self.args.state_dir, "scheduled-sync")
+        now = time.time()
+        done = load_state(path)
+        if not done:  # first start: from now on, not catching up on yesterday
+            save_state(path, str(now))
+            return
+        slot = last_sync_slot(now)
+        if float(done) >= slot:
+            return
+        save_state(path, str(now))
+        self.syncing = threading.Thread(target=self.sync_all, name="scheduled-sync", daemon=True)
+        self.syncing.start()
+
+    def sync_all(self):
+        try:
+            for rider in sorted(drive_riders()):
+                before = runs(rider)
+                with SYNC_LOCK:
+                    ok, out = run(["./drive-sync", rider])
+                if not ok:
+                    log(f"scheduled sync for {rider} failed:\n{tail(out)}")
+                    self.mx.notice(self.rooms[0], f"❌ Scheduled Drive ({rider}) sync failed:\n"
+                                                  f"{tail(out)}")
+                    continue
+                for text, html in new_runs(rider, runs(rider) - before):
+                    content = {"msgtype": "m.notice", "body": text}
+                    if html:
+                        content.update(format="org.matrix.custom.html", formatted_body=html)
+                    self.broadcast(content, "runs")
+        except Exception as e:
+            log(f"scheduled sync failed: {e!r}")
+
     def suggest_cam(self):
         """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
         cam reads LIVELY (both fresh), suggest a look at the cam."""
@@ -1582,6 +1648,10 @@ def main(argv=None):
             bot.watch_sources()
         except Exception as e:
             log(f"source watch failed: {e!r}")
+        try:
+            bot.scheduled_sync()
+        except Exception as e:
+            log(f"scheduled sync failed: {e!r}")
         try:
             bot.suggest_cam()
         except Exception as e:
