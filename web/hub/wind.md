@@ -100,7 +100,8 @@ function stationSection(st) {
         marks: [
           Plot.barY(byDir, {x: d => fmtDeg(d.band), y: "score", fill: d => CLASSES[d.cls ?? "nogo"].color, inset: 2}),
           Plot.ruleY([0]),
-          Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), frameAnchor: "top", title: d => `${fmtDeg(d.band)}° ±${st.dirStep / 2}\n${d.n} runs\nscore ${d.score.toFixed(2)}\n${CLASSES[d.cls ?? "nogo"].label}`}))
+          Plot.barY(byDir, Plot.pointerX({x: d => fmtDeg(d.band), y: "score", fill: "none", stroke: "var(--theme-foreground)", strokeWidth: 1.5, inset: 1})),
+          Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), frameAnchor: "top", pointerSize: 0, title: d => `${fmtDeg(d.band)}° ±${st.dirStep / 2}\n${d.n} runs\nscore ${d.score.toFixed(2)}\n${CLASSES[d.cls ?? "nogo"].label}`}))
         ]
       }))}
       <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction. Hover a bar for its run count.</div>
@@ -114,7 +115,8 @@ function stationSection(st) {
         marks: [
           Plot.barY(bySpeed, {x: d => knLabel(d.kn), y: "score", fill: d => d.kn + SPEED_STEP <= q.floor ? CLASSES.light.color : "var(--theme-foreground-focus)", inset: 2}),
           Plot.ruleY([0]),
-          Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), frameAnchor: "top", title: d => `${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
+          Plot.barY(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), y: "score", fill: "none", stroke: "var(--theme-foreground)", strokeWidth: 1.5, inset: 1})),
+          Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), frameAnchor: "top", pointerSize: 0, title: d => `${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
         ]
       }))}
       <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light. Hover a bar for its run count.</div>
