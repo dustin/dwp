@@ -73,15 +73,35 @@ export function similarRuns(runs, region, now) {
     .sort((a, b) => a.score - b.score);
 }
 
+// Past runs whose mid-run Pauwela report (snapshots: run id -> buoy
+// snapshot, from runBuoySnapshots) was close to the buoy's report now:
+// within 1.5 ft, 2 s and 25°, closest first. Wind differences come along
+// for the table but don't filter.
+export const BUOY_LIMITS = {ft: 1.5, s: 2, deg: 25};
+export function similarBuoyRuns(runs, snapshots, buoy, wind) {
+  if (!buoy) return [];
+  const dAngle = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+  return runs
+    .map(d => ({...d, buoy: snapshots.get(d.id)?.primary}))
+    .filter(d => d.buoy)
+    .map(d => ({...d, dFt: d.buoy.height - buoy.height, dS: d.buoy.period - buoy.period, dBuoyDeg: dAngle(d.buoy.direction, buoy.direction)}))
+    .filter(d => Math.abs(d.dFt) <= BUOY_LIMITS.ft && Math.abs(d.dS) <= BUOY_LIMITS.s && d.dBuoyDeg <= BUOY_LIMITS.deg)
+    .map(d => ({...d, score: Math.abs(d.dFt) / BUOY_LIMITS.ft + Math.abs(d.dS) / BUOY_LIMITS.s + d.dBuoyDeg / BUOY_LIMITS.deg
+      + (wind && d.avg_wavg != null ? Math.abs(d.avg_wavg - wind.wavg) / 6 : 0)}))
+    .sort((a, b) => a.score - b.score);
+}
+
 const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 
 // The similar runs as a card: what was matched, then the closest few.
-export function similarRunsCard(similar, now, {station, region, shown = 10}) {
+// note replaces the line above the table (what was matched); buoy adds a
+// column with each run's mid-run Pauwela report.
+export function similarRunsCard(similar, now, {station, region, shown = 10, note, buoy = false}) {
   const rows = similar.slice(0, shown);
   return html`<div class="card">
-    <div class="muted" style="margin-bottom: 0.5rem">${now ? `${region} runs that averaged ${Math.max(0, now.wavg - 3).toFixed(0)}–${(now.wavg + 3).toFixed(0)} kn within 20° of ${Math.round(now.wdir)}° at the ${station} station: ${similar.length} of them, closest ${rows.length} shown.` : `No current ${station} reading.`}</div>
+    <div class="muted" style="margin-bottom: 0.5rem">${note ?? (now ? `${region} runs that averaged ${Math.max(0, now.wavg - 3).toFixed(0)}–${(now.wavg + 3).toFixed(0)} kn within 20° of ${Math.round(now.wdir)}° at the ${station} station: ${similar.length} of them, closest ${rows.length} shown.` : `No current ${station} reading.`)}</div>
     <div class="similar-wrap"><table class="similar">
-      <thead><tr><th>Date</th><th>Rider</th><th>Route</th><th class="num">km</th><th class="num">on foil</th><th class="num">top km/h</th><th class="num">wind</th></tr></thead>
+      <thead><tr><th>Date</th><th>Rider</th><th>Route</th><th class="num">km</th><th class="num">on foil</th><th class="num">top km/h</th><th class="num">wind</th>${buoy ? html`<th class="num">buoy</th>` : ''}</tr></thead>
       <tbody>${rows.map(d => html`<tr>
         <td><a href=${runLink(d)}>${fmt.date(d.ts)} ${fmt.clock(d.ts)}</a></td>
         <td>${d.riderName}</td>
@@ -89,7 +109,8 @@ export function similarRunsCard(similar, now, {station, region, shown = 10}) {
         <td class="num">${d.distance_km.toFixed(1)}</td>
         <td class="num">${d.distance_on_foil == null ? '' : `${Math.round(100 * d.distance_on_foil / (d.distance_km * 1000))}%`}</td>
         <td class="num">${d.max_speed_kmh == null ? '' : d.max_speed_kmh.toFixed(0)}</td>
-        <td class="num">${d.avg_wavg.toFixed(0)}g${d.avg_wgust.toFixed(0)} ${Math.round(d.avg_wdir)}°</td>
+        <td class="num">${d.avg_wavg == null ? '' : `${d.avg_wavg.toFixed(0)}g${d.avg_wgust.toFixed(0)} ${Math.round(d.avg_wdir)}°`}</td>
+        ${buoy ? html`<td class="num">${d.buoy ? `${d.buoy.height.toFixed(1)}′ ${d.buoy.period.toFixed(0)}s ${Math.round(d.buoy.direction)}°` : ''}</td>` : ''}
       </tr>`)}</tbody>
     </table></div>
   </div>`;

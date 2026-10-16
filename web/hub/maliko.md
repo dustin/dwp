@@ -28,13 +28,13 @@ toc: false
 
 # Maliko
 
-The north shore run from Maliko to Kahului: the Hoʻokipa station, the run rating, the forecast for the rest of the day and the coming afternoons, the Pauwela buoy, and past runs in wind like now.
+The north shore run from Maliko to Kahului: the Hoʻokipa station, the run rating, the forecast for the rest of the day and the coming afternoons, the Pauwela buoy, and past runs in buoy and wind like now.
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchWindForecast, fetchSwellPartitionWindow, fetchBuoySnapshot} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchWindForecast, fetchSwellPartitionWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard} from "./components/forecast.js";
-import {ratingCard, stationCard, similarRuns, similarRunsCard} from "./components/conditions.js";
+import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
 import {directionColor} from "./components/spectrum.js";
 
@@ -74,9 +74,18 @@ const buoyReadings = (await fetchSwellPartitionWindow("pauwela", new Date(Date.n
   .filter(d => d.height != null);
 const buoyLast = buoyReadings.at(-1);
 const buoySnap = buoyLast ? await fetchBuoySnapshot(buoyLast.ts).catch(() => null) : null;
-const allRuns = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
-  (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => [])).map(d => ({...d, riderSlug: slug, riderName: name}))
+const nsRuns = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
+  (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => []))
+    .filter(d => d.region === "Maui North Shore")
+    .map(d => ({...d, riderSlug: slug, riderName: name}))
 ))).flat();
+// Each run's mid-run buoy report (run_buoy.csv), merged across riders.
+const runBuoy = new Map((await Promise.all(RIDER_NAMES.map(([slug]) =>
+  runBuoySnapshots(riderFile("run_buoy.csv", slug), nsRuns.filter(d => d.riderSlug === slug)).catch(() => new Map())
+))).flatMap(m => [...m]));
+// The buoy counts as "now" only while it's reporting.
+const BUOY_FRESH = 3 * 3600e3;
+const buoyNow = buoyLast && Date.now() - buoyLast.ts < BUOY_FRESH ? buoyLast : null;
 ```
 
 ```js
@@ -127,10 +136,16 @@ function buoyCard(readings, snap) {
 
 <div class="grid grid-cols-1 spot-col">${buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
 
-## Runs in wind like now
+## Runs in conditions similar to now
 
 ```js
-const similar = similarRuns(allRuns, "Maui North Shore", top);
+const swellLike = similarBuoyRuns(nsRuns, runBuoy, buoyNow, top);
+const windLike = similarRuns(nsRuns, "Maui North Shore", top).map(d => ({...d, buoy: runBuoy.get(d.id)?.primary}));
+const withBuoy = nsRuns.filter(d => runBuoy.get(d.id)?.primary).length;
 ```
 
-${similarRunsCard(similar, top, {station: "Hoʻokipa", region: "North shore"})}
+${buoyNow
+  ? similarRunsCard(swellLike, top, {buoy: true, note: `Buoy like now: north shore runs whose mid-run Pauwela report was within ${BUOY_LIMITS.ft} ft, ${BUOY_LIMITS.s} s and ${BUOY_LIMITS.deg}° of ${buoyNow.height.toFixed(1)}′ @ ${buoyNow.period.toFixed(0)}s from ${Math.round(buoyNow.direction)}°: ${swellLike.length} of the ${withBuoy} runs with buoy data, closest ${Math.min(10, swellLike.length)} shown.`})
+  : html`<div class="card"><div class="muted">Buoy like now: the Pauwela buoy isn't reporting${buoyLast ? ` (last report ${fmt.relativeTime(buoyLast.ts)})` : ""}, so there's nothing to match. ${withBuoy} north shore runs have buoy data.</div></div>`}
+
+${similarRunsCard(windLike, top, {station: "Hoʻokipa", region: "North shore", buoy: true})}
