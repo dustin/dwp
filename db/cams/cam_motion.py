@@ -12,8 +12,9 @@ Makena); dy > 0 is toward the beach. With --log DIR (where {cam} becomes the
 cam's name) it also appends each reading (skips included) to DIR/motion.jsonl
 and keeps an arrow overlay per reading as DIR/<stamp>-flow.jpg; db/cam-ingest
 puts both in the lake, db/publish the images in S3.
-It skips the video (publishing {"stamp", "skipped": "kihei light"}) while the
-Kihei station (weather/kihei) reads under 9 kn. Run it every 10 min in daylight
+It skips a cam's video (publishing {"stamp", "skipped": "<station> light"})
+while the station that cam watches for (its "gate" in cams.py, weather/<gate>)
+reads under 9 kn. Run it every 10 min in daylight
 (launchd/cron); the streams are up 05:00-19:30 HST.
 
     cam-motion --mqtt bee1 [--cam wailea --cam ulua] [--log ~/.cache/{cam}-motion] [--segments 3]
@@ -30,8 +31,7 @@ from cams import CAMS  # noqa: E402
 
 RELAY = "https://relay.ozolio.com/ses.api"
 UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
-KIHEI_TOPIC = "weather/kihei"
-KIHEI_MIN = 9  # kn; under this Kihei is LIGHT in the run rating (floor 12 - 3)
+LIGHT_MIN = 9  # kn; under this a side is LIGHT in the run rating (floor 12 - 3)
 
 
 def get(url, params=None, ctx=None, referer=None):
@@ -185,13 +185,13 @@ def retained(host, topic, wait=3):
         return None
 
 
-def kihei_light(host):
-    """True when the Kihei station's latest reading (weather/kihei) is under
-    KIHEI_MIN kn: no north run to finish, so no point measuring. Any trouble
-    reading it counts as not light, so the measurement still runs."""
+def light(host, station):
+    """True when the station's latest reading (weather/<station>) is under
+    LIGHT_MIN kn: no run worth watching for, so no point measuring. Any
+    trouble reading it counts as not light, so the measurement still runs."""
     try:
-        m = json.loads(retained(host, KIHEI_TOPIC) or b"{}")
-        return float(m["avg"]) < KIHEI_MIN
+        m = json.loads(retained(host, f"weather/{station}") or b"{}")
+        return float(m["avg"]) < LIGHT_MIN
     except (OSError, ValueError, KeyError, TypeError):
         return False
 
@@ -242,19 +242,23 @@ def main():
     hst = datetime.fromtimestamp(time.time() - 10 * 3600, timezone.utc)
     if not a.any_time and not 5.5 <= hst.hour + hst.minute / 60 < 19:
         return  # the streams are dark or down; launchd can fire every 10 min all day
-    if a.mqtt and not a.any_time and kihei_light(a.mqtt):
-        # No north run worth finishing; say so rather than leave an older
-        # reading standing. (The cam's vision read isn't used: it calls
-        # small, clearly moving water "glassy".)
-        line = json.dumps({"stamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                           "skipped": "kihei light"})
-        for name in names:
-            publish(a.mqtt, f"weather/conditions/{name}_motion", line)
-            if a.log:
-                log(a.log.format(cam=name), line)
-        return
+    lights = {}  # station -> light?, read once per round
     failed = False
     for name in names:  # one at a time: never two stream sessions open at once
+        gate = CAMS[name].get("gate", "kihei")
+        if a.mqtt and not a.any_time:
+            if gate not in lights:
+                lights[gate] = light(a.mqtt, gate)
+            if lights[gate]:
+                # No run worth watching for; say so rather than leave an older
+                # reading standing. (The vision read isn't used: it calls
+                # small, clearly moving water "glassy".)
+                line = json.dumps({"stamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                                   "skipped": f"{gate} light"})
+                publish(a.mqtt, f"weather/conditions/{name}_motion", line)
+                if a.log:
+                    log(a.log.format(cam=name), line)
+                continue
         try:
             measure(name, a)
         except Exception as e:  # one cam being down shouldn't stop the others

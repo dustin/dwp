@@ -32,9 +32,9 @@ The north shore run from Maliko to Kahului: the Hoʻokipa station, the run ratin
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard} from "./components/forecast.js";
-import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS} from "./components/conditions.js";
+import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS, camCard} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
 import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
@@ -69,6 +69,10 @@ const windNow = (async function* () {
 const hstDay = t => new Date(t - 10 * 3600e3).toISOString().slice(0, 10);
 const forecastRows = await fetchWindForecast("hookipa", d3.range(8).map(k => hstDay(Date.now() + k * 86400e3)));
 const hookipaToday = await fetchRecentWind("hookipa", 14).catch(() => []);
+// Kahului Harbor cam (db/cams/cams.py): whitecaps in and outside the harbor
+// and the swell coming in. Today and yesterday, so night shows the last daylight.
+const HARBOR_CAM = {site: "kahului_harbor", name: "Kahului Harbor cam", left: "westward", right: "eastward"};
+const harborCam = {...HARBOR_CAM, readings: (await fetchCamReadings(HARBOR_CAM.site, [hstDay(Date.now() - 86400e3), hstDay(Date.now())]).catch(() => [])).filter(d => d.ts <= Date.now())};
 // The buoy's readings over the last week (NDBC's own summary, rank 1),
 // and the spectrum at its last report, however old.
 const buoyRows = await fetchSwellPartitionWindow("pauwela", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []);
@@ -141,6 +145,8 @@ function buoyCard(readings, snap) {
   const yMax = Math.max(25, d3.max(station.rows, d => d.wgust) ?? 0);
   return stationCard(station, yMax, [new Date(Date.now() - HOURS * 3600e3), new Date()], {resize, hours: HOURS});
 })()}</div>
+
+<div class="grid grid-cols-1 spot-col">${camCard(harborCam, null, {resize})}</div>
 
 <div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings, buoySnap)}</div>
 

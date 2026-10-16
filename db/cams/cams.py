@@ -5,6 +5,9 @@ A cam is either Ozolio ("oid", optional "directory") or a plain HLS playlist
 ("hls", optional "referer" sent as the embedding page, and "intermediate", a
 PEM here for a server that sends only its own certificate).
 
+"gate" is the wind station (weather/<gate>) whose run the cam is for; while
+it reads under 9 kn the cam is skipped. Default kihei.
+
 Boxes are (x, y, w, h) in the cam's frame (Ozolio 1920x1080, Brownrice 1280x720):
   water: the band optical flow measures (water_motion.py)
   land:  a still patch whose flow is subtracted, to cancel camera shake
@@ -41,5 +44,15 @@ CAMS = {
         "referer": "https://makenasurf.org/", "intermediate": "rapidssl-g1.pem",
         "water": (0, 200, 680, 130), "land": (600, 600, 300, 80),
         "caps": (0, 190, 680, 140), "caps_mask": [],
+    },
+    # Kahului Harbor (Surfline), looking north out the harbor mouth past the
+    # breakwater: whitecaps in the harbor and outside it, and how much swell
+    # comes in. The harbor water above the tree for motion; the road is still.
+    # Trades blow right to left here.
+    "kahului_harbor": {
+        "hls": "https://hls.cdn-surfline.com/oregon/hi-kahuluiharbor/playlist.m3u8",
+        "referer": "https://www.surfline.com/", "gate": "hookipa",
+        "water": (0, 400, 1920, 120), "land": (300, 1000, 400, 60),
+        "caps": (0, 335, 1920, 390), "caps_mask": [(0, 350, 1190, 42), (570, 525, 500, 300)],
     },
 }

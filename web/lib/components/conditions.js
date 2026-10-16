@@ -1,5 +1,5 @@
 // Cards shared by the spot pages (kihei.md, maliko.md): the run rating, a
-// wind station's last hours, and past runs in wind like now.
+// wind station's last hours, past runs in wind like now, and cam motion.
 //
 // `resize` is Framework's builtin, which only exists in page code, so
 // callers pass it in.
@@ -113,5 +113,44 @@ export function similarRunsCard(similar, now, {station, region, shown = 10, note
         ${buoy ? html`<td class="num">${d.buoy ? `${d.buoy.height.toFixed(1)}′ ${d.buoy.period.toFixed(0)}s ${Math.round(d.buoy.direction)}°` : ''}</td>` : ''}
       </tr>`)}</tbody>
     </table></div>
+  </div>`;
+}
+
+const hstDay = t => new Date(t - 10 * 3600e3).toISOString().slice(0, 10);
+
+// A cam's water motion (db/cams/cam_motion.py): the latest reading, its
+// arrow overlay and the day's dx. dx < 0 is right to left in the picture;
+// left/right name where that goes. mark ({dx, label}) draws a dashed line at
+// a calibrated dx; px/s differ between cams. read is a vision read, if any.
+export function camCard({name, readings, left, right, mark}, read, {resize}) {
+  const measured = readings.filter(d => !d.skipped && d.dx != null);
+  const last = readings.at(-1);
+  const r = measured.at(-1);
+  if (!r) return html`<div class="card"><h2>${name}</h2><div class="muted">No readings today or yesterday</div></div>`;
+  const toward = r.dx < 0 ? left : right;
+  const share = r.dx < 0 ? r.left : r.right;
+  const img = r.images.flow ?? r.images.frame;
+  const today = measured.filter(d => hstDay(d.ts) === hstDay(r.ts));
+  return html`<div class="card">
+    <h2>${name} <span class="muted" style="font-weight: normal">water motion · ${fmt.minuteStamp(r.ts)}</span></h2>
+    <div class="lead">${Math.abs(r.dx).toFixed(1)} <span class="unit">px/s ${toward} · ${Math.round(100 * share)}% of the moving water${r.whitecaps == null ? "" : ` · ${r.whitecaps} whitecap${r.whitecaps === 1 ? "" : "s"}`}</span></div>
+    ${last?.skipped ? html`<div class="muted">Not measuring since ${fmt.clock(last.ts)} (${last.skipped}).</div>` : ""}
+    ${read ? html`<div class="muted" style="margin-top: 0.25rem">Vision read ${fmt.clock(new Date(read.stamp))}: ${read.sea}${read.shorebreak ? `, shorebreak ${read.shorebreak}` : ""}. ${read.description ?? ""}</div>` : ""}
+    <div class="grid grid-cols-2" style="margin: 0.5rem 0 0">
+      <div>${img ? html`<a href=${r.images.frame ?? img} target="_blank"><img class="cam-img" src=${img} alt="${name}: water with motion arrows"></a>` : ""}</div>
+      <div>${resize(width => Plot.plot({
+        width, height: 180, marginLeft: 32, marginBottom: 20,
+        x: {type: "time", ticks: 4, tickFormat: fmt.clock, label: null},
+        y: {label: `← ${left} (px/s)`, grid: true, reverse: true},
+        marks: [
+          Plot.ruleY([0], {stroke: "var(--theme-foreground-faint)"}),
+          mark ? Plot.ruleY([mark.dx], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"}) : null,
+          Plot.lineY(today, {x: "ts", y: "dx", stroke: "var(--theme-foreground-focus)", curve: "basis"}),
+          Plot.dot(today, {x: "ts", y: "dx", r: d => Math.sqrt(d.whitecaps ?? 0), fill: "var(--theme-foreground-focus)", fillOpacity: 0.3}),
+          Plot.tip(today, Plot.pointerX({x: "ts", y: "dx", title: d => `${fmt.clock(d.ts)}  ${d.dx.toFixed(1)} px/s, ${Math.round(100 * (d.dx < 0 ? d.left : d.right))}% ${d.dx < 0 ? "left" : "right"}${d.whitecaps == null ? "" : `, ${d.whitecaps} whitecaps`}`}))
+        ]
+      }))}
+      <div class="muted" style="font-size: 0.85em">${fmt.date(r.ts)}: dots sized by whitecaps${mark ? `; dashed line ${mark.dx} px/s, ${mark.label}` : ""}.</div></div>
+    </div>
   </div>`;
 }
