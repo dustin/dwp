@@ -1,0 +1,223 @@
+#!/usr/bin/env python3
+"""Keep wind forecasts for the stations' cells, so they can be scored
+against what the stations then saw.
+
+    ./forecast-ingest              # each model's newest run, next 3 days
+    ./forecast-ingest --backfill   # past day-ahead forecasts (Previous Runs API)
+
+Live: for every site and model in CELLS, the forecast for the next 3 days
+goes into wind_forecast with issued = that model's run time (Open-Meteo's
+meta.json; for PacIOOS, when it was fetched). A (site, model, issued) the
+lake already has is skipped, so run it as often as you like; models run
+every 6 hours (PacIOOS once a day, out ~13:30-14:30 HST).
+
+Backfill: Open-Meteo's Previous Runs API keeps what each model said 1 and 2
+days ahead. Those rows have issued null and lead_days 1 or 2; hours the lake
+already has for that (site, model, lead_days) are skipped.
+
+The cells are the ones that best matched each station's afternoon wind
+over 2024-2026 (/mnt/project-files/pacioos/model-comparison.md in the
+downwind.pro project). One lake commit; it never creates or changes tables:
+wind_forecast must already exist (schema.sql).
+
+Run it with the conditions job (before ./publish), from db's nix dev shell.
+"""
+
+import json
+import math
+import os
+import sys
+import tempfile
+import time
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+
+# site -> model -> (lat, lon) of the cell to read. Open-Meteo model names
+# are the API's; pacioos_wrf_mo is PacIOOS's 2 km WRF (ERDDAP wrf_mo).
+CELLS = {
+    "kihei": {
+        "pacioos_wrf_mo": (20.776, -156.50),
+        "ukmo_global_deterministic_10km": (20.8125, -156.6562),
+        "icon_global": (20.875, -156.625),
+        "gem_global": (20.85, -156.45),
+        "gfs_global": (20.9112, -156.5625),
+        "ecmwf_ifs025": (21.0, -156.75),
+        "ecmwf_aifs025_single": (21.0, -156.75),
+        "meteofrance_arpege_world": (21.0, -156.75),
+        "jma_gsm": (21.0, -157.0),
+    },
+    "hookipa": {
+        "pacioos_wrf_mo": (20.92, -156.40),
+        "ukmo_global_deterministic_10km": (21.0, -156.5156),
+        "icon_global": (21.0, -156.25),
+        "gem_global": (21.0, -156.45),
+        "gfs_global": (20.9112, -156.3281),
+        "ecmwf_ifs025": (21.0, -156.5),
+        "ecmwf_aifs025_single": (21.0, -156.5),
+        "meteofrance_arpege_world": (21.0, -156.5),
+        "jma_gsm": (21.0, -156.5),
+    },
+}
+# Where each Open-Meteo model's run times are (its folder in the open-data bucket).
+META = {
+    "ukmo_global_deterministic_10km": "ukmo_global_deterministic_10km",
+    "icon_global": "dwd_icon",
+    "gem_global": "cmc_gem_gdps",
+    "gfs_global": "ncep_gfs013",
+    "ecmwf_ifs025": "ecmwf_ifs025",
+    "ecmwf_aifs025_single": "ecmwf_aifs025_single",
+    "meteofrance_arpege_world": "meteofrance_arpege_world025",
+    "jma_gsm": "jma_gsm",
+}
+HOURS = 72
+KN = 1.943844
+BACKFILL_FROM = "2024-03-01"
+OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
+PREVIOUS_RUNS = "https://previous-runs-api.open-meteo.com/v1/forecast"
+ERDDAP = "https://pae-paha.pacioos.hawaii.edu/erddap/griddap/wrf_mo.csv"
+
+
+def log(msg):
+    print(f"forecast-ingest: {msg}", file=sys.stderr, flush=True)
+
+
+def get(url, tries=4):
+    """The body of url; PacIOOS in particular drops connections now and then."""
+    for i in range(tries):
+        try:
+            with urllib.request.urlopen(url, timeout=120) as r:
+                return r.read().decode()
+        except OSError as e:
+            if i == tries - 1:
+                raise
+            log(f"{e}; retrying")
+            time.sleep(5 * (i + 1))
+
+
+def open_meteo(base, model, lat, lon, hourly, **extra):
+    q = dict(latitude=lat, longitude=lon, models=model, hourly=",".join(hourly),
+             wind_speed_unit="kn", timeformat="unixtime", timezone="GMT",
+             cell_selection="nearest", **extra)
+    return json.loads(get(base + "?" + urllib.parse.urlencode(q)))["hourly"]
+
+
+def live(now):
+    """(site, model, issued, ts, wavg, wdir) for every model's newest run."""
+    rows = []
+    for model, folder in META.items():
+        try:
+            meta = json.loads(get(f"https://openmeteo.s3.amazonaws.com/data/{folder}/static/meta.json"))
+        except OSError as e:
+            log(f"{model}: no run time ({e}); skipped")
+            continue
+        issued = datetime.fromtimestamp(meta["last_run_initialisation_time"], timezone.utc)
+        for site, cells in CELLS.items():
+            lat, lon = cells[model]
+            try:
+                h = open_meteo(OPEN_METEO, model, lat, lon, ["wind_speed_10m", "wind_direction_10m"],
+                               forecast_days=4)
+            except (OSError, KeyError, ValueError) as e:
+                log(f"{site} {model}: {e!r}; skipped")
+                continue
+            for t, s, d in zip(h["time"], h["wind_speed_10m"], h["wind_direction_10m"]):
+                ts = datetime.fromtimestamp(t, timezone.utc)
+                if s is not None and d is not None and now <= ts <= now + timedelta(hours=HOURS):
+                    rows.append((site, model, issued, ts, s, d))
+    # PacIOOS's ERDDAP has no run time, so issued is when we asked.
+    t0, t1 = now.strftime("%Y-%m-%dT%H:00:00Z"), (now + timedelta(hours=HOURS)).strftime("%Y-%m-%dT%H:00:00Z")
+    for site, cells in CELLS.items():
+        lat, lon = cells["pacioos_wrf_mo"]
+        sel = f"[({t0}):1:({t1})][({lat})][({lon})]"
+        try:
+            lines = get(f"{ERDDAP}?Uwind{urllib.parse.quote(sel)},Vwind{urllib.parse.quote(sel)}").splitlines()[2:]
+        except OSError as e:
+            log(f"{site} pacioos_wrf_mo: {e}; skipped")
+            continue
+        for line in lines:
+            t, _, _, u, v = line.split(",")
+            if "NaN" in (u, v):
+                continue
+            u, v = float(u), float(v)
+            d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
+            rows.append((site, "pacioos_wrf_mo", now, datetime.fromisoformat(t.replace("Z", "+00:00")),
+                         (u * u + v * v) ** 0.5 * KN, d))
+    return rows
+
+
+def backfill(today):
+    """(site, model, lead_days, ts, wavg, wdir) from the Previous Runs API."""
+    rows = []
+    for model in META:
+        for site, cells in CELLS.items():
+            lat, lon = cells[model]
+            hourly = [f"wind_{v}_10m_previous_day{n}" for n in (1, 2) for v in ("speed", "direction")]
+            try:
+                h = open_meteo(PREVIOUS_RUNS, model, lat, lon, hourly,
+                               start_date=BACKFILL_FROM, end_date=today.isoformat())
+            except (OSError, KeyError, ValueError) as e:
+                log(f"{site} {model}: {e!r}; skipped")
+                continue
+            for n in (1, 2):
+                for t, s, d in zip(h["time"], h[f"wind_speed_10m_previous_day{n}"],
+                                   h[f"wind_direction_10m_previous_day{n}"]):
+                    if s is not None and d is not None:
+                        rows.append((site, model, n, datetime.fromtimestamp(t, timezone.utc), s, d))
+            time.sleep(1)  # be gentle with the free API
+    return rows
+
+
+def ingest(rows, tmp, backfilling):
+    if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
+                  "and table_name = 'wind_forecast';", json_out=True):
+        raise PublishError("no wind_forecast table in the lake (see schema.sql)")
+    if not rows:
+        log("nothing fetched")
+        return
+    lst = os.path.join(tmp, "wind_forecast.csv")
+    with open(lst, "w") as f:
+        f.write("site,model,issued,lead_days,ts,wavg,wdir\n")
+        for site, model, x, ts, s, d in rows:
+            issued, lead = ("", x) if backfilling else (x.isoformat(), "")
+            f.write(f"{site},{model},{issued},{lead},{ts.isoformat()},{s:.2f},{d:.0f}\n")
+    src = f"""read_csv({sql_str(lst)}, header = true, nullstr = '',
+                       columns = {{'site': 'VARCHAR', 'model': 'VARCHAR', 'issued': 'TIMESTAMPTZ',
+                                   'lead_days': 'INTEGER', 'ts': 'TIMESTAMPTZ',
+                                   'wavg': 'DOUBLE', 'wdir': 'DOUBLE'}})"""
+    if backfilling:
+        fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
+                       and w.lead_days = n.lead_days and w.ts = n.ts)"""
+    else:
+        fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
+                       and w.issued = n.issued)"""
+    duckdb(f"""begin;
+        call lake.set_commit_message('dustin', 'wind forecasts{" backfill" if backfilling else ""}');
+        insert into wind_forecast by name
+            select * from (
+                select site, model, issued, lead_days, ts,
+                       (ts at time zone 'Pacific/Honolulu')::date as day, wavg, wdir
+                from {src}
+            ) n {fresh};
+        commit;""")
+    log(f"{len(rows)} rows fetched")
+
+
+def main():
+    backfilling = "--backfill" in sys.argv[1:]
+    now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+    try:
+        rows = backfill(now.date()) if backfilling else live(now)
+        with tempfile.TemporaryDirectory(prefix="dwp-forecast-") as tmp:
+            ingest(rows, tmp, backfilling)
+    except PublishError as e:
+        log(str(e))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

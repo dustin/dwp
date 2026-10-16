@@ -99,4 +99,22 @@ CREATE TABLE cam_images(
   file VARCHAR
 );
 
+-- Wind forecasts for the stations' cells (db/forecast-ingest), kept so they
+-- can be scored against what the station then saw. site is the station the
+-- cell stands in for (kihei, hookipa); model is Open-Meteo's model name or
+-- pacioos_wrf_mo. Live rows have issued, the model's run time (for PacIOOS,
+-- when it was fetched); backfilled rows (Previous Runs API) have issued null
+-- and lead_days, how many days before ts the forecast was made. day is the
+-- Hawaii day of ts.
+CREATE TABLE wind_forecast(
+  site VARCHAR,
+  model VARCHAR,
+  issued TIMESTAMP WITH TIME ZONE,
+  lead_days INTEGER,
+  ts TIMESTAMP WITH TIME ZONE,
+  day DATE,
+  wavg DOUBLE, -- kn
+  wdir DOUBLE  -- degrees, from
+);
+
 commit;
