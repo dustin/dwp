@@ -76,13 +76,16 @@ function runList(title, runs) {
   return html`<div class="card">
     <h3>${title}: ${rows.length} run${rows.length === 1 ? "" : "s"}</h3>
     <div class="runs-wrap"><table class="runs">
-      <thead><tr><th>Date</th><th>Rider</th><th>Route</th><th class="num">km</th><th class="num">on foil</th><th class="num">wind</th><th class="num">score</th></tr></thead>
+      <thead><tr><th>When</th><th>Who</th><th>Where</th><th>Foil</th><th class="num">km</th><th class="num">on foil</th><th class="num">paddle-ups</th><th class="num">foiling HR</th><th class="num">wind</th><th class="num">score</th></tr></thead>
       <tbody>${rows.map(d => html`<tr>
-        <td><a href=${runLink(d)}>${d3.utcFormat("%Y-%m-%d")(new Date(+d.ts - 10 * 3600e3))}</a></td>
+        <td><a href=${runLink(d)}>${d3.utcFormat("%Y-%m-%d %H:%M")(new Date(+d.ts - 10 * 3600e3))}</a></td>
         <td>${d.riderName}</td>
         <td>${d.start_beach}${d.end_beach !== d.start_beach ? ` → ${d.end_beach}` : ""}</td>
+        <td>${d.foil}</td>
         <td class="num">${d.distance_km.toFixed(1)}</td>
         <td class="num">${Math.round(100 * d.share)}%</td>
+        <td class="num">${d.paddle_up_count ?? ""}</td>
+        <td class="num">${d.avg_foiling_hr == null ? "" : Math.round(d.avg_foiling_hr)}</td>
         <td class="num">${d.avg_wavg.toFixed(0)}${d.avg_wgust == null ? "" : `g${d.avg_wgust.toFixed(0)}`} ${Math.round(d.avg_wdir)}°</td>
         <td class="num">${d.score.toFixed(1)}</td>
       </tr>`)}</tbody>
@@ -116,7 +119,7 @@ function stationSection(st) {
   const knLabel = k => `${k}–${k + SPEED_STEP}`;
   const best = d3.greatest(byDir, d => d.score);
   // Tapping a bar or cell lists its runs under the charts.
-  const picked = html`<div></div>`;
+  const picked = html`<div class="grid grid-cols-1"></div>`;
   const pick = (title) => plot => {
     plot.addEventListener("click", () => {
       const d = plot.value;
