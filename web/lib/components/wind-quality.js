@@ -81,11 +81,14 @@ export function qualityStrip(site, rows, {y1, y2}) {
 }
 
 // "magic" etc. as a small colored pill for a reading, or "" when the site
-// has no table. Pages style it with .wq-badge.
+// has no table. It opens the wind page's section for the site, where the
+// numbers come from. A click handler rather than a link, since the hub's
+// wind cards are links themselves. Pages style it with .wq-badge.
 export function qualityBadge(site, d) {
   const cls = windClass(site, d);
   if (!cls) return "";
   const {label, color} = CLASSES[cls];
-  return html`<span class="wq-badge" style="--wq: ${color}">${label}</span>`;
+  const open = e => { e.preventDefault(); e.stopPropagation(); location.href = `wind.html#${site}`; };
+  return html`<span class="wq-badge" role="link" tabindex="0" title="Where this comes from" style="--wq: ${color}; cursor: pointer"
+    onclick=${open} onkeydown=${e => e.key === "Enter" && open(e)}>${label}</span>`;
 }
-
