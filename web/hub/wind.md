@@ -11,6 +11,12 @@ toc: false
   .ranges { border-collapse: collapse; font-variant-numeric: tabular-nums; }
   .ranges td, .ranges th { padding: 0.2rem 0.8rem 0.2rem 0; text-align: left; }
   .ranges th { font-weight: normal; color: var(--theme-foreground-muted); }
+  .runs-wrap { overflow-x: auto; }
+  .runs { border-collapse: collapse; font-variant-numeric: tabular-nums; width: 100%; }
+  .runs td, .runs th { padding: 0.2rem 0.6rem 0.2rem 0; text-align: left; white-space: nowrap; }
+  .runs th { font-weight: normal; color: var(--theme-foreground-muted); }
+  .runs .num { text-align: right; }
+  .card svg { cursor: pointer; }
 </style>
 
 # What makes good wind
@@ -63,6 +69,26 @@ function scored(region, keep) {
 }
 const bandOf = (deg, step) => (Math.floor(((deg + step / 2) % 360 + 360) % 360 / step) * step) % 360;
 const fmtDeg = d => String(d).padStart(3, "0");
+const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
+
+function runList(title, runs) {
+  const rows = runs.slice().sort((a, b) => b.ts - a.ts);
+  return html`<div class="card">
+    <h3>${title}: ${rows.length} run${rows.length === 1 ? "" : "s"}</h3>
+    <div class="runs-wrap"><table class="runs">
+      <thead><tr><th>Date</th><th>Rider</th><th>Route</th><th class="num">km</th><th class="num">on foil</th><th class="num">wind</th><th class="num">score</th></tr></thead>
+      <tbody>${rows.map(d => html`<tr>
+        <td><a href=${runLink(d)}>${d3.utcFormat("%Y-%m-%d")(new Date(+d.ts - 10 * 3600e3))}</a></td>
+        <td>${d.riderName}</td>
+        <td>${d.start_beach}${d.end_beach !== d.start_beach ? ` → ${d.end_beach}` : ""}</td>
+        <td class="num">${d.distance_km.toFixed(1)}</td>
+        <td class="num">${Math.round(100 * d.share)}%</td>
+        <td class="num">${d.avg_wavg.toFixed(0)}${d.avg_wgust == null ? "" : `g${d.avg_wgust.toFixed(0)}`} ${Math.round(d.avg_wdir)}°</td>
+        <td class="num">${d.score.toFixed(1)}</td>
+      </tr>`)}</tbody>
+    </table></div>
+  </div>`;
+}
 ```
 
 ```js
@@ -77,25 +103,35 @@ function stationSection(st) {
   // crosses north stays in one piece.
   const centre = d3.median(rs, d => d.avg_wdir);
   const order = d => ((d - centre + 540) % 360);
-  const byDir = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.dirBand)
+  const byDir = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score), runs: v}), d => d.dirBand)
     .map(([band, v]) => ({band, ...v, cls: windClass(st.site, {wdir: band})}))
     .filter(d => d.n >= MIN_RUNS).sort((a, b) => order(a.band) - order(b.band));
   const dirDomain = byDir.map(d => fmtDeg(d.band));
-  const bySpeed = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.kn)
+  const bySpeed = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score), runs: v}), d => d.kn)
     .map(([kn, v]) => ({kn, ...v})).filter(d => d.n >= MIN_RUNS).sort((a, b) => a.kn - b.kn);
-  const cells = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.dirBand, d => d.kn)
+  const cells = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score), runs: v}), d => d.dirBand, d => d.kn)
     .flatMap(([band, ks]) => ks.map(([kn, v]) => ({band: fmtDeg(band), kn, ...v})))
     .filter(d => d.n >= 2 && dirDomain.includes(d.band));
   const knDomain = d3.range(d3.min(bySpeed, d => d.kn), d3.max(bySpeed, d => d.kn) + 1, SPEED_STEP);
   const knLabel = k => `${k}–${k + SPEED_STEP}`;
   const best = d3.greatest(byDir, d => d.score);
+  // Tapping a bar or cell lists its runs under the charts.
+  const picked = html`<div></div>`;
+  const pick = (title) => plot => {
+    plot.addEventListener("click", () => {
+      const d = plot.value;
+      picked.replaceChildren(d?.runs ? runList(title(d), d.runs) : "");
+      if (d?.runs) picked.scrollIntoView({behavior: "smooth", block: "nearest"});
+    });
+    return plot;
+  };
 
   return html`<h2 id=${st.site}>${st.name}</h2>
   <p class="muted">${rs.length} ${st.what}. Score is how a run went against that rider's other runs here: time on foil plus foiling speed, minus paddle-ups. 0 is a usual run for them. ${best ? `Best direction band so far: ${fmtDeg(best.band)}°.` : ""}</p>
   <div class="grid grid-cols-2">
     <div class="card">
       <h3>Direction</h3>
-      ${resize(width => Plot.plot({
+      ${resize(width => pick(d => `${fmtDeg(d.band)}° ±${st.dirStep / 2}`)(Plot.plot({
         width, height: 240, marginLeft: 36, marginBottom: 34,
         x: {domain: dirDomain, label: "station direction (°, band centre)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: (d, i) => i % 2 ? "" : d},
         y: {label: "score", grid: true, domain: [-3, 2], clamp: true},
@@ -105,12 +141,12 @@ function stationSection(st) {
           Plot.barY(byDir, Plot.pointerX({x: d => fmtDeg(d.band), y: "score", fill: "none", stroke: "var(--theme-foreground)", strokeWidth: 1.5, inset: 1})),
           Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), frameAnchor: "top", pointerSize: 0, title: d => `${fmtDeg(d.band)}° ±${st.dirStep / 2}\n${d.n} runs\nscore ${d.score.toFixed(2)}\n${CLASSES[d.cls ?? "nogo"].label}`}))
         ]
-      }))}
-      <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction. Hover a bar for its run count.</div>
+      })))}
+      <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction. Hover a bar for its run count; tap it to list the runs.</div>
     </div>
     <div class="card">
       <h3>Wind strength</h3>
-      ${resize(width => Plot.plot({
+      ${resize(width => pick(d => `${knLabel(d.kn)} kn`)(Plot.plot({
         width, height: 240, marginLeft: 36, marginBottom: 34,
         x: {domain: knDomain.map(knLabel), label: "average wind over the run (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0},
         y: {label: "score", grid: true, domain: [-3, 2], clamp: true},
@@ -120,13 +156,13 @@ function stationSection(st) {
           Plot.barY(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), y: "score", fill: "none", stroke: "var(--theme-foreground)", strokeWidth: 1.5, inset: 1})),
           Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), frameAnchor: "top", pointerSize: 0, title: d => `${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
         ]
-      }))}
-      <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light. Hover a bar for its run count.</div>
+      })))}
+      <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light. Hover a bar for its run count; tap it to list the runs.</div>
     </div>
   </div>
   <div class="card">
     <h3>Direction and strength together</h3>
-    ${resize(width => Plot.plot({
+    ${resize(width => pick(d => `${d.band}°, ${knLabel(d.kn)} kn`)(Plot.plot({
       width, height: Math.max(200, 26 * knDomain.length + 60), marginLeft: 48, marginBottom: 34, padding: 0.06,
       x: {domain: dirDomain, label: "station direction (°) · rows are average wind (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: (d, i) => i % 2 ? "" : d},
       y: {domain: knDomain.slice().reverse().map(knLabel), label: null, tickSize: 0},
@@ -136,9 +172,10 @@ function stationSection(st) {
         Plot.text(cells, {x: "band", y: d => knLabel(d.kn), text: "n", fill: d => Math.abs(d.score) > 1.2 ? "white" : "black", fontSize: 10}),
         Plot.tip(cells, Plot.pointer({x: "band", y: d => knLabel(d.kn), title: d => `${d.band}°, ${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
       ]
-    }))}
-    <div class="muted" style="font-size: 0.85em">Each cell is the average score of runs in that direction and wind; the number is how many runs. Cells with one run are left out.</div>
+    })))}
+    <div class="muted" style="font-size: 0.85em">Each cell is the average score of runs in that direction and wind; the number is how many runs. Cells with one run are left out. Tap a cell to list its runs.</div>
   </div>
+  ${picked}
   <div class="card">
     <h3>The table</h3>
     <table class="ranges"><thead><tr><th>Direction</th><th>Label</th><th>Why</th></tr></thead><tbody>
