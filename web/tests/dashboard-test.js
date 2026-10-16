@@ -36,11 +36,13 @@ async function requiredLinks() {
 //   https://d2qwe1xndvncw9.cloudfront.net/wind/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_partition/site%3D<site>/day%3D<day>/data.csv
 //   https://d2qwe1xndvncw9.cloudfront.net/swell_spectrum/site%3D<site>/day%3D<day>/data.csv
+//   https://d2qwe1xndvncw9.cloudfront.net/cam_motion/site%3D<site>/day%3D<day>/data.csv
+//   https://d2qwe1xndvncw9.cloudfront.net/cam_images/site%3D<site>/day%3D<day>/data.csv
 // The track CSV (/runs/.../data.csv) is deliberately excluded -- a missing
 // track is a real failure.
 function isOptionalDataRequest(url) {
   return (
-    /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition|swell_spectrum)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
+    /^https:\/\/d2qwe1xndvncw9\.cloudfront\.net\/(wind|swell_partition|swell_spectrum|cam_motion|cam_images)\/site%3D[^/]+\/day%3D[^/]+\/data\.csv$/.test(
       url
     )
   );
