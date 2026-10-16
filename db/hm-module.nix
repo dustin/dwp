@@ -5,6 +5,6 @@
 #   ...
 #   imports = [ "${inputs.dwp}/db/hm-module.nix" ];
 {
-  # services.dwp-wailea-motion: the Wailea cam's water motion, see cams/hm-module.nix.
+  # services.dwp-cam-motion: the cams' water motion, see cams/hm-module.nix.
   imports = [ ./cams/hm-module.nix ];
 }

@@ -1,4 +1,4 @@
-"""Which way the Wailea water is moving, from a few seconds of cam video.
+"""Which way a cam's water is moving, from a few seconds of cam video.
 
 Dense optical flow (OpenCV Farneback) between frames DT apart over the open
 water band, with the median flow of a land patch subtracted so camera shake
@@ -12,8 +12,8 @@ import sys
 import cv2
 import numpy as np
 
-WATER = (0, 60, 1920, 230)   # x, y, w, h: open water above the palm tops
-LAND = (1500, 520, 300, 120)  # lawn, to cancel camera shake
+WATER = (0, 60, 1920, 230)   # x, y, w, h: Wailea's open water above the palm tops (cams.py has each cam's)
+LAND = (1500, 520, 300, 120)  # Wailea's lawn, to cancel camera shake
 FPS_SAMPLE, DT = 8, 2         # frames per second sampled; pairs DT samples apart (0.25 s)
 SCALE = 0.5                   # flow on a half-size image: faster, and chop is still visible
 
@@ -43,16 +43,16 @@ def flow(a, b):
     return cv2.resize(f, (w, h))  # back to full-size pixels
 
 
-def measure(path, out=None):
+def measure(path, out=None, water=WATER, land=LAND):
     """{dx, dy (px/s, median), left, right (share of moving water), pairs},
     or None when too little water moves to measure."""
     fs = list(frames(path))
     per_s = FPS_SAMPLE / DT
     dxs, dys, lefts, rights, field = [], [], [], [], None
     for (a, colour), (b, _) in zip(fs, fs[DT:]):
-        w = flow(crop(a, WATER), crop(b, WATER))
-        land = flow(crop(a, LAND), crop(b, LAND)).reshape(-1, 2)
-        w = w - np.median(land, axis=0)
+        w = flow(crop(a, water), crop(b, water))
+        still = flow(crop(a, land), crop(b, land)).reshape(-1, 2)
+        w = w - np.median(still, axis=0)
         mag = np.hypot(w[..., 0], w[..., 1])
         moving = mag > 0.15  # px per pair: ignore still water and noise
         dx, dy = w[..., 0][moving], w[..., 1][moving]
@@ -71,7 +71,7 @@ def measure(path, out=None):
          "pairs": len(dxs)}
     if out:
         field /= len(dxs)
-        x0, y0, ww, hh = WATER
+        x0, y0, ww, hh = water
         img = last.copy()
         cv2.rectangle(img, (x0, y0), (x0 + ww, y0 + hh), (255, 255, 255), 1)
         for y in range(20, hh, 40):

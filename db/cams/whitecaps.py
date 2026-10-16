@@ -1,4 +1,4 @@
-"""Whitecap share of the Wailea open water, by pixels rather than a model.
+"""Whitecap share of a cam's open water, by pixels rather than a model.
 
 Whitecaps are small bright, unsaturated patches on blue water. Within the
 water band (rocky point on the left masked off), a pixel counts when it is
@@ -13,13 +13,13 @@ import sys
 import cv2
 import numpy as np
 
-WATER = (0, 50, 1920, 160)        # x, y, w, h: open water, above the tallest palm tops
+WATER = (0, 50, 1920, 160)        # x, y, w, h: Wailea's open water, above the tallest palm tops (cams.py has each cam's)
 MASK_OUT = [(0, 150, 260, 70)]    # the rocky point at the far left, where waves always break
 K, MIN_JUMP, MAX_SAT, MIN_BLOB, MAX_BLOB = 6.0, 30, 60, 4, 400
 
 
-def measure(img):
-    x, y, w, h = WATER
+def measure(img, water=WATER, mask_out=MASK_OUT):
+    x, y, w, h = water
     water = img[y:y + h, x:x + w]
     hsv = cv2.cvtColor(water, cv2.COLOR_BGR2HSV)
     v = hsv[..., 2].astype(np.float32)
@@ -27,7 +27,7 @@ def measure(img):
     mad = np.median(np.abs(v - local)) + 1
     white = ((v > local + max(K * mad, MIN_JUMP)) & (hsv[..., 1] < MAX_SAT)).astype(np.uint8)
     keep = np.ones_like(white)
-    for mx, my, mw, mh in MASK_OUT:
+    for mx, my, mw, mh in mask_out:
         keep[max(0, my - y):my - y + mh, max(0, mx - x):mx - x + mw] = 0
     white &= keep
     n, labels, stats, _ = cv2.connectedComponentsWithStats(white, connectivity=8)

@@ -36,10 +36,12 @@ const STATIONS = [
   {site: "kihei", name: "Top: Kīhei", where: "Sugar Beach"},
   {site: "wailea", name: "Bottom: Wailea", where: "inland of Wailea Beach"},
 ];
-// Cams down the coast. More to come (Ulua, Poʻolenalena): each just needs
-// its cam_motion/cam_images published under its own site.
+// Cams down the coast (db/cams/cams.py), each with its cam_motion/cam_images
+// published under its own site. Poʻolenalena still to come. px/s isn't
+// comparable between cams, and the −2 px/s line was set on Wailea's.
 const CAMS = [
   {site: "wailea", name: "Grand Wailea cam"},
+  {site: "ulua", name: "Ulua cam"},
 ];
 const LIVE_STALE = 15 * 60e3;
 const RATING_STALE = 30 * 60e3;

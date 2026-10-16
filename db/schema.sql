@@ -69,7 +69,7 @@ order by date, time;
 
 
 -- Cam readings, one row per watcher reading (db/cam-ingest, from
--- db/cams/wailea_motion.py's motion.jsonl). day is the Hawaii day. A
+-- db/cams/cam_motion.py's motion.jsonl). day is the Hawaii day. A
 -- reading the watcher skipped has only skipped set. Fields the watcher
 -- adds later need a column here before cam-ingest keeps them.
 CREATE TABLE cam_motion(

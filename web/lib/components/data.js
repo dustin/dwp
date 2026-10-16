@@ -260,7 +260,7 @@ export async function fetchWind(meta) {
     .then(allRows => inRange(meta, allRows));
 }
 
-// The Grand Wailea cam (db/cams/wailea_motion.py), and how far from it a
+// The Grand Wailea cam (db/cams/cam_motion.py), and how far from it a
 // Kihei run's track has to come to count as passing it.
 export const WAILEA_CAM = {lat: 20.6858, lon: -156.4425};
 const CAM_PASS_M = 3000;

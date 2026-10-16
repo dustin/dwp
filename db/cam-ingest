@@ -3,7 +3,8 @@
 
     ./cam-ingest
 
-Each folder in CAMS is a cam watcher's --log dir (db/cams/wailea_motion.py):
+Each folder in CAMS is a cam watcher's --log dir (db/cams/cam_motion.py),
+~/.cache/<cam>-motion for each cam in db/cams/cams.py unless DWP_<CAM>_CAM says otherwise:
 a motion.jsonl, one reading per line, and images named <stamp>-<kind>.jpg
 (a bare <stamp>.jpg is an older arrow overlay, kind flow). Readings newer
 than the lake's newest for that site go into cam_motion; a field with no
@@ -26,10 +27,12 @@ from zoneinfo import ZoneInfo
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cams"))
 from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+import cams  # noqa: E402
 
 # site -> the folder its cam watcher logs to (--log).
-CAMS = {"wailea": os.environ.get("DWP_WAILEA_CAM") or os.path.expanduser("~/.cache/wailea-motion")}
+CAMS = {c: os.environ.get(f"DWP_{c.upper()}_CAM") or os.path.expanduser(f"~/.cache/{c}-motion") for c in cams.CAMS}
 CAM_IMAGE = re.compile(r"(\d{4}-\d\d-\d\dT\d{6}Z)(?:-([a-z]+))?\.jpg")
 
 
