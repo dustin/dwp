@@ -86,7 +86,7 @@ def tides(aux):
 
 # Node-RED's run rating (run-recs/node-red-rating.md), retained:
 # {"stamp": ISO UTC, "rec": "Kīhei" | "north shore" | "either; ..." | "no can",
-#  "kihei": 0-4, "ns": 0-4}. Under weather/ too, in case it moves there.
+#  "kihei": 0-4, "ns": 0-4, "dark": true when it's dark (scores 0, no rating)}. Under weather/ too, in case it moves there.
 RATING_TOPICS = ("conditions/rating", "weather/conditions/rating")
 # Node-RED's read of a cam frame by a vision model, per site (no stamp; the
 # time it arrives is when it was read): weather/conditions/wailea →
@@ -174,7 +174,8 @@ class Weather:
                 m = json.loads(payload)
                 kihei, ns = _score(m["kihei"]), _score(m["ns"])
                 r = {"t": datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp(),
-                     "rec": str(m.get("rec") or _rec(kihei, ns)), "kihei": kihei, "ns": ns}
+                     "rec": str(m.get("rec") or _rec(kihei, ns)), "kihei": kihei, "ns": ns,
+                     "dark": bool(m.get("dark"))}
             except (ValueError, KeyError, TypeError) as e:
                 log(f"skipping {topic}: {e}")
                 return
@@ -265,7 +266,7 @@ class Weather:
                            **{k: c[k] for k in ("sea", "shorebreak", "daylight", "description")}}
                     for site, c in self.cams.items()}
         rating = r and {"stamp": datetime.fromtimestamp(r["t"], HST).isoformat(timespec="seconds"),
-                        "rec": r["rec"], "kihei": r["kihei"], "ns": r["ns"]}
+                        "rec": r["rec"], "kihei": r["kihei"], "ns": r["ns"], "dark": r.get("dark", False)}
         newest = max((q["readings"][-1][0] for q in stations.values()), default=None)
         return {"updated": newest, "stations": stations, "rating": rating,
                 "cams": cams,

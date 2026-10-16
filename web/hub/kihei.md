@@ -86,12 +86,15 @@ const top = stations[0].rows.at(-1);
 ```js
 function ratingCard(r) {
   if (!r) return html`<div class="card"><h2>Run rating</h2><div class="muted">No rating from Node-RED yet</div></div>`;
-  const old = Date.now() - r.ts > RATING_STALE;
+  // A stale rating (Node-RED stops rating at night) or one made in the dark
+  // says nothing about now, so show no score at all.
+  if (Date.now() - r.ts > RATING_STALE || r.dark)
+    return html`<div class="card"><h2>Run rating</h2><div class="muted">${r.dark ? "Dark, no rating" : `No current rating (last one ${fmt.relativeTime(r.ts)})`}</div></div>`;
   const out10 = s => `${Math.round(s * 2.5)}/10`;
   const kiheiBest = r.rec === "Kīhei" || r.rec.includes("Kīhei slightly better");
   return html`<div class="card">
-    <h2>Run rating <span class="muted" style="font-weight: normal">${old ? `as of ${fmt.clock(r.ts)}, not updated since` : `${fmt.relativeTime(r.ts)}`}</span></h2>
-    <div class="rating-row" style=${old ? "opacity: 0.6" : ""}>
+    <h2>Run rating <span class="muted" style="font-weight: normal">${fmt.relativeTime(r.ts)}</span></h2>
+    <div class="rating-row">
       <span class="lead ${kiheiBest ? "rating-best" : ""}">Kīhei ${out10(r.kihei)}</span>
       <span class="muted">North shore ${out10(r.ns)}</span>
       <span class="muted">Best bet: ${r.rec}</span>

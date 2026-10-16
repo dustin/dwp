@@ -29,7 +29,7 @@ const RATING_STALE = 30 * 60e3;
 async function loadWind() {
   const live = await fetchLiveWind();
   const since = Date.now() - 6 * 3600e3;
-  const rating = live?.rating && Date.now() - live.rating.ts < RATING_STALE ? live.rating : null;
+  const rating = live?.rating && !live.rating.dark && Date.now() - live.rating.ts < RATING_STALE ? live.rating : null;
   return Promise.all(WIND_SITES.map(async ([site, name]) => {
     const [side, recName] = RATING_SIDE[site] ?? [];
     const run = rating && side in rating

@@ -77,6 +77,11 @@ class Alerts:
             for side in SIDES:
                 self.state[side].update(level=0, said=0, off_at=0, hushed=False)
         self.state["t"] = rating["t"]
+        if rating.get("dark"):  # nightfall ends the day quietly, no "dropping off"
+            for side in SIDES:
+                self.state[side].update(level=0, said=0, hushed=False)
+            self.save()
+            return []
         quiet = now - rating["t"] > STALE
         morning = hst.hour < MORNING_END
         # Sides the room has heard about (not ones that came back quietly).
