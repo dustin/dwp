@@ -95,16 +95,15 @@ function stationSection(st) {
       <h3>Direction</h3>
       ${resize(width => Plot.plot({
         width, height: 240, marginLeft: 36, marginBottom: 34,
-        x: {domain: dirDomain, label: "station direction (°, band centre)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: d => +d % 10 ? "" : d},
+        x: {domain: dirDomain, label: "station direction (°, band centre)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: (d, i) => i % 2 ? "" : d},
         y: {label: "score", grid: true, domain: [-3, 2], clamp: true},
         marks: [
           Plot.barY(byDir, {x: d => fmtDeg(d.band), y: "score", fill: d => CLASSES[d.cls ?? "nogo"].color, inset: 2}),
           Plot.ruleY([0]),
-          Plot.text(byDir, {x: d => fmtDeg(d.band), y: d => Math.max(-3, Math.min(2, d.score)), text: "n", dy: d => d.score >= 0 ? -7 : 7, fill: "var(--theme-foreground-muted)", fontSize: 10}),
           Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), y: "score", title: d => `${fmtDeg(d.band)}° (±${st.dirStep / 2}): ${d.n} runs, score ${d.score.toFixed(2)}\ntable says ${CLASSES[d.cls ?? "nogo"].label}`}))
         ]
       }))}
-      <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction; the number on each bar is how many runs.</div>
+      <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction. Hover a bar for its run count.</div>
     </div>
     <div class="card">
       <h3>Wind strength</h3>
@@ -115,18 +114,17 @@ function stationSection(st) {
         marks: [
           Plot.barY(bySpeed, {x: d => knLabel(d.kn), y: "score", fill: d => d.kn + SPEED_STEP <= q.floor ? CLASSES.light.color : "var(--theme-foreground-focus)", inset: 2}),
           Plot.ruleY([0]),
-          Plot.text(bySpeed, {x: d => knLabel(d.kn), y: d => Math.max(-3, Math.min(2, d.score)), text: "n", dy: d => d.score >= 0 ? -7 : 7, fill: "var(--theme-foreground-muted)", fontSize: 10}),
           Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), y: "score", title: d => `${knLabel(d.kn)} kn: ${d.n} runs, score ${d.score.toFixed(2)}`}))
         ]
       }))}
-      <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light.</div>
+      <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light. Hover a bar for its run count.</div>
     </div>
   </div>
   <div class="card">
     <h3>Direction and strength together</h3>
     ${resize(width => Plot.plot({
       width, height: Math.max(200, 26 * knDomain.length + 60), marginLeft: 48, marginBottom: 34, padding: 0.06,
-      x: {domain: dirDomain, label: "station direction (°) · rows are average wind (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: d => +d % 10 ? "" : d},
+      x: {domain: dirDomain, label: "station direction (°) · rows are average wind (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: (d, i) => i % 2 ? "" : d},
       y: {domain: knDomain.slice().reverse().map(knLabel), label: null, tickSize: 0},
       color: {type: "diverging", scheme: "PiYG", domain: [-2, 2], clamp: true, legend: true, label: "score"},
       marks: [
