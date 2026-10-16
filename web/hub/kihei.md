@@ -16,6 +16,8 @@ toc: false
   .similar th { font-weight: normal; color: var(--theme-foreground-muted); }
   .similar .num { text-align: right; }
   .similar-wrap { overflow-x: auto; }
+  .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
+    color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
 </style>
 
 # Kīhei
@@ -26,6 +28,7 @@ The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's sta
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings} from "./components/data.js";
 import {compassPoint} from "./components/spectrum.js";
+import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 // Top and bottom of a north run.
@@ -96,17 +99,18 @@ function ratingCard(r) {
   </div>`;
 }
 
-function stationCard({name, where, rows, live}, yMax, xDomain) {
+function stationCard({site, name, where, rows, live}, yMax, xDomain) {
   const last = rows.at(-1);
   if (!last) return html`<div class="card"><h2>${name}</h2><div class="muted">No recent readings</div></div>`;
   return html`<div class="card">
     <h2>${name} <span class="muted" style="font-weight: normal">${where} · ${live ? "live · " : ""}${fmt.relativeTime(last.ts)}</span></h2>
-    <div class="lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` g${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : html` <span class="unit">${compassPoint(last.wdir)} ${Math.round(last.wdir)}°</span>`}</div>
+    <div class="lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` g${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : html` <span class="unit">${compassPoint(last.wdir)} ${Math.round(last.wdir)}°</span>`} ${qualityBadge(site, last)}</div>
     ${resize(width => Plot.plot({
       width, height: 110, marginLeft: 28, marginBottom: 20,
       x: {type: "time", domain: xDomain, ticks: 6, tickFormat: fmt.clock, label: null},
-      y: {domain: [0, yMax], ticks: 3, label: null, grid: true},
+      y: {domain: [-2.5, yMax], ticks: [0, 10, 20, 30].filter(t => t <= yMax), label: null, grid: true},
       marks: [
+        qualityStrip(site, rows, {y1: -2.5, y2: -0.8}),
         Plot.areaY(rows, {x: "ts", y1: d => d.wlull ?? d.wavg, y2: "wgust", fill: "var(--theme-foreground-focus)", fillOpacity: 0.15, curve: "basis"}),
         Plot.lineY(rows, {x: "ts", y: "wavg", stroke: "var(--theme-foreground-focus)", curve: "basis"}),
         Plot.ruleY([15], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"}),

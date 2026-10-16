@@ -11,6 +11,7 @@ import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
+import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
@@ -77,10 +78,11 @@ function windCard({site, name, rows, live, run}) {
   if (!last) return htl.html`<div class="card"><h2>${name} wind</h2><div class="nav-muted">No recent readings</div></div>`;
   const body = htl.html`
     <h2>${name} wind <span class="nav-age">${live ? htl.html`<span class="live-dot"></span>live · ` : ""}${fmt.relativeTime(last.ts)}${href ? htl.html` <span class="nav-card-arrow">→</span>` : ""}</span></h2>
-    <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` gusting ${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : ` · ${compassPoint(last.wdir)} ${Math.round(last.wdir)}°`}</div>
+    <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` gusting ${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : ` · ${compassPoint(last.wdir)} ${Math.round(last.wdir)}°`} ${qualityBadge(site, last)}</div>
     ${resize(width => Plot.plot({
-      width, height: 70, margin: 2, marginBottom: 16, x: {type: "time", ticks: 3, tickFormat: fmt.clock, label: null}, y: {axis: null, domain: [0, Math.max(30, d3.max(rows, d => d.wgust))]},
+      width, height: 70, margin: 2, marginBottom: 16, x: {type: "time", ticks: 3, tickFormat: fmt.clock, label: null}, y: {axis: null, domain: [-2.5, Math.max(30, d3.max(rows, d => d.wgust))]},
       marks: [
+        qualityStrip(site, rows, {y1: -2.5, y2: -0.8}),
         Plot.areaY(rows, {x: "ts", y1: "wlull", y2: "wgust", fill: "var(--theme-foreground-focus)", fillOpacity: 0.15, curve: "basis"}),
         Plot.lineY(rows, {x: "ts", y: "wavg", stroke: "var(--theme-foreground-focus)", curve: "basis"}),
         Plot.ruleY([15], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"})
@@ -251,6 +253,8 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   @keyframes live-pulse { 50% { opacity: 0.35; } }
   .wind-foot { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
   .run-hint { white-space: nowrap; }
+  .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
+    color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
   .run-best { color: var(--theme-foreground-focus); }
   a.nav-card { color: var(--theme-foreground); text-decoration: none; display: flex; flex-direction: column; gap: 0.3rem;
     background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
