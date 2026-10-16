@@ -10,12 +10,12 @@ stdenvNoCC.mkDerivation {
   version = "0";
   src = lib.fileset.toSource {
     root = ./.;
-    fileset = lib.fileset.unions [ ./cam_motion.py ./cams.py ./water_motion.py ./whitecaps.py ];
+    fileset = lib.fileset.unions [ ./cam_motion.py ./cams.py ./rapidssl-g1.pem ./water_motion.py ./whitecaps.py ];
   };
   nativeBuildInputs = [ makeWrapper ];
   installPhase = ''
     mkdir -p $out/share/cam-motion $out/bin
-    cp *.py $out/share/cam-motion/
+    cp *.py *.pem $out/share/cam-motion/
     makeWrapper ${python}/bin/python3 $out/bin/cam-motion \
       --add-flags $out/share/cam-motion/cam_motion.py \
       --set-default SSL_CERT_FILE ${cacert}/etc/ssl/certs/ca-bundle.crt

@@ -1,6 +1,6 @@
 """Measure each cam's water motion now and publish it over MQTT.
 
-For each cam in cams.py, in turn (one Ozolio session at a time, closed before
+For each cam in cams.py, in turn (one stream session at a time, closed before
 the next), grabs the latest few seconds of its HLS stream, runs water_motion's
 optical flow on it, and publishes (retained) to weather/conditions/<cam>_motion:
 
@@ -20,7 +20,7 @@ Kihei station (weather/kihei) reads under 9 kn. Run it every 10 min in daylight
 
 Packaged with OpenCV and numpy in default.nix (`cam-motion`); hm-module.nix runs it.
 """
-import argparse, json, os, re, socket, struct, sys, tempfile, time, urllib.parse, urllib.request
+import argparse, json, os, re, socket, ssl, struct, sys, tempfile, time, urllib.parse, urllib.request
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,12 +34,46 @@ KIHEI_TOPIC = "weather/kihei"
 KIHEI_MIN = 9  # kn; under this Kihei is LIGHT in the run rating (floor 12 - 3)
 
 
-def get(url, params=None):
+def get(url, params=None, ctx=None, referer=None):
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    headers = {"User-Agent": UA}
+    if referer:
+        headers["Referer"] = referer
+    with urllib.request.urlopen(urllib.request.Request(url, headers=headers), timeout=30, context=ctx) as r:
         return r.read()
+
+
+def tls(cam):
+    """An SSL context for cam: the usual roots, plus cam["intermediate"]
+    (a PEM in this directory) for a server that leaves it out of its chain."""
+    if not cam.get("intermediate"):
+        return None
+    ctx = ssl.create_default_context()
+    ctx.load_verify_locations(os.path.join(os.path.dirname(os.path.abspath(__file__)), cam["intermediate"]))
+    return ctx
+
+
+def segments(src, n, get):
+    """The last n segments of an HLS playlist, following a master playlist to
+    its (last) media playlist: [(seconds, url)]."""
+    playlist = get(src).decode()
+    sub = [l for l in playlist.splitlines() if l and not l.startswith("#")]
+    if sub and ".m3u8" in sub[0]:
+        src = urllib.parse.urljoin(src, sub[-1])
+        playlist = get(src).decode()
+    lines = playlist.splitlines()
+    return [(float(re.match(r"#EXTINF:([\d.]+)", lines[i]).group(1)), urllib.parse.urljoin(src, lines[i + 1]))
+            for i in range(len(lines) - 1) if lines[i].startswith("#EXTINF")][-n:]
+
+
+def join(segs, get):
+    """Download segs into one .ts file; (path, seconds)."""
+    fd, path = tempfile.mkstemp(suffix=".ts")
+    with os.fdopen(fd, "wb") as f:
+        for _, url in segs:
+            f.write(get(url))
+    return path, sum(d for d, _ in segs)
 
 
 def init(cam):
@@ -52,25 +86,18 @@ def init(cam):
 
 
 def clip(cam, n):
-    """The latest n HLS segments of cam joined into one .ts file; (path, seconds)."""
+    """The latest n HLS segments of cam joined into one .ts file; (path, seconds).
+    A cam with "hls" is a plain HLS URL; otherwise it's an Ozolio camera,
+    opened (and closed again) through its session API."""
+    if cam.get("hls"):
+        ctx = tls(cam)
+        g = lambda url: get(url, ctx=ctx, referer=cam.get("referer"))  # noqa: E731
+        return join(segments(cam["hls"], n, g), g)
     sid = json.loads(get(RELAY, init(cam)))["session"]["id"]
     try:
         src = json.loads(get(RELAY, {"cmd": "open", "oid": sid, "output": "1",
                                      "format": "M3U8", "profile": "AUTO"}))["output"]["source"]
-        playlist = get(src).decode()
-        # A master playlist names its chunklist; a media playlist names segments.
-        sub = [l for l in playlist.splitlines() if l and not l.startswith("#")]
-        if sub and ".m3u8" in sub[0]:
-            src = urllib.parse.urljoin(src, sub[-1])
-            playlist = get(src).decode()
-        lines = playlist.splitlines()
-        segs = [(float(re.match(r"#EXTINF:([\d.]+)", lines[i]).group(1)), urllib.parse.urljoin(src, lines[i + 1]))
-                for i in range(len(lines) - 1) if lines[i].startswith("#EXTINF")][-n:]
-        fd, path = tempfile.mkstemp(suffix=".ts")
-        with os.fdopen(fd, "wb") as f:
-            for _, url in segs:
-                f.write(get(url))
-        return path, sum(d for d, _ in segs)
+        return join(segments(src, n, get), get)
     finally:
         try:
             get(RELAY, {"cmd": "close", "oid": sid})

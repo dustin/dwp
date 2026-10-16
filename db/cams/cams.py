@@ -1,14 +1,19 @@
 """The cams cam_motion.py watches: where each streams from and where its
 water is. Plain data (no OpenCV), so db/cam-ingest can read the names too.
 
-Boxes are (x, y, w, h) in the 1920x1080 frame:
+A cam is either Ozolio ("oid", optional "directory") or a plain HLS playlist
+("hls", optional "referer" sent as the embedding page, and "intermediate", a
+PEM here for a server that sends only its own certificate).
+
+Boxes are (x, y, w, h) in the cam's frame (Ozolio 1920x1080, Brownrice 1280x720):
   water: the band optical flow measures (water_motion.py)
   land:  a still patch whose flow is subtracted, to cancel camera shake
   caps:  the band whitecaps are counted in (whitecaps.py)
   caps_mask: parts of it where waves always break (rocks, reef)
 
 dx < 0 (right to left in the picture) is down the coast toward Mākena on
-every cam so far. The px/s scale differs per cam (distance, zoom), so a
+Wailea and Ulua. Poʻolenalena looks up the coast, so south is toward the
+camera there (dy > 0) and dx < 0 is offshore. The px/s scale differs per cam (distance, zoom), so a
 threshold set on one cam doesn't carry over to another.
 """
 
@@ -25,5 +30,16 @@ CAMS = {
         "oid": "CID_GQRS00000091",
         "water": (0, 370, 1100, 170), "land": (1440, 930, 150, 100),
         "caps": (0, 335, 1550, 170), "caps_mask": [(1120, 445, 430, 60)],
+    },
+    # Makena Surf, above Poʻolenalena Beach, looking northwest up the coast
+    # (Brownrice player on makenasurf.org, 720p). Water left of the shorebreak,
+    # between thin palm trunks; the roof is the still patch.
+    # streamer4 sends no intermediate: rapidssl-g1.pem (RapidSSL TLS RSA CA G1,
+    # under DigiCert Global Root G2) runs out 2027-11-02.
+    "poolenalena": {
+        "hls": "https://streamer4.brownrice.com/makenasurf/makenasurf.stream/main_playlist.m3u8",
+        "referer": "https://makenasurf.org/", "intermediate": "rapidssl-g1.pem",
+        "water": (0, 200, 680, 130), "land": (600, 600, 300, 80),
+        "caps": (0, 190, 680, 140), "caps_mask": [],
     },
 }
