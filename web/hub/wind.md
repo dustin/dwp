@@ -1,0 +1,152 @@
+---
+theme: dashboard
+title: What makes good wind
+toc: false
+---
+
+<style>
+  .muted { color: var(--theme-foreground-muted); }
+  .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px;
+    color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
+  .ranges { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  .ranges td, .ranges th { padding: 0.2rem 0.8rem 0.2rem 0; text-align: left; }
+  .ranges th { font-weight: normal; color: var(--theme-foreground-muted); }
+</style>
+
+# What makes good wind
+
+The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. They're recomputed from the run logs every time this page loads.
+
+```js
+import {fetchMeta, riderFile} from "./components/data.js";
+import {WIND_QUALITY, CLASSES, windClass} from "./components/wind-quality.js";
+
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+// Each station with the runs it describes. Kīhei's reverse (northbound)
+// runs are too few to score yet, so only southbound runs count there.
+const STATIONS = [
+  {site: "kihei", name: "Kīhei", region: "Kihei", dirStep: 5, keep: d => d.end_lat < d.start_lat, what: "southbound runs, Kīhei station at Sugar Beach"},
+  {site: "hookipa", name: "Hoʻokipa", region: "Maui North Shore", dirStep: 10, keep: () => true, what: "north shore runs, Hoʻokipa station"},
+];
+const SPEED_STEP = 2;
+const MIN_RUNS = 3;
+```
+
+```js
+const runs = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
+  (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => [])).map(d => ({...d, riderSlug: slug, riderName: name}))
+))).flat();
+
+// Each run against its own rider's other runs in the same region, so a
+// fast rider doesn't make their usual direction look good: z-scores of
+// on-foil share and foiling speed, minus paddle-ups per km.
+function scored(region, keep) {
+  const rs = runs.filter(d => d.region === region && keep(d) && d.avg_wdir != null && d.avg_wavg != null
+    && d.distance_km > 3 && d.duration_on_foil > 0);
+  const feats = d => ({
+    share: d.distance_on_foil / (d.distance_km * 1000),
+    speed: d.distance_on_foil / d.duration_on_foil * 3.6,
+    paddleUps: (d.paddle_up_count ?? 0) / d.distance_km,
+  });
+  return d3.groups(rs, d => d.riderSlug).flatMap(([, mine]) => {
+    if (mine.length < 10) return [];
+    const f = mine.map(feats);
+    const z = k => {
+      const m = d3.mean(f, d => d[k]), s = d3.deviation(f, d => d[k]) || 1;
+      return v => (v - m) / s;
+    };
+    const zs = z("share"), zv = z("speed"), zp = z("paddleUps");
+    return mine.map((d, i) => ({...d, ...f[i], score: zs(f[i].share) + zv(f[i].speed) - zp(f[i].paddleUps)}));
+  });
+}
+const bandOf = (deg, step) => (Math.floor(((deg + step / 2) % 360 + 360) % 360 / step) * step) % 360;
+const fmtDeg = d => String(d).padStart(3, "0");
+```
+
+```js
+function stationSection(st) {
+  const rs = scored(st.region, st.keep).map(d => ({
+    ...d,
+    dirBand: bandOf(d.avg_wdir, st.dirStep),
+    kn: Math.floor(d.avg_wavg / SPEED_STEP) * SPEED_STEP,
+  }));
+  const q = WIND_QUALITY[st.site];
+  // Directions in order around the station's sweet spot, so a range that
+  // crosses north stays in one piece.
+  const centre = d3.median(rs, d => d.avg_wdir);
+  const order = d => ((d - centre + 540) % 360);
+  const byDir = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.dirBand)
+    .map(([band, v]) => ({band, ...v, cls: windClass(st.site, {wdir: band})}))
+    .filter(d => d.n >= MIN_RUNS).sort((a, b) => order(a.band) - order(b.band));
+  const dirDomain = byDir.map(d => fmtDeg(d.band));
+  const bySpeed = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.kn)
+    .map(([kn, v]) => ({kn, ...v})).filter(d => d.n >= MIN_RUNS).sort((a, b) => a.kn - b.kn);
+  const cells = d3.rollups(rs, v => ({n: v.length, score: d3.mean(v, d => d.score)}), d => d.dirBand, d => d.kn)
+    .flatMap(([band, ks]) => ks.map(([kn, v]) => ({band: fmtDeg(band), kn, ...v})))
+    .filter(d => d.n >= 2 && dirDomain.includes(d.band));
+  const knDomain = d3.range(d3.min(bySpeed, d => d.kn), d3.max(bySpeed, d => d.kn) + 1, SPEED_STEP);
+  const knLabel = k => `${k}–${k + SPEED_STEP}`;
+  const best = d3.greatest(byDir, d => d.score);
+
+  return html`<h2 id=${st.site}>${st.name}</h2>
+  <p class="muted">${rs.length} ${st.what}. Score is how a run went against that rider's other runs here: time on foil plus foiling speed, minus paddle-ups. 0 is a usual run for them. ${best ? `Best direction band so far: ${fmtDeg(best.band)}°.` : ""}</p>
+  <div class="grid grid-cols-2">
+    <div class="card">
+      <h3>Direction</h3>
+      ${resize(width => Plot.plot({
+        width, height: 240, marginLeft: 36, marginBottom: 34,
+        x: {domain: dirDomain, label: "station direction (°, band centre)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: d => +d % 10 ? "" : d},
+        y: {label: "score", grid: true, domain: [-3, 2], clamp: true},
+        marks: [
+          Plot.barY(byDir, {x: d => fmtDeg(d.band), y: "score", fill: d => CLASSES[d.cls ?? "nogo"].color, inset: 2}),
+          Plot.ruleY([0]),
+          Plot.text(byDir, {x: d => fmtDeg(d.band), y: d => Math.max(-3, Math.min(2, d.score)), text: "n", dy: d => d.score >= 0 ? -7 : 7, fill: "var(--theme-foreground-muted)", fontSize: 10}),
+          Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), y: "score", title: d => `${fmtDeg(d.band)}° (±${st.dirStep / 2}): ${d.n} runs, score ${d.score.toFixed(2)}\ntable says ${CLASSES[d.cls ?? "nogo"].label}`}))
+        ]
+      }))}
+      <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction; the number on each bar is how many runs.</div>
+    </div>
+    <div class="card">
+      <h3>Wind strength</h3>
+      ${resize(width => Plot.plot({
+        width, height: 240, marginLeft: 36, marginBottom: 34,
+        x: {domain: knDomain.map(knLabel), label: "average wind over the run (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0},
+        y: {label: "score", grid: true, domain: [-3, 2], clamp: true},
+        marks: [
+          Plot.barY(bySpeed, {x: d => knLabel(d.kn), y: "score", fill: d => d.kn + SPEED_STEP <= q.floor ? CLASSES.light.color : "var(--theme-foreground-focus)", inset: 2}),
+          Plot.ruleY([0]),
+          Plot.text(bySpeed, {x: d => knLabel(d.kn), y: d => Math.max(-3, Math.min(2, d.score)), text: "n", dy: d => d.score >= 0 ? -7 : 7, fill: "var(--theme-foreground-muted)", fontSize: 10}),
+          Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), y: "score", title: d => `${knLabel(d.kn)} kn: ${d.n} runs, score ${d.score.toFixed(2)}`}))
+        ]
+      }))}
+      <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light.</div>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Direction and strength together</h3>
+    ${resize(width => Plot.plot({
+      width, height: Math.max(200, 26 * knDomain.length + 60), marginLeft: 48, marginBottom: 34, padding: 0.06,
+      x: {domain: dirDomain, label: "station direction (°) · rows are average wind (kn)", labelAnchor: "center", labelOffset: 30, tickSize: 0, tickFormat: d => +d % 10 ? "" : d},
+      y: {domain: knDomain.slice().reverse().map(knLabel), label: null, tickSize: 0},
+      color: {type: "diverging", scheme: "PiYG", domain: [-2, 2], clamp: true, legend: true, label: "score"},
+      marks: [
+        Plot.cell(cells, {x: "band", y: d => knLabel(d.kn), fill: "score", inset: 0.5}),
+        Plot.text(cells, {x: "band", y: d => knLabel(d.kn), text: "n", fill: d => Math.abs(d.score) > 1.2 ? "white" : "black", fontSize: 10}),
+        Plot.tip(cells, Plot.pointer({x: "band", y: d => knLabel(d.kn), title: d => `${d.band}°, ${knLabel(d.kn)} kn: ${d.n} runs, score ${d.score.toFixed(2)}`}))
+      ]
+    }))}
+    <div class="muted" style="font-size: 0.85em">Each cell is the average score of runs in that direction and wind; the number is how many runs. Cells with one run are left out.</div>
+  </div>
+  <div class="card">
+    <h3>The table</h3>
+    <table class="ranges"><thead><tr><th>Direction</th><th>Label</th><th>Why</th></tr></thead><tbody>
+      ${q.ranges.map(r => html`<tr><td>${fmtDeg(r.from)}–${fmtDeg(r.to)}°</td><td><span class="wq-badge" style="--wq: ${CLASSES[r.class].color}">${CLASSES[r.class].label}</span></td><td class="muted">${r.note}</td></tr>`)}
+      <tr><td>anything else</td><td><span class="wq-badge" style="--wq: ${CLASSES.nogo.color}">no go</span></td><td></td></tr>
+      <tr><td>under ${q.floor} kn</td><td><span class="wq-badge" style="--wq: ${CLASSES.light.color}">too light</span></td><td class="muted">any direction</td></tr>
+    </tbody></table>
+    <div class="muted" style="font-size: 0.85em; margin-top: 0.4rem">Runs only happen on days someone chose to go, so the charts rank directions people ride; where "no go" starts comes from riders, not the data.</div>
+  </div>`;
+}
+```
+
+${STATIONS.map(stationSection)}
