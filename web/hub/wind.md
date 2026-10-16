@@ -15,7 +15,7 @@ toc: false
 
 # What makes good wind
 
-The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. They're recomputed from the run logs every time this page loads.
+The wind cards label each reading magic, good, harder, too light or no go. The labels come from a table for each station: direction ranges in that station's degrees, plus a lightest wind worth going in. The charts below show how everyone's runs have gone at each direction and wind strength, so you can see where the table's numbers come from. They're recomputed from the run logs every time this page loads. The run rating reads the same table, so the labels and the rating agree.
 
 ```js
 import {fetchMeta, riderFile} from "./components/data.js";

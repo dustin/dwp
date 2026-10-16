@@ -1,0 +1,98 @@
+{
+  "_about": "How good the wind is for a downwind run, per wind station, in the degrees that station reports. Ranges run clockwise from..to inclusive (330 to 10 wraps through north); the first range holding a reading wins; a direction in none is nogo; under floor kn is light. Read by the downwind.pro site (web/lib/components/wind-quality.js) and by Node-RED's run rating (fetched from GitHub). Edit here only.",
+  "classes": {
+    "magic": {
+      "label": "magic",
+      "color": "#14b8a6",
+      "rank": 4
+    },
+    "good": {
+      "label": "good",
+      "color": "#3ca951",
+      "rank": 3
+    },
+    "hard": {
+      "label": "harder",
+      "color": "#efb118",
+      "rank": 2
+    },
+    "light": {
+      "label": "too light",
+      "color": "#9a9a9a",
+      "rank": 1
+    },
+    "nogo": {
+      "label": "no go",
+      "color": "#e8453c",
+      "rank": 0
+    }
+  },
+  "stations": {
+    "kihei": {
+      "floor": 12,
+      "about": "Dustin 2026-10-16: the magical 340, pretty good 350, more difficult 15. Run data: 330-347 goes best, 350-015 about average, runs stop past ~020. Reverse (south) runs go better at 180-195 than 200+.",
+      "ranges": [
+        {
+          "from": 328,
+          "to": 347,
+          "class": "magic",
+          "note": "the magical 340"
+        },
+        {
+          "from": 348,
+          "to": 12,
+          "class": "good",
+          "note": "pretty good, around 350"
+        },
+        {
+          "from": 13,
+          "to": 22,
+          "class": "hard",
+          "note": "more difficult, around 15"
+        },
+        {
+          "from": 315,
+          "to": 327,
+          "class": "hard",
+          "note": "west of 340"
+        },
+        {
+          "from": 178,
+          "to": 196,
+          "class": "good",
+          "note": "south: reverse runs"
+        },
+        {
+          "from": 197,
+          "to": 215,
+          "class": "hard",
+          "note": "south, too onshore"
+        }
+      ]
+    },
+    "hookipa": {
+      "floor": 17,
+      "about": "Rough, from run data until Dustin gives ranges: 70-100 all go about the same (90s a touch faster), 60s go noticeably worse, runs stop below 60.",
+      "ranges": [
+        {
+          "from": 68,
+          "to": 105,
+          "class": "good",
+          "note": "trades"
+        },
+        {
+          "from": 55,
+          "to": 67,
+          "class": "hard",
+          "note": "north of the trades"
+        },
+        {
+          "from": 106,
+          "to": 115,
+          "class": "hard",
+          "note": "east of the trades"
+        }
+      ]
+    }
+  }
+}
