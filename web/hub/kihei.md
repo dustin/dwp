@@ -16,6 +16,8 @@ toc: false
   .similar th { font-weight: normal; color: var(--theme-foreground-muted); }
   .similar .num { text-align: right; }
   .similar-wrap { overflow-x: auto; }
+  /* One width for every card, so the wind charts don't stretch across a wide screen. */
+  .kihei-col { max-width: 1100px; }
   .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
     color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
 </style>
@@ -178,9 +180,9 @@ function similarRuns(now) {
 const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 ```
 
-<div class="grid grid-cols-1">${ratingCard(rating)}</div>
+<div class="grid grid-cols-1 kihei-col">${ratingCard(rating)}</div>
 
-<div class="grid grid-cols-1">${(() => {
+<div class="grid grid-cols-1 kihei-col">${(() => {
   // Same scales, one above the other, so the drop from top to bottom reads
   // straight down.
   const yMax = Math.max(25, d3.max(stations.flatMap(s => s.rows), d => d.wgust) ?? 0);
@@ -188,7 +190,7 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   return stations.map(s => stationCard(s, yMax, xDomain));
 })()}</div>
 
-${cams.map(c => camCard(c, vision[c.site]))}
+<div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site]))}</div>
 
 ## Runs in wind like now
 
