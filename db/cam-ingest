@@ -61,6 +61,8 @@ def ingest(images, tmp):
         jsonl = os.path.join(d, "motion.jsonl")
         if not os.path.exists(jsonl):
             continue
+        # read_json types the stamps as naive TIMESTAMPs (the Z dropped), so
+        # say they're UTC; a plain cast would read them in the session's zone.
         src = f"read_json({sql_str(jsonl)}, format = 'newline_delimited', sample_size = -1)"
         fields = [r["column_name"] for r in duckdb(f"describe select * from {src};", json_out=True)]
         extra = sorted(set(fields) - set(have) - {"stamp"})
@@ -69,8 +71,8 @@ def ingest(images, tmp):
         cols = ", ".join(f'"{c}"' for c in fields if c in have and c not in ("site", "ts", "day"))
         stmts.append(f"""insert into cam_motion by name
             select * from (
-                select {sql_str(site)} as site, stamp::timestamptz as ts,
-                       (stamp::timestamptz at time zone 'Pacific/Honolulu')::date as day{", " + cols if cols else ""}
+                select {sql_str(site)} as site, (stamp::timestamp at time zone 'UTC') as ts,
+                       ((stamp::timestamp at time zone 'UTC') at time zone 'Pacific/Honolulu')::date as day{", " + cols if cols else ""}
                 from {src}
             ) where ts > coalesce(
                 (select max(ts) from cam_motion where site = {sql_str(site)}), '-infinity'::timestamptz)
