@@ -166,13 +166,15 @@ function riderCard({slug, name, runs}) {
 // ahead (weighted by how good they are), and the routes ridden most in
 // wind like its peak.
 const RUN_REGION = {kihei: "Kihei", hookipa: "Maui North Shore"};
+// What the pick calls each side: the run, not the station.
+const RUN_NAME = {kihei: "Kīhei", hookipa: "Maliko"};
 const dAngle = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 function pickCard(wind, forecasts, riders) {
   const now = new Date();
   const runs = riders.flatMap(r => r.runs);
   const opts = wind.map(({site, name, rows}) => {
     const w = todayWindow(site, forecasts[site] ?? [], rows, now);
-    return {site, name, w, score: d3.sum(w.ok, h => CLASSES[h.cls].rank)};
+    return {site, name: RUN_NAME[site] ?? name, w, score: d3.sum(w.ok, h => CLASSES[h.cls].rank)};
   }).sort((a, b) => b.score - a.score);
   const best = opts[0];
   if (!best?.score) {
