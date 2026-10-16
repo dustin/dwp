@@ -14,6 +14,8 @@ import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
+// Stations with a page of their own to dig into.
+const WIND_PAGES = {kihei: "kihei.html"};
 
 // Each station's last 6 hours: live/wind.json when the bot's feed is
 // fresh, else the lake's half-hourly export. Refetched every minute while
@@ -69,11 +71,12 @@ function runHint(run) {
   return run.best ? htl.html`<span class="run-hint run-best">${score} · best bet</span>` : htl.html`<span class="run-hint">${score}</span>`;
 }
 
-function windCard({name, rows, live, run}) {
+function windCard({site, name, rows, live, run}) {
+  const href = WIND_PAGES[site];
   const last = rows.at(-1);
   if (!last) return htl.html`<div class="card"><h2>${name} wind</h2><div class="nav-muted">No recent readings</div></div>`;
-  return htl.html`<div class="card wind-card">
-    <h2>${name} wind <span class="nav-age">${live ? htl.html`<span class="live-dot"></span>live · ` : ""}${fmt.relativeTime(last.ts)}</span></h2>
+  const body = htl.html`
+    <h2>${name} wind <span class="nav-age">${live ? htl.html`<span class="live-dot"></span>live · ` : ""}${fmt.relativeTime(last.ts)}${href ? htl.html` <span class="nav-card-arrow">→</span>` : ""}</span></h2>
     <div class="nav-lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` gusting ${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : ` · ${compassPoint(last.wdir)} ${Math.round(last.wdir)}°`}</div>
     ${resize(width => Plot.plot({
       width, height: 70, margin: 2, marginBottom: 16, x: {type: "time", ticks: 3, tickFormat: fmt.clock, label: null}, y: {axis: null, domain: [0, Math.max(30, d3.max(rows, d => d.wgust))]},
@@ -83,8 +86,10 @@ function windCard({name, rows, live, run}) {
         Plot.ruleY([15], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"})
       ]
     }))}
-    <div class="nav-muted wind-foot"><span>last 6 hours · dashed line 15 kn</span>${runHint(run)}</div>
-  </div>`;
+    <div class="nav-muted wind-foot"><span>last 6 hours · dashed line 15 kn</span>${runHint(run)}</div>`;
+  return href
+    ? htl.html`<a class="card nav-card wind-card" href=${href}>${body}</a>`
+    : htl.html`<div class="card wind-card">${body}</div>`;
 }
 
 function buoyCard(b) {

@@ -299,6 +299,20 @@ export async function fetchCamReport(meta, track) {
   };
 }
 
+// A cam's readings over the given HST days (cam_motion), oldest first, each
+// with the images taken with it (kind -> URL, from cam_images).
+export async function fetchCamReadings(site, days) {
+  const perDay = await Promise.all(days.map(day => Promise.all([
+    fetchCsvForDay('cam_motion', site, day, camRow),
+    fetchCsvForDay('cam_images', site, day, camRow),
+  ])));
+  const motion = perDay.flatMap(([m]) => m);
+  const images = d3.group(perDay.flatMap(([, i]) => i), d => +d.ts);
+  return motion
+    .map(d => ({...d, images: Object.fromEntries((images.get(+d.ts) ?? []).map(i => [i.kind, `https://${DATAHOST}/${i.key}`]))}))
+    .sort((a, b) => a.ts - b.ts);
+}
+
 // live/wind.json, which matrix-bot replaces as the stations' MQTT feed
 // reports (see db/bot/mqtt_weather.py): {stations: site -> readings, oldest
 // first, over the last 24 hours; rating: Node-RED's latest run rating
