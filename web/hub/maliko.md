@@ -101,7 +101,7 @@ function buoyCard(readings, snap) {
   const stale = Date.now() - last.ts > 3 * 3600e3;
   const recent = readings.filter(d => d.ts >= +last.ts - 48 * 3600e3);
   return html`<div class="card">
-    <h2><a href="buoy.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${stale ? `offline · last report ${fmt.relativeTime(last.ts)}` : fmt.relativeTime(last.ts)}</span></h2>
+    <h2><a href="buoy.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${stale ? `No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})` : fmt.relativeTime(last.ts)}</span></h2>
     <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
     ${resize(width => Plot.plot({
       width, height: 140, marginLeft: 28, marginRight: 28, marginBottom: 20,
@@ -146,6 +146,6 @@ const withBuoy = nsRuns.filter(d => runBuoy.get(d.id)?.primary).length;
 
 ${buoyNow
   ? similarRunsCard(swellLike, top, {buoy: true, note: `Buoy like now: north shore runs whose mid-run Pauwela report was within ${BUOY_LIMITS.ft} ft, ${BUOY_LIMITS.s} s and ${BUOY_LIMITS.deg}° of ${buoyNow.height.toFixed(1)}′ @ ${buoyNow.period.toFixed(0)}s from ${Math.round(buoyNow.direction)}°: ${swellLike.length} of the ${withBuoy} runs with buoy data, closest ${Math.min(10, swellLike.length)} shown.`})
-  : html`<div class="card"><div class="muted">Buoy like now: the Pauwela buoy isn't reporting${buoyLast ? ` (last report ${fmt.relativeTime(buoyLast.ts)})` : ""}, so there's nothing to match. ${withBuoy} north shore runs have buoy data.</div></div>`}
+  : html`<div class="card"><div class="muted">Buoy like now: the Pauwela buoy isn't reporting${buoyLast ? ` (no reports since ${fmt.minuteStamp(buoyLast.ts)}, ${fmt.relativeTime(buoyLast.ts)})` : ""}, so there's nothing to match. ${withBuoy} north shore runs have buoy data.</div></div>`}
 
 ${similarRunsCard(windLike, top, {station: "Hoʻokipa", region: "North shore", buoy: true})}

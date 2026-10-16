@@ -8,7 +8,7 @@ toc: false
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot, fetchSwellPartitionWindow} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
 import {qualityStrip, qualityBadge, CLASSES} from "./components/wind-quality.js";
@@ -54,6 +54,12 @@ const forecasts = Promise.all(WIND_SITES.map(async ([site]) =>
   [site, await fetchWindForecast(site, d3.range(4).map(k => hstDay(Date.now() + k * 86400e3))).catch(() => [])]
 )).then(Object.fromEntries);
 const buoyNow = fetchBuoySnapshot(new Date()).catch(() => null);
+// When the buoy's last report was, for the card when it's gone quiet.
+const BUOY_LOOKBACK_DAYS = 7;
+const buoyLastTs = buoyNow.then(b => b?.primary ? null
+  : fetchSwellPartitionWindow("pauwela", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date())
+      .then(rows => rows.filter(d => d.values.some(v => v.rank === 1)).at(-1)?.ts ?? null)
+      .catch(() => null));
 const tidesNow = (async () => {
   const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
   const stations = [...new Set(SPOTS.map(s => s.station))];
@@ -100,8 +106,9 @@ function windCard({site, name, rows, live, run}) {
     : htl.html`<div class="card wind-card">${body}</div>`;
 }
 
-function buoyCard(b) {
-  if (!b?.primary) return htl.html`<a class="card nav-card" href="buoy.html"><h2>Pauwela buoy <span class="nav-card-arrow">→</span></h2><div class="nav-muted">No recent report</div></a>`;
+function buoyCard(b, lastTs) {
+  if (!b?.primary) return htl.html`<a class="card nav-card" href="buoy.html"><h2>Pauwela buoy <span class="nav-card-arrow">→</span></h2><div class="nav-muted">${
+    lastTs ? `No reports since ${fmt.minuteStamp(lastTs)} (${fmt.relativeTime(lastTs)})` : `No reports in the last ${BUOY_LOOKBACK_DAYS} days`}</div></a>`;
   return htl.html`<a class="card nav-card buoy-card" href="buoy.html">
     <div class="buoy-main">
       <h2>Pauwela buoy <span class="nav-age">${fmt.relativeTime(b.primaryTs)} <span class="nav-card-arrow">→</span></span></h2>
@@ -148,7 +155,7 @@ function riderCard({slug, name, runs}) {
 
 <div class="grid grid-cols-4">
   ${windNow.map(windCard)}
-  ${buoyCard(buoyNow)}
+  ${buoyCard(buoyNow, buoyLastTs)}
   ${tideCard(tidesNow)}
 </div>
 

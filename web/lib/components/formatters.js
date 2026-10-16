@@ -6,7 +6,7 @@ const rtUnits = [['year', 31536e6], ['month', 2628e6], ['day', 864e5], ['hour', 
 export const relativeTime = d => {
   const ms = new Date(d) - Date.now();
   const [unit, size] = rtUnits.find(([, size]) => Math.abs(ms) >= size) ?? rtUnits.at(-1);
-  return rtf.format(Math.trunc(ms / size), unit);
+  return rtf.format(Math.round(ms / size), unit);
 };
 
 // Always the 24-hour clock. (The browser's locale isn't a usable signal:
