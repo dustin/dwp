@@ -43,8 +43,7 @@ from the room each time) can act for any rider and publish:
     applies it. A room admin can ask about another rider: "!ask walter
     ...".
   * "!help" says the above.
-  * Short forms work too: !c is !conditions, !h !help, !l !last, !f
-    !foil, !s !sync, !a !ask, !p !publish ("!c chart", "!l walter").
+  * Any unambiguous start of a command works: "!c chart", "!l walter".
 
 When the conditions/rating feed (Node-RED's 0-4 score per side) says a
 run is getting good, the bot says so in the room, once per session per
@@ -141,10 +140,9 @@ HELP_ROOMS = [
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), on or off"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
 ]
-# Short forms, since long commands are a pain to type on a phone: "!c"
-# is "!conditions", "!c chart" is "!conditions chart", and so on.
-ALIASES = {"!c": "!conditions", "!h": "!help", "!l": "!last", "!f": "!foil",
-           "!s": "!sync", "!a": "!ask", "!p": "!publish"}
+# Any unambiguous start of a command works, since long commands are a pain
+# to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
+COMMANDS = ["conditions", "help", "last", "foil", "sync", "ask", "publish", "room", "rooms"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
@@ -155,24 +153,25 @@ HELP_ROOM_ADMIN = [
 
 
 def unalias(text):
-    """text with a short command ("!c chart") spelled out ("!conditions chart")."""
-    word, _, rest = text.partition(" ")
-    return ALIASES[word] + (" " + rest if rest else "") if word in ALIASES else text
+    """text with its command spelled out if it starts with an unambiguous
+    prefix of one ("!c chart" → "!conditions chart")."""
+    word, sp, rest = text.partition(" ")
+    if not word.startswith("!") or word[1:] in COMMANDS:
+        return text
+    hits = [c for c in COMMANDS if word[1:] and c.startswith(word[1:])]
+    return f"!{hits[0]}{sp}{rest}" if len(hits) == 1 else text
 
 
 def help_text(sections):
-    """(text, html) for [(heading, [(command, what)])], plus the short forms
-    of the commands listed."""
-    shown = {c.split()[0] for _, cmds in sections for c, _ in cmds}
-    short = [(a, f"short for {c}") for a, c in ALIASES.items() if c in shown]
-    if short:
-        sections = [*sections, ("Short forms", short)]
+    """(text, html) for [(heading, [(command, what)])]."""
     text, html = [], []
     for head, cmds in sections:
         text += [head, *(f"  {c}: {w}" for c, w in cmds)]
         html.append(f"<b>{escape(head)}</b><ul>"
                     + "".join(f"<li><code>{escape(c)}</code> {escape(w)}</li>" for c, w in cmds)
                     + "</ul>")
+    text.append("Any unambiguous start of a command works, like !c for !conditions.")
+    html.append("<p>Any unambiguous start of a command works, like <code>!c</code> for <code>!conditions</code>.</p>")
     return "\n".join(text), "".join(html)
 
 
