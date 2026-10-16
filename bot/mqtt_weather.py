@@ -188,7 +188,10 @@ class Weather:
         if topic.endswith("_motion"):  # weather/conditions/<site>_motion: wailea_motion
             try:
                 m = json.loads(payload)
-                mo = {"t": time.time(), "skipped": m.get("skipped"),
+                # When it was measured: a retained one arrives on every reconnect.
+                t = (datetime.fromisoformat(m["stamp"].replace("Z", "+00:00")).timestamp()
+                     if m.get("stamp") else time.time())
+                mo = {"t": t, "skipped": m.get("skipped"),
                       "dx": None if m.get("dx") is None else float(m["dx"]),
                       "left": float(m.get("left") or 0),
                       "whitecaps": m.get("whitecaps")}

@@ -95,6 +95,7 @@ import dwp_publish  # noqa: E402
 import spectrum_svg  # noqa: E402
 from mqtt_weather import Weather, tides  # noqa: E402
 import run_alerts  # noqa: E402
+import sources  # noqa: E402
 import ask  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
@@ -104,7 +105,8 @@ CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
 CAM_STALE = 30 * 60  # a cam reading older than this isn't shown
 LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea values worth a look
 LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
-WATCH_FROM, WATCH_TO = 7.5, 17.0  # HST hours when Node-RED should be rating (its window is 07:00-17:00)
+WATCH_EVERY = 2 * 60  # how often the bot checks its data sources (sources.py)
+WATCH_GRACE = 10 * 60  # after starting, so the live feed has a chance to arrive
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
@@ -137,13 +139,15 @@ HELP_ADMIN = [
 RIDER_COMMANDS = {"!sync", "!last", "!foil", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
-    ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), on or off"),
+    ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
+                           "sources (data going offline), on or off"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
 COMMANDS = ["conditions", "help", "last", "foil", "sync", "ask", "publish", "room", "rooms"]
-ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions"}
+ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
+                 "sources": "data source alerts"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
     ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
@@ -913,6 +917,7 @@ FOIL = re.compile(r"^(-|[\w .'-]{1,60})$")
 class Bot:
     def __init__(self, mx, args):
         self.mx, self.args = mx, args
+        self.started = time.time()
         self.pending = {}  # (room, sender) -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
@@ -953,7 +958,7 @@ class Bot:
                                                 "(or cam, pinned; on; leave)."]), reply_to=eid)
 
     def room_command(self, room, eid, words):
-        """!room N (alerts|cam|pinned) (on|off), or !room N leave."""
+        """!room N (alerts|cam|pinned|sources) (on|off), or !room N leave."""
         usage = "!room takes a number from !rooms and a setting, like !room 2 alerts off or !room 2 leave"
         if not words or not words[0].isdigit() or not 1 <= int(words[0]) <= len(self.rooms):
             self.mx.notice(room, usage, reply_to=eid)
@@ -1138,28 +1143,32 @@ class Bot:
                 self.broadcast({"msgtype": "m.text", "body": run_alerts.message(
                     kind, sides, rating, lines)}, "alerts")
 
-    def watch_ratings(self):
-        """Tell the first room once when Node-RED's run ratings stop arriving
-        in the daytime (none for run_alerts.STALE between WATCH_FROM and
-        WATCH_TO HST), and quietly when they're back."""
-        if not WEATHER:
+    def watch_sources(self):
+        """Tell every room once when a data source stops reporting in its
+        hours, and once when it's back (see sources.py)."""
+        now = time.time()
+        if now - self.started < WATCH_GRACE or now - getattr(self, "watched", 0) < WATCH_EVERY:
             return
-        now, path = time.time(), os.path.join(self.args.state_dir, "ratings-down")
-        rating = WEATHER.rating
-        last = rating["t"] if rating else None
-        down = last is None or now - last > run_alerts.STALE
+        self.watched = now
+        if not hasattr(self, "watch"):
+            self.watch = sources.Watch(os.path.join(self.args.state_dir, "sources-down.json"))
+        newest = {}
+        rows = query("select max(epoch(ts)) as t from swell_partition "
+                     "where site = 'pauwela' and ts > now() - interval 7 day")
+        if rows:  # none at all means the lake couldn't be read: no telling
+            newest["pauwela"] = rows[0]["t"]
+        if WEATHER:
+            live = WEATHER.recent()
+            for site in ("kihei", "hookipa", "wailea"):
+                newest[site] = live[site][-1]["t"] if live.get(site) else None
+            for cam in ("wailea", "ulua", "poolenalena"):
+                m = WEATHER.water_motion(cam)
+                newest["cam:" + cam] = m and m["t"]
+            newest["rating"] = WEATHER.rating and WEATHER.rating["t"]
         h = hst(now)
-        daytime = WATCH_FROM <= h.hour + h.minute / 60 < WATCH_TO
-        said = load_state(path)
-        if down and daytime and not said:
-            save_state(path, "1")
-            since = f"since {when(last)}" if last else "since the bot started"
-            self.mx.send(self.args.room[0], {"msgtype": "m.text", "body": (
-                f"⚠️ No run rating from Node-RED {since}, so no run alerts. "
-                "Check Features and Ask Clef on the Weathery Things tab.")})
-        elif said and not down:
-            save_state(path, "")
-            self.mx.notice(self.args.room[0], f"✅ Run ratings are back ({when(last)}).")
+        for kind, key, t in self.watch.see(newest, h.hour + h.minute / 60, now):
+            self.broadcast({"msgtype": "m.text",
+                            "body": sources.message(kind, key, t, when)}, "sources")
 
     def suggest_cam(self):
         """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
@@ -1570,9 +1579,9 @@ def main(argv=None):
         except Exception as e:
             log(f"run alert failed: {e!r}")
         try:
-            bot.watch_ratings()
+            bot.watch_sources()
         except Exception as e:
-            log(f"rating watch failed: {e!r}")
+            log(f"source watch failed: {e!r}")
         try:
             bot.suggest_cam()
         except Exception as e:
