@@ -106,10 +106,12 @@ const top = station.rows.at(-1);
 function buoyCard(readings, snap) {
   const last = readings.at(-1);
   if (!last) return html`<div class="card"><h2>Pauwela buoy</h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
-  const stale = Date.now() - last.ts > 3 * 3600e3;
+  // Old readings say nothing about now, so only say when the last one was.
+  if (Date.now() - last.ts > BUOY_FRESH)
+    return html`<div class="card"><h2><a href="buoy.html">Pauwela buoy</a></h2><div class="muted">No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})</div></div>`;
   const recent = readings.filter(d => d.ts >= +last.ts - 48 * 3600e3);
   return html`<div class="card">
-    <h2><a href="buoy.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${stale ? `No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})` : fmt.relativeTime(last.ts)}</span></h2>
+    <h2><a href="buoy.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${fmt.relativeTime(last.ts)}</span></h2>
     <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
     ${resize(width => Plot.plot({
       width, height: 140, marginLeft: 28, marginRight: 28, marginBottom: 20,
@@ -121,7 +123,7 @@ function buoyCard(readings, snap) {
         Plot.tip(recent, Plot.pointerX({x: "ts", y: "height", title: d => `${fmt.minuteStamp(d.ts)}  ${d.height.toFixed(1)}′ @ ${d.period.toFixed(0)}s from ${Math.round(d.direction)}°`})),
       ],
     }))}
-    <div class="muted" style="font-size: 0.85em">${stale ? "The 48 hours before the last report" : "Last 48 hours"}: height, dots sized by period and colored by direction.</div>
+    <div class="muted" style="font-size: 0.85em">Last 48 hours: height, dots sized by period and colored by direction.</div>
   </div>`;
 }
 ```
@@ -142,14 +144,14 @@ function buoyCard(readings, snap) {
 
 <div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings, buoySnap)}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
+<div class="grid grid-cols-1 spot-col">${buoyNow && buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoySnap?.spectrum.length ? html`<div class="card">${resize(renderSpectrumHistogram(buoySnap.spectrum, {
+<div class="grid grid-cols-1 spot-col">${buoyNow && buoySnap?.spectrum.length ? html`<div class="card">${resize(renderSpectrumHistogram(buoySnap.spectrum, {
   title: `Spectral energy, measured ${fmt.minuteStamp(buoySnap.sampleTs ?? buoySnap.spectrumTs)}`,
   partitions: partitionReading(buoySnap.spectrum)
 }))}</div>` : ""}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoySpectra.length || buoyEnergyRows.length ? html`<div class="card">${resize(renderSwellEnergy(spectralPartitions(buoySpectra), buoyEnergyRows))}
+<div class="grid grid-cols-1 spot-col">${buoyNow && (buoySpectra.length || buoyEnergyRows.length) ? html`<div class="card">${resize(renderSwellEnergy(spectralPartitions(buoySpectra), buoyEnergyRows))}
   <div class="muted" style="font-size: 0.85em;">The ${BUOY_ENERGY_HOURS} hours up to the last report. Surfline-style kJ: height² × period², so long-period swell counts for a lot more. The line is the total; the bars split it by swell, colored by direction.</div>
 </div>` : ""}</div>
 
