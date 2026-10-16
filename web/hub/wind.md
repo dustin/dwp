@@ -100,7 +100,7 @@ function stationSection(st) {
         marks: [
           Plot.barY(byDir, {x: d => fmtDeg(d.band), y: "score", fill: d => CLASSES[d.cls ?? "nogo"].color, inset: 2}),
           Plot.ruleY([0]),
-          Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), y: "score", title: d => `${fmtDeg(d.band)}° (±${st.dirStep / 2}): ${d.n} runs, score ${d.score.toFixed(2)}\ntable says ${CLASSES[d.cls ?? "nogo"].label}`}))
+          Plot.tip(byDir, Plot.pointerX({x: d => fmtDeg(d.band), frameAnchor: "top", title: d => `${fmtDeg(d.band)}° ±${st.dirStep / 2}\n${d.n} runs\nscore ${d.score.toFixed(2)}\n${CLASSES[d.cls ?? "nogo"].label}`}))
         ]
       }))}
       <div class="muted" style="font-size: 0.85em">Bar colour is the table's label for that direction. Hover a bar for its run count.</div>
@@ -114,7 +114,7 @@ function stationSection(st) {
         marks: [
           Plot.barY(bySpeed, {x: d => knLabel(d.kn), y: "score", fill: d => d.kn + SPEED_STEP <= q.floor ? CLASSES.light.color : "var(--theme-foreground-focus)", inset: 2}),
           Plot.ruleY([0]),
-          Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), y: "score", title: d => `${knLabel(d.kn)} kn: ${d.n} runs, score ${d.score.toFixed(2)}`}))
+          Plot.tip(bySpeed, Plot.pointerX({x: d => knLabel(d.kn), frameAnchor: "top", title: d => `${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
         ]
       }))}
       <div class="muted" style="font-size: 0.85em">Grey is below the ${q.floor} kn floor, where the table says too light. Hover a bar for its run count.</div>
@@ -130,7 +130,7 @@ function stationSection(st) {
       marks: [
         Plot.cell(cells, {x: "band", y: d => knLabel(d.kn), fill: "score", inset: 0.5}),
         Plot.text(cells, {x: "band", y: d => knLabel(d.kn), text: "n", fill: d => Math.abs(d.score) > 1.2 ? "white" : "black", fontSize: 10}),
-        Plot.tip(cells, Plot.pointer({x: "band", y: d => knLabel(d.kn), title: d => `${d.band}°, ${knLabel(d.kn)} kn: ${d.n} runs, score ${d.score.toFixed(2)}`}))
+        Plot.tip(cells, Plot.pointer({x: "band", y: d => knLabel(d.kn), title: d => `${d.band}°, ${knLabel(d.kn)} kn\n${d.n} runs\nscore ${d.score.toFixed(2)}`}))
       ]
     }))}
     <div class="muted" style="font-size: 0.85em">Each cell is the average score of runs in that direction and wind; the number is how many runs. Cells with one run are left out.</div>
