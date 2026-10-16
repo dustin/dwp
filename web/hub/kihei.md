@@ -34,8 +34,7 @@ The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's sta
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
 import {forecastCard} from "./components/forecast.js";
-import {compassPoint} from "./components/spectrum.js";
-import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
+import {ratingCard, stationCard, similarRuns, similarRunsCard} from "./components/conditions.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 // Top and bottom of a north run.
@@ -53,7 +52,6 @@ const CAMS = [
   {site: "poolenalena", name: "Poʻolenalena cam", left: "offshore", right: "inshore"},
 ];
 const LIVE_STALE = 15 * 60e3;
-const RATING_STALE = 30 * 60e3;
 const HOURS = 6;
 
 async function loadWind() {
@@ -99,46 +97,6 @@ const top = stations[0].rows.at(-1);
 ```
 
 ```js
-function ratingCard(r) {
-  if (!r) return html`<div class="card"><h2>Run rating</h2><div class="muted">No current rating</div></div>`;
-  // A stale rating (Node-RED stops rating at night) or one made in the dark
-  // says nothing about now, so show no score at all.
-  if (Date.now() - r.ts > RATING_STALE || r.dark)
-    return html`<div class="card"><h2>Run rating</h2><div class="muted">${r.dark ? "Dark, no rating" : `No current rating (last one ${fmt.relativeTime(r.ts)})`}</div></div>`;
-  const out10 = s => `${Math.round(s * 2.5)}/10`;
-  const kiheiBest = r.rec === "Kīhei" || r.rec.includes("Kīhei slightly better");
-  return html`<div class="card">
-    <h2>Run rating <span class="muted" style="font-weight: normal">${fmt.relativeTime(r.ts)}</span></h2>
-    <div class="rating-row">
-      <span class="lead ${kiheiBest ? "rating-best" : ""}">Kīhei ${out10(r.kihei)}</span>
-      <span class="muted">North shore ${out10(r.ns)}</span>
-      <span class="muted">Best bet: ${r.rec}</span>
-    </div>
-  </div>`;
-}
-
-function stationCard({site, name, where, rows, live}, yMax, xDomain) {
-  const last = rows.at(-1);
-  if (!last) return html`<div class="card"><h2>${name}</h2><div class="muted">No recent readings</div></div>`;
-  return html`<div class="card">
-    <h2>${name} <span class="muted" style="font-weight: normal">${where} · ${live ? "live · " : ""}${fmt.relativeTime(last.ts)}</span></h2>
-    <div class="lead">${last.wavg.toFixed(0)} <span class="unit">kn</span>${last.wgust == null ? "" : ` g${last.wgust.toFixed(0)}`}${last.wdir == null ? "" : html` <span class="unit">${compassPoint(last.wdir)} ${Math.round(last.wdir)}°</span>`} ${qualityBadge(site, last)}</div>
-    ${resize(width => Plot.plot({
-      width, height: 110, marginLeft: 28, marginBottom: 20,
-      x: {type: "time", domain: xDomain, ticks: 6, tickFormat: fmt.clock, label: null},
-      y: {domain: [-2.5, yMax], ticks: [0, 10, 20, 30].filter(t => t <= yMax), label: null, grid: true},
-      marks: [
-        qualityStrip(site, rows, {y1: -2.5, y2: -0.8}),
-        Plot.areaY(rows, {x: "ts", y1: d => d.wlull ?? d.wavg, y2: "wgust", fill: "var(--theme-foreground-focus)", fillOpacity: 0.15, curve: "basis"}),
-        Plot.lineY(rows, {x: "ts", y: "wavg", stroke: "var(--theme-foreground-focus)", curve: "basis"}),
-        Plot.ruleY([15], {stroke: "var(--theme-foreground-faint)", strokeDasharray: "2,3"}),
-        Plot.tip(rows, Plot.pointerX({x: "ts", y: "wavg", title: d => `${fmt.clock(d.ts)}  ${d.wavg.toFixed(0)}${d.wgust == null ? "" : `g${d.wgust.toFixed(0)}`} kn ${d.wdir == null ? "" : `${Math.round(d.wdir)}°`}`}))
-      ]
-    }))}
-    <div class="muted" style="font-size: 0.85em">last ${HOURS} hours · dashed line 15 kn</div>
-  </div>`;
-}
-
 // dx < 0 is right to left in the picture; left/right name where that goes
 // (down the coast toward Mākena, the way a north run goes, on Wailea and Ulua).
 function camCard({name, site, readings, left, right}, read) {
@@ -174,22 +132,9 @@ function camCard({name, site, readings, left, right}, read) {
   </div>`;
 }
 
-// Past Kīhei runs whose average wind (Kīhei station) was close to the top
-// station's last reading: within 3 kn and 20°, closest first.
-function similarRuns(now) {
-  if (!now) return [];
-  const dAngle = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
-  return allRuns
-    .filter(d => d.region === "Kihei" && d.avg_wavg != null && d.avg_wdir != null)
-    .map(d => ({...d, dKn: d.avg_wavg - now.wavg, dDeg: dAngle(d.avg_wdir, now.wdir)}))
-    .filter(d => Math.abs(d.dKn) <= 3 && d.dDeg <= 20)
-    .map(d => ({...d, score: Math.abs(d.dKn) / 3 + d.dDeg / 20}))
-    .sort((a, b) => a.score - b.score);
-}
-const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 ```
 
-<div class="grid grid-cols-1 kihei-col">${ratingCard(rating)}</div>
+<div class="grid grid-cols-1 kihei-col">${ratingCard(rating, "kihei")}</div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {
   // The page's live readings are newer than the day's file; use them where they overlap.
@@ -203,7 +148,7 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   // straight down.
   const yMax = Math.max(25, d3.max(stations.flatMap(s => s.rows), d => d.wgust) ?? 0);
   const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
-  return stations.map(s => stationCard(s, yMax, xDomain));
+  return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
 })()}</div>
 
 <div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site]))}</div>
@@ -211,22 +156,7 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 ## Runs in wind like now
 
 ```js
-const similar = similarRuns(top);
-const shown = similar.slice(0, 10);
+const similar = similarRuns(allRuns, "Kihei", top);
 ```
 
-<div class="card">
-  <div class="muted" style="margin-bottom: 0.5rem">${top ? `Kīhei runs that averaged ${Math.max(0, top.wavg - 3).toFixed(0)}–${(top.wavg + 3).toFixed(0)} kn within 20° of ${Math.round(top.wdir)}° at the Kīhei station: ${similar.length} of them, closest ${shown.length} shown.` : "No current Kīhei reading."}</div>
-  <div class="similar-wrap"><table class="similar">
-    <thead><tr><th>Date</th><th>Rider</th><th>Route</th><th class="num">km</th><th class="num">on foil</th><th class="num">top km/h</th><th class="num">wind</th></tr></thead>
-    <tbody>${shown.map(d => html`<tr>
-      <td><a href=${runLink(d)}>${fmt.date(d.ts)} ${fmt.clock(d.ts)}</a></td>
-      <td>${d.riderName}</td>
-      <td>${d.start_beach}${d.end_beach !== d.start_beach ? ` → ${d.end_beach}` : ""}</td>
-      <td class="num">${d.distance_km.toFixed(1)}</td>
-      <td class="num">${d.distance_on_foil == null ? "" : `${Math.round(100 * d.distance_on_foil / (d.distance_km * 1000))}%`}</td>
-      <td class="num">${d.max_speed_kmh == null ? "" : d.max_speed_kmh.toFixed(0)}</td>
-      <td class="num">${d.avg_wavg.toFixed(0)}g${d.avg_wgust.toFixed(0)} ${Math.round(d.avg_wdir)}°</td>
-    </tr>`)}</tbody>
-  </table></div>
-</div>
+${similarRunsCard(similar, top, {station: "Kīhei", region: "Kīhei"})}

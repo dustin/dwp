@@ -16,7 +16,7 @@ import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 // Stations with a page of their own to dig into.
-const WIND_PAGES = {kihei: "kihei.html"};
+const WIND_PAGES = {kihei: "kihei.html", hookipa: "maliko.html"};
 
 // Each station's last 6 hours: live/wind.json when the bot's feed is
 // fresh, else the lake's half-hourly export. Refetched every minute while

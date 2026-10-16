@@ -133,7 +133,7 @@ export function forecastCard(site, rows, obs, {now = new Date(), name = 'Forecas
     x: {type: 'time', domain: [rise, set], ticks: 6, tickFormat: fmt.clock, label: null},
     y: {domain: [-2.5, yMax], ticks: [0, 10, 20, 30, 40].filter(t => t <= yMax), label: null, grid: true},
     marks: [
-      Plot.rectY(ahead, {x1: h => new Date(+h.ts - HOUR / 2), x2: h => new Date(+h.ts + HOUR / 2), y1: -2.5, y2: -0.8, fill: h => clsColor(h.cls)}),
+      Plot.rectY(ahead, {x1: h => new Date(+h.ts - HOUR / 2), x2: h => new Date(Math.min(+h.ts + HOUR / 2, +set)), y1: -2.5, y2: -0.8, fill: h => clsColor(h.cls)}),
       Plot.areaY(ahead, {x: 'ts', y1: h => h.wavg - err, y2: h => h.wavg + err, fill: 'var(--theme-foreground-focus)', fillOpacity: 0.1, curve: 'monotone-x'}),
       Plot.lineY(daylight.filter(h => h.ts >= +now - HOUR), {x: 'ts', y: 'wavg', stroke: 'var(--theme-foreground-focus)', strokeDasharray: '5,4', strokeWidth: 2, curve: 'monotone-x'}),
       Plot.lineY(seen, {x: 'ts', y: 'wgust', stroke: 'var(--theme-foreground-faint)', strokeWidth: 1, curve: 'basis'}),
