@@ -36,13 +36,13 @@ const STATIONS = [
   {site: "kihei", name: "Top: Kīhei", where: "Sugar Beach"},
   {site: "wailea", name: "Bottom: Wailea", where: "inland of Wailea Beach"},
 ];
-// Cams down the coast (db/cams/cams.py), each with its cam_motion/cam_images
+// Cams down the coast, north to south (db/cams/cams.py), each with its cam_motion/cam_images
 // published under its own site. px/s isn't comparable between cams, and the
 // −2 px/s line was set on Wailea's. left/right say where dx < 0 / > 0 goes.
 const DOWN_COAST = {left: "toward Mākena", right: "toward Kīhei"};
 const CAMS = [
-  {site: "wailea", name: "Grand Wailea cam", ...DOWN_COAST},
   {site: "ulua", name: "Ulua cam", ...DOWN_COAST},
+  {site: "wailea", name: "Grand Wailea cam", ...DOWN_COAST},
   {site: "poolenalena", name: "Poʻolenalena cam", left: "offshore", right: "inshore"},
 ];
 const LIVE_STALE = 15 * 60e3;
