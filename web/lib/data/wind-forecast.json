@@ -1,0 +1,141 @@
+{
+ "_about": "Wind forecast blend per station (db/forecast-ingest fills wind_forecast). Hourly: a + b x the average of the models' wind (kn) for that hour of the day (HST), plus the station's current error, fading with exp(-hours ahead / nowcastHours). Afternoon: a + b x the models' 12-16 HST average. Direction from directionModel. Fitted 2026-10-16 on day-ahead forecasts vs station wind, 2024-03 to 2026-10 (see the downwind.pro project's pacioos/day-ahead.md). typicalError is the mean absolute error, kn.",
+ "stations": {
+  "kihei": {
+   "models": [
+    "pacioos_wrf_mo",
+    "icon_global",
+    "gem_global",
+    "ecmwf_aifs025_single"
+   ],
+   "directionModel": "pacioos_wrf_mo",
+   "hourly": {
+    "7": {
+     "a": 0.58,
+     "b": 0.715
+    },
+    "8": {
+     "a": -0.11,
+     "b": 0.805
+    },
+    "9": {
+     "a": 0.23,
+     "b": 0.851
+    },
+    "10": {
+     "a": 0.8,
+     "b": 0.856
+    },
+    "11": {
+     "a": 0.44,
+     "b": 0.972
+    },
+    "12": {
+     "a": 0.58,
+     "b": 1.01
+    },
+    "13": {
+     "a": 1.49,
+     "b": 0.988
+    },
+    "14": {
+     "a": 1.47,
+     "b": 1.053
+    },
+    "15": {
+     "a": 1.64,
+     "b": 1.058
+    },
+    "16": {
+     "a": 1.98,
+     "b": 1.037
+    },
+    "17": {
+     "a": 2.1,
+     "b": 0.991
+    },
+    "18": {
+     "a": 1.86,
+     "b": 0.926
+    }
+   },
+   "afternoon": {
+    "a": 1.11,
+    "b": 1.054
+   },
+   "nowcastHours": 4,
+   "typicalError": {
+    "hourly": 2.7,
+    "afternoon": 2.9
+   }
+  },
+  "hookipa": {
+   "models": [
+    "pacioos_wrf_mo",
+    "ukmo_global_deterministic_10km",
+    "gem_global",
+    "gfs_global"
+   ],
+   "directionModel": null,
+   "hourly": {
+    "7": {
+     "a": 2.58,
+     "b": 0.686
+    },
+    "8": {
+     "a": 2.56,
+     "b": 0.788
+    },
+    "9": {
+     "a": 4.63,
+     "b": 0.731
+    },
+    "10": {
+     "a": 5.52,
+     "b": 0.713
+    },
+    "11": {
+     "a": 5.74,
+     "b": 0.719
+    },
+    "12": {
+     "a": 6.06,
+     "b": 0.719
+    },
+    "13": {
+     "a": 6.29,
+     "b": 0.71
+    },
+    "14": {
+     "a": 5.97,
+     "b": 0.737
+    },
+    "15": {
+     "a": 6.23,
+     "b": 0.708
+    },
+    "16": {
+     "a": 5.96,
+     "b": 0.685
+    },
+    "17": {
+     "a": 4.96,
+     "b": 0.683
+    },
+    "18": {
+     "a": 4.51,
+     "b": 0.637
+    }
+   },
+   "afternoon": {
+    "a": 6.23,
+    "b": 0.704
+   },
+   "nowcastHours": 4,
+   "typicalError": {
+    "hourly": 2.2,
+    "afternoon": 2.1
+   }
+  }
+ }
+}

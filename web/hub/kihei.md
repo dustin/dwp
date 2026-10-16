@@ -18,17 +18,22 @@ toc: false
   .similar-wrap { overflow-x: auto; }
   /* One width for every card, so the wind charts don't stretch across a wide screen. */
   .kihei-col { max-width: 1100px; }
+  .fc-days { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0 0.25rem; }
+  .fc-day { display: flex; flex-direction: column; min-width: 6.5rem; padding: 0.35rem 0.6rem; border-radius: 6px; font-size: 0.85rem;
+    background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
+  .fc-day b { font-size: 1rem; }
   .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
     color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
 </style>
 
 # Kīhei
 
-The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's station, inland a bit, and the Grand Wailea cam), the run rating, and past runs in wind like now.
+The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's station, inland a bit, and the Grand Wailea cam), the run rating, the forecast for the rest of the day and the coming afternoons, and past runs in wind like now.
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
+import {forecastCard} from "./components/forecast.js";
 import {compassPoint} from "./components/spectrum.js";
 import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
 
@@ -79,6 +84,10 @@ const cams = await Promise.all(CAMS.map(async c => {
   const readings = (await fetchCamReadings(c.site, camDays)).filter(d => d.ts <= Date.now());
   return {...c, readings};
 }));
+// Forecasts for today and the coming week, and the top station since
+// before sunrise for the forecast card.
+const forecastRows = await fetchWindForecast("kihei", d3.range(8).map(k => hstDay(Date.now() + k * 86400e3)));
+const kiheiToday = await fetchRecentWind("kihei", 14).catch(() => []);
 const allRuns = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
   (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => [])).map(d => ({...d, riderSlug: slug, riderName: name}))
 ))).flat();
@@ -181,6 +190,13 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 ```
 
 <div class="grid grid-cols-1 kihei-col">${ratingCard(rating)}</div>
+
+<div class="grid grid-cols-1 kihei-col">${(() => {
+  // The page's live readings are newer than the day's file; use them where they overlap.
+  const live = stations[0].rows;
+  const obs = [...kiheiToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
+  return forecastCard("kihei", forecastRows, obs, {name: "Kīhei forecast", resize});
+})()}</div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {
   // Same scales, one above the other, so the drop from top to bottom reads

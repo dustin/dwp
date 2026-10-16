@@ -355,6 +355,27 @@ export async function fetchRecentWind(site, hours = 6) {
   return rows.filter(d => d.ts >= start && d.ts <= end).sort((a, b) => d3.ascending(a.ts, b.ts));
 }
 
+// Wind forecasts for a site (db/forecast-ingest's wind_forecast) valid on
+// the given HST days: {model, issued, lead_days, ts, wavg, wdir}, issued
+// null on backfilled day-ahead rows.
+export async function fetchWindForecast(site, days) {
+  const rows = (
+    await Promise.all(
+      days.map(day =>
+        fetchCsvForDay('wind_forecast', site, day, row => ({
+          model: row.model,
+          issued: row.issued ? new Date(row.issued) : null,
+          lead_days: row.lead_days ? +row.lead_days : null,
+          ts: new Date(row.ts),
+          wavg: +row.wavg,
+          wdir: +row.wdir,
+        }))
+      )
+    )
+  ).flat();
+  return rows.sort((a, b) => d3.ascending(a.ts, b.ts));
+}
+
 export function toRelative(series, tsKey = 'ts', outKey = 't') {
   if (!Array.isArray(series) || series.length === 0) return [];
   const toScalar = v => (v instanceof Date ? v.getTime() : +v);
