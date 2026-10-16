@@ -11,7 +11,9 @@ import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
-import {qualityStrip, qualityBadge} from "./components/wind-quality.js";
+import {qualityStrip, qualityBadge, CLASSES} from "./components/wind-quality.js";
+import {forecastMini, todayWindow, hstDay} from "./components/forecast.js";
+import {fetchWindForecast} from "./components/data.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
@@ -47,6 +49,10 @@ const windNow = (async function* () {
     while (document.hidden);
   }
 })();
+// Each station's forecast for today and the next few days.
+const forecasts = Promise.all(WIND_SITES.map(async ([site]) =>
+  [site, await fetchWindForecast(site, d3.range(4).map(k => hstDay(Date.now() + k * 86400e3))).catch(() => [])]
+)).then(Object.fromEntries);
 const buoyNow = fetchBuoySnapshot(new Date()).catch(() => null);
 const tidesNow = (async () => {
   const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
@@ -144,6 +150,47 @@ function riderCard({slug, name, runs}) {
   ${windNow.map(windCard)}
   ${buoyCard(buoyNow)}
   ${tideCard(tidesNow)}
+</div>
+
+## Forecast
+
+```js
+// Which run looks best today: the station with the most rideable hours
+// ahead (weighted by how good they are), and the routes ridden most in
+// wind like its peak.
+const RUN_REGION = {kihei: "Kihei", hookipa: "Maui North Shore"};
+const dAngle = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
+function pickCard(wind, forecasts, riders) {
+  const now = new Date();
+  const runs = riders.flatMap(r => r.runs);
+  const opts = wind.map(({site, name, rows}) => {
+    const w = todayWindow(site, forecasts[site] ?? [], rows, now);
+    return {site, name, w, score: d3.sum(w.ok, h => CLASSES[h.cls].rank)};
+  }).sort((a, b) => b.score - a.score);
+  const best = opts[0];
+  if (!best?.score) {
+    const dark = opts.every(o => now > o.w.set);
+    return htl.html`<div class="card"><h2>Today's pick</h2>
+      <div class="nav-lead">${dark ? "Dark, see you tomorrow" : "Nothing looks rideable today"}</div></div>`;
+  }
+  const {w} = best;
+  const like = runs.filter(d => d.region === RUN_REGION[best.site] && d.avg_wavg != null && d.avg_wdir != null
+    && Math.abs(d.avg_wavg - w.peak.wavg) <= 3 && dAngle(d.avg_wdir, w.peak.wdir) <= 20);
+  const routes = d3.rollups(like, v => v.length, route).sort((a, b) => b[1] - a[1]).slice(0, 2);
+  const hl = h => `${String(new Date(+h.ts - 36e6).getUTCHours()).padStart(2, "0")}:00`;
+  const other = opts[1];
+  return htl.html`<div class="card pick-card">
+    <h2>Today's pick</h2>
+    <div class="nav-lead">${best.name} <span class="unit">${hl(w.ok[0])}–${hl(w.ok.at(-1))}, ~${Math.round(w.peak.wavg)} kn ${Math.round(w.peak.wdir)}°</span></div>
+    ${routes.length ? htl.html`<div class="nav-muted">In wind like that: ${routes.map(([r, n], i) => htl.html`${i ? " or " : ""}<b class="pick-route">${r}</b> (${n})`)} of ${like.length} runs</div>` : htl.html`<div class="nav-muted">No past runs in wind quite like that</div>`}
+    ${other ? htl.html`<div class="nav-muted">${other.name}: ${other.score ? `${hl(other.w.ok[0])}–${hl(other.w.ok.at(-1))}, ~${Math.round(other.w.peak.wavg)} kn` : "not rideable"}</div>` : ""}
+  </div>`;
+}
+```
+
+<div class="grid grid-cols-4">
+  ${pickCard(windNow, forecasts, riders)}
+  ${windNow.map(({site, name, rows}) => forecastMini(site, forecasts[site] ?? [], rows, {name, href: WIND_PAGES[site]}))}
 </div>
 
 ## Riders <a class="riders-compare" href="versus.html">Compare two riders →</a>
@@ -264,6 +311,15 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   a.nav-card.buoy-card { flex-direction: row; gap: 0.75rem; }
   .buoy-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.3rem; }
   .buoy-spark { flex: 1; min-height: 34px; }
+  .fc-strip { position: relative; height: 10px; border-radius: 3px; overflow: hidden; background: var(--theme-foreground-faintest); margin-top: 0.2rem; }
+  .fc-strip span { position: absolute; top: 0; bottom: 0; }
+  .fc-strip i { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--theme-foreground); }
+  .fc-strip-ends { display: flex; justify-content: space-between; font-size: 0.75rem; }
+  .fc-minidays { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+  .fc-miniday { font-size: 0.8rem; padding: 0.05rem 0.5rem; border-radius: 999px; white-space: nowrap;
+    background: color-mix(in srgb, var(--wq) 14%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
+  .pick-card { display: flex; flex-direction: column; gap: 0.3rem; }
+  .pick-route { font-weight: 600; color: var(--theme-foreground); }
   .riders-compare { font-size: 0.9rem; font-weight: 400; margin-left: 0.6rem; }
   .rider-host { margin-top: auto; padding-top: 0.4rem; font-size: 0.8rem; color: var(--theme-foreground-focus); }
 </style>

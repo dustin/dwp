@@ -157,3 +157,37 @@ export function forecastCard(site, rows, obs, {now = new Date(), name = 'Forecas
     <div class="muted" style="font-size: 0.85em">Coming afternoons, 12–16 average, typically within ${Math.round(cfg.typicalError.afternoon)} kn a day ahead; further out is rougher.</div>` : ''}
   </div>`;
 }
+
+// Today's rideable stretch for a site: the hours ahead in daylight whose
+// class is rideable, with the peak among them. null when it's dark or
+// there's no forecast left for today.
+export function todayWindow(site, rows, obs, now = new Date()) {
+  const {rise, set} = sunTimes(hstDay(now), SPOTS[site]);
+  const {hours} = hourlyForecast(site, rows, obs, now);
+  const daylight = hours.filter(h => h.ts >= +rise - HOUR / 2 && h.ts <= set);
+  const ahead = daylight.filter(h => h.ts >= +now - HOUR / 2);
+  if (now > set || !ahead.length) return {rise, set, daylight, ahead, ok: [], peak: null};
+  const ok = ahead.filter(h => RIDEABLE.has(h.cls));
+  return {rise, set, daylight, ahead, ok, peak: d3.greatest(ok.length ? ok : ahead, h => h.wavg)};
+}
+
+// A small card for the hub: today's rideable hours as a strip and a line,
+// and the next couple of afternoons.
+export function forecastMini(site, rows, obs, {now = new Date(), name, href, days = 2} = {}) {
+  const w = todayWindow(site, rows, obs, now);
+  const coming = outlook(site, rows, now).filter(d => d.day > hstDay(now)).slice(0, days);
+  let line;
+  if (now > w.set) line = html`<span class="nav-muted">Dark for today</span>`;
+  else if (!w.ahead.length) line = html`<span class="nav-muted">No forecast for today yet</span>`;
+  else if (w.ok.length) line = html`${hourLabel(w.ok[0].ts)}–${hourLabel(w.ok.at(-1).ts)} <span class="unit">~${Math.round(w.peak.wavg)} kn ${Math.round(w.peak.wdir)}° ${CLASSES[w.peak.cls].label}</span>`;
+  else line = html`<span class="unit">Not rideable today · peak ~${Math.round(w.peak.wavg)} kn</span>`;
+  const t0 = +w.rise, t1 = +w.set, pct = t => `${(100 * (t - t0) / (t1 - t0)).toFixed(2)}%`;
+  const strip = w.daylight.length && now <= w.set ? html`<div class="fc-strip">${w.daylight.map(h => html`<span style="left: ${pct(Math.max(t0, +h.ts - HOUR / 2))}; right: calc(100% - ${pct(Math.min(t1, +h.ts + HOUR / 2))}); background: ${clsColor(h.cls)}; opacity: ${h.ts < now ? 0.35 : 1}" title="${hourLabel(h.ts)} ${Math.round(h.wavg)} kn ${Math.round(h.wdir)}°${h.cls ? ` · ${CLASSES[h.cls].label}` : ''}"></span>`)}
+    <i style="left: ${pct(Math.min(t1, Math.max(t0, +now)))}"></i></div>
+    <div class="fc-strip-ends nav-muted"><span>${fmt.clock(w.rise)}</span><span>${fmt.clock(w.set)}</span></div>` : '';
+  const body = html`<h2>${name} forecast <span class="nav-card-arrow">→</span></h2>
+    <div class="nav-lead">${line}</div>
+    ${strip}
+    ${coming.length ? html`<div class="fc-minidays">${coming.map(d => html`<span class="fc-miniday" style="--wq: ${clsColor(d.cls)}"><span class="nav-muted">${weekday(d.day)}</span> ${Math.round(d.wavg)} kn ${d.cls ? CLASSES[d.cls].label : ''}</span>`)}</div>` : ''}`;
+  return href ? html`<a class="card nav-card" href=${href}>${body}</a>` : html`<div class="card">${body}</div>`;
+}
