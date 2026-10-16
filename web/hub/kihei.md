@@ -91,7 +91,7 @@ const top = stations[0].rows.at(-1);
 
 ```js
 function ratingCard(r) {
-  if (!r) return html`<div class="card"><h2>Run rating</h2><div class="muted">No rating from Node-RED yet</div></div>`;
+  if (!r) return html`<div class="card"><h2>Run rating</h2><div class="muted">No current rating</div></div>`;
   // A stale rating (Node-RED stops rating at night) or one made in the dark
   // says nothing about now, so show no score at all.
   if (Date.now() - r.ts > RATING_STALE || r.dark)
