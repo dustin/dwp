@@ -32,11 +32,13 @@ The north shore run from Maliko to Kahului: the Hoʻokipa station, the run ratin
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchWindForecast, fetchSwellPartitionWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
+import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
-import {directionColor} from "./components/spectrum.js";
+import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js";
+import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
+import {renderSwellEnergy} from "./components/swell-energy.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 const STATION = {site: "hookipa", name: "Hoʻokipa", where: "Hoʻokipa Beach Park"};
@@ -69,11 +71,17 @@ const forecastRows = await fetchWindForecast("hookipa", d3.range(8).map(k => hst
 const hookipaToday = await fetchRecentWind("hookipa", 14).catch(() => []);
 // The buoy's readings over the last week (NDBC's own summary, rank 1),
 // and the spectrum at its last report, however old.
-const buoyReadings = (await fetchSwellPartitionWindow("pauwela", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []))
+const buoyRows = await fetchSwellPartitionWindow("pauwela", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []);
+const buoyReadings = buoyRows
   .map(d => ({ts: d.ts, ...d.values.find(v => v.rank === 1)}))
   .filter(d => d.height != null);
 const buoyLast = buoyReadings.at(-1);
 const buoySnap = buoyLast ? await fetchBuoySnapshot(buoyLast.ts).catch(() => null) : null;
+// The spectra over the 48 hours up to the last report, for the swell
+// energy chart (as on the buoy page).
+const BUOY_ENERGY_HOURS = 48;
+const buoySpectra = buoyLast ? await fetchSwellSpectrumWindow("pauwela", new Date(+buoyLast.ts - BUOY_ENERGY_HOURS * 3600e3), buoyLast.ts).catch(() => []) : [];
+const buoyEnergyRows = buoyLast ? buoyRows.filter(d => d.ts >= +buoyLast.ts - BUOY_ENERGY_HOURS * 3600e3) : [];
 const nsRuns = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
   (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => []))
     .filter(d => d.region === "Maui North Shore")
@@ -135,6 +143,15 @@ function buoyCard(readings, snap) {
 <div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings, buoySnap)}</div>
 
 <div class="grid grid-cols-1 spot-col">${buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
+
+<div class="grid grid-cols-1 spot-col">${buoySnap?.spectrum.length ? html`<div class="card">${resize(renderSpectrumHistogram(buoySnap.spectrum, {
+  title: `Spectral energy, measured ${fmt.minuteStamp(buoySnap.sampleTs ?? buoySnap.spectrumTs)}`,
+  partitions: partitionReading(buoySnap.spectrum)
+}))}</div>` : ""}</div>
+
+<div class="grid grid-cols-1 spot-col">${buoySpectra.length || buoyEnergyRows.length ? html`<div class="card">${resize(renderSwellEnergy(spectralPartitions(buoySpectra), buoyEnergyRows))}
+  <div class="muted" style="font-size: 0.85em;">The ${BUOY_ENERGY_HOURS} hours up to the last report. Surfline-style kJ: height² × period², so long-period swell counts for a lot more. The line is the total; the bars split it by swell, colored by direction.</div>
+</div>` : ""}</div>
 
 ## Runs in conditions similar to now
 
