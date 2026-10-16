@@ -260,6 +260,45 @@ export async function fetchWind(meta) {
     .then(allRows => inRange(meta, allRows));
 }
 
+// The Grand Wailea cam (db/cams/wailea_motion.py), and how far from it a
+// Kihei run's track has to come to count as passing it.
+export const WAILEA_CAM = {lat: 20.6858, lon: -156.4425};
+const CAM_PASS_M = 3000;
+const CAM_WINDOW_MS = 45 * 60 * 1000;
+
+// autoType doesn't take the lake's "2026-10-12 22:28:00+00" stamps.
+const camRow = row => ({...d3.autoType({...row, ts: ''}), ts: new Date(row.ts)});
+
+// The Wailea cam's reading for a Kihei run, from cam_motion and cam_images
+// (db/cam-ingest, published per day like wind): the measured reading nearest
+// when the track came closest to the cam, or the run's end when it never got
+// within CAM_PASS_M (or has no track), and no further than CAM_WINDOW_MS
+// away. {reading, images (kind -> URL), at, passed}, or null.
+export async function fetchCamReport(meta, track) {
+  if (meta.region !== 'Kihei') return null;
+  const near = track?.length
+    ? d3.least(track, d => d3.geoDistance([d.lon, d.lat], [WAILEA_CAM.lon, WAILEA_CAM.lat]))
+    : null;
+  const passed = near?.ts && d3.geoDistance([near.lon, near.lat], [WAILEA_CAM.lon, WAILEA_CAM.lat]) * 6371e3 <= CAM_PASS_M;
+  const at = passed ? near.ts : new Date(meta.ts.getTime() + meta.duration_sec * 1000);
+  const day = fmt.date(meta.ts);
+  const [motion, images] = await Promise.all([
+    fetchCsvForDay('cam_motion', 'wailea', day, camRow),
+    fetchCsvForDay('cam_images', 'wailea', day, camRow),
+  ]);
+  const measured = motion.filter(d => !d.skipped && d.dx != null);
+  const reading = d3.least(measured, d => Math.abs(d.ts - at));
+  if (!reading || Math.abs(reading.ts - at) > CAM_WINDOW_MS) return null;
+  return {
+    reading,
+    images: Object.fromEntries(images
+      .filter(d => +d.ts === +reading.ts)
+      .map(d => [d.kind, `https://${DATAHOST}/${d.key}`])),
+    at,
+    passed,
+  };
+}
+
 // live/wind.json, which matrix-bot replaces as the stations' MQTT feed
 // reports (see db/bot/mqtt_weather.py): {stations: site -> readings, oldest
 // first, over the last 24 hours; rating: Node-RED's latest run rating

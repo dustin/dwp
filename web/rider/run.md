@@ -18,7 +18,7 @@ import {partitionReading, spectralPartitions} from "./components/spectral-partit
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes} from "./components/data.js";
+import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes, fetchCamReport} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 
@@ -297,6 +297,31 @@ wind && wind.length > 0
     }))
   : html`<p>No wind data found for this run.</p>`
 }</div>
+
+```js
+const camReport = await fetchCamReport(runMeta, runCsv);
+```
+
+<div>${camReport ? camCard(camReport) : ""}</div>
+
+```js
+// The Wailea cam's water motion near when the run passed it
+// (fetchCamReport). dx < 0 is right to left in the picture: down the coast
+// toward Makena, the way a north run goes.
+function camCard({reading: r, images, at, passed}) {
+  const mins = Math.round((r.ts - at) / 60000);
+  const when = mins === 0 ? "as you passed" : `${Math.abs(mins)} min ${mins < 0 ? "before" : "after"} ${passed ? "you passed" : "you finished"}`;
+  const toward = r.dx < 0 ? "toward Makena" : "toward Kihei";
+  const share = r.dx < 0 ? r.left : r.right;
+  const img = images.flow ?? images.frame;
+  return html`<div class="card">
+    <h2>Wailea cam, ${fmt.clock(r.ts)} <span style="color: var(--theme-foreground-muted); font-weight: normal">(${when})</span></h2>
+    <p style="margin: 0.25rem 0 0.5rem">Water moving ${toward} at ${Math.abs(r.dx).toFixed(1)} px/s
+      (${Math.round(100 * share)}% of the moving water)${r.whitecaps != null ? html` · ${r.whitecaps} whitecap${r.whitecaps === 1 ? "" : "s"}` : ""}</p>
+    ${img ? html`<a href=${images.frame ?? img} target="_blank"><img src=${img} alt="Wailea cam water with motion arrows" style="width: 100%; border-radius: 4px"></a>` : ""}
+  </div>`;
+}
+```
 
 <div>${
   // Swell comes from the Pauwela buoy, which only describes the North Shore.
