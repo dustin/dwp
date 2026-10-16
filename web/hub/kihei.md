@@ -33,7 +33,7 @@ The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's sta
 ```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
-import {forecastCard} from "./components/forecast.js";
+import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard} from "./components/conditions.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
@@ -86,6 +86,8 @@ const cams = await Promise.all(CAMS.map(async c => {
 // before sunrise for the forecast card.
 const forecastRows = await fetchWindForecast("kihei", d3.range(8).map(k => hstDay(Date.now() + k * 86400e3)));
 const kiheiToday = await fetchRecentWind("kihei", 14).catch(() => []);
+const waileaForecast = await fetchWindForecast("wailea", d3.range(2).map(k => hstDay(Date.now() + k * 86400e3))).catch(() => []);
+const waileaToday = await fetchRecentWind("wailea", 14).catch(() => []);
 const allRuns = (await Promise.all(RIDER_NAMES.map(async ([slug, name]) =>
   (await fetchMeta(() => riderFile("runs.csv", slug)).catch(() => [])).map(d => ({...d, riderSlug: slug, riderName: name}))
 ))).flat();
@@ -107,6 +109,12 @@ const top = stations[0].rows.at(-1);
   const live = stations[0].rows;
   const obs = [...kiheiToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
   return forecastCard("kihei", forecastRows, obs, {name: "Kīhei forecast", resize});
+})()}</div>
+
+<div class="grid grid-cols-1 kihei-col">${(() => {
+  const live = stations[1].rows;
+  const obs = [...waileaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
+  return finishCard(waileaForecast, obs, {resize});
 })()}</div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {

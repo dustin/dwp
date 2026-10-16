@@ -191,3 +191,40 @@ export function forecastMini(site, rows, obs, {now = new Date(), name, href, day
     ${coming.length ? html`<div class="fc-minidays">${coming.map(d => html`<span class="fc-miniday" style="--wq: ${clsColor(d.cls)}"><span class="nav-muted">${weekday(d.day)}</span> ${Math.round(d.wavg)} kn ${d.cls ? CLASSES[d.cls].label : ''}</span>`)}</div>` : ''}`;
   return href ? html`<a class="card nav-card" href=${href}>${body}</a>` : html`<div class="card">${body}</div>`;
 }
+
+// The Kīhei run's finish: PacIOOS's newest run for its cell off Wailea
+// Beach, as is (nothing to calibrate against yet), with the Wailea station
+// today. rows are wind_forecast rows for site wailea.
+const WAILEA = [20.686, -156.443];
+export function finishCard(rows, obs, {now = new Date(), resize} = {}) {
+  const {rise, set} = sunTimes(hstDay(now), WAILEA);
+  const hours = newestRuns(rows.filter(d => d.model === 'pacioos_wrf_mo'))
+    .map(h => ({ts: h.ts, ...h.models.pacioos_wrf_mo}))
+    .filter(h => h.ts >= +rise - HOUR / 2 && h.ts <= set);
+  const ahead = hours.filter(h => h.ts >= +now - HOUR / 2);
+  const title = html`<h2>Wailea finish <span class="muted" style="font-weight: normal">rough · PacIOOS as is</span></h2>`;
+  if (now > set) return html`<div class="card">${title}<div class="muted">Dark for the rest of today.</div></div>`;
+  if (!ahead.length) return html`<div class="card">${title}<div class="muted">No Wailea forecast for the rest of today yet.</div></div>`;
+  const at = hh => d3.least(ahead, h => Math.abs(hstHour(h.ts) - hh));
+  const marks = [12, 14, 16].map(at).filter(h => h && h.ts >= +now - HOUR / 2);
+  const seen = obs.filter(d => d.ts >= rise);
+  const yMax = Math.max(20, d3.max(seen, d => d.wgust) ?? 0, d3.max(ahead, h => h.wavg) ?? 0);
+  return html`<div class="card">${title}
+    <div>${marks.length
+      ? html`Model says ${marks.map((h, i) => html`${i ? ', ' : ''}<b>${Math.round(h.wavg)} kn</b> at ${hourLabel(h.ts)} (${Math.round(h.wdir)}°)`)}.`
+      : html`Model says ~${Math.round(ahead.at(-1).wavg)} kn by ${hourLabel(ahead.at(-1).ts)}.`}</div>
+    ${resize(width => Plot.plot({
+      width, height: 140, marginLeft: 28, marginBottom: 20,
+      x: {type: 'time', domain: [rise, set], ticks: 6, tickFormat: fmt.clock, label: null},
+      y: {domain: [0, yMax], ticks: [0, 10, 20, 30].filter(t => t <= yMax), label: null, grid: true},
+      marks: [
+        Plot.lineY(hours, {x: 'ts', y: 'wavg', stroke: 'var(--theme-foreground-focus)', strokeDasharray: '5,4', strokeWidth: 2, curve: 'monotone-x'}),
+        Plot.lineY(seen, {x: 'ts', y: 'wgust', stroke: 'var(--theme-foreground-faint)', strokeWidth: 1, curve: 'basis'}),
+        Plot.lineY(seen, {x: 'ts', y: 'wavg', stroke: 'var(--theme-foreground)', strokeWidth: 1.5, curve: 'basis'}),
+        Plot.ruleX([now], {stroke: 'var(--theme-foreground-muted)', strokeDasharray: '2,2'}),
+        Plot.tip(hours, Plot.pointerX({x: 'ts', y: 'wavg', title: h => `${hourLabel(h.ts)}  ${Math.round(h.wavg)} kn, ${Math.round(h.wdir)}° (model)`})),
+      ],
+    }))}
+    <div class="muted" style="font-size: 0.85em">Dashed: PacIOOS for the water just off Wailea Beach, uncorrected. Solid: the Wailea station today (inland, so it reads lower than the water). Not yet checked against what the finish actually does.</div>
+  </div>`;
+}
