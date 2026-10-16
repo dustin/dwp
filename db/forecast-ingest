@@ -2,10 +2,10 @@
 """Keep wind forecasts for the stations' cells, so they can be scored
 against what the stations then saw.
 
-    ./forecast-ingest              # each model's newest run, next 3 days
+    ./forecast-ingest              # each model's newest run, next 7 days
     ./forecast-ingest --backfill   # past day-ahead forecasts (Previous Runs API)
 
-Live: for every site and model in CELLS, the forecast for the next 3 days
+Live: for every site and model in CELLS, the forecast for the next 7 days
 goes into wind_forecast with issued = that model's run time (Open-Meteo's
 meta.json; for PacIOOS, when it was fetched). A (site, model, issued) the
 lake already has is skipped, so run it as often as you like; models run
@@ -74,7 +74,7 @@ META = {
     "meteofrance_arpege_world": "meteofrance_arpege_world025",
     "jma_gsm": "jma_gsm",
 }
-HOURS = 72
+HOURS = 7 * 24
 KN = 1.943844
 BACKFILL_FROM = "2024-03-01"
 OPEN_METEO = "https://api.open-meteo.com/v1/forecast"
@@ -116,11 +116,15 @@ def live(now):
             log(f"{model}: no run time ({e}); skipped")
             continue
         issued = datetime.fromtimestamp(meta["last_run_initialisation_time"], timezone.utc)
+        if now - issued > timedelta(days=1):
+            # The bucket stopped updating for some models (GEM since 2026-05)
+            # while the API keeps serving fresh runs; say when we fetched.
+            issued = now
         for site, cells in CELLS.items():
             lat, lon = cells[model]
             try:
                 h = open_meteo(OPEN_METEO, model, lat, lon, ["wind_speed_10m", "wind_direction_10m"],
-                               forecast_days=4)
+                               forecast_days=8)
             except (OSError, KeyError, ValueError) as e:
                 log(f"{site} {model}: {e!r}; skipped")
                 continue
