@@ -25,6 +25,12 @@ from the room each time) can act for any rider and publish:
   * "!foil 585" changes the foil on the sender's latest run (matched like
     add-run's, or "new <full name>"), then re-exports. A room admin
     can name a rider first: "!foil walter orca 685".
+  * "!glitch" drops the top-speed reading of the sender's latest run as a
+    GPS glitch and recomputes its top speed; again drops the next one.
+    "!glitch <run link>" does that run, "!glitch walter" Walter's latest
+    (room admins), and "undo" after any of them puts the run's readings
+    back. The trackpoints stay as they were: see speed_exclusions in
+    db/schema.sql. Top speeds skip lone spikes by themselves too.
   * "!publish" runs ./publish for a room admin, with
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
@@ -128,6 +134,8 @@ HELP_RIDER = [
     ("!last", "your latest run"),
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
+    ("!glitch", "drop your latest run's top-speed reading as a GPS glitch (again for the next one)"),
+    ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
     ("!sync", "import your new runs from your Drive folder"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
     ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
@@ -136,10 +144,11 @@ HELP_ADMIN = [
     ("!sync", "sync every rider"),
     ("!sync walter", "sync one rider"),
     ("!foil walter orca 685", "change another rider's latest foil"),
+    ("!glitch walter", "drop another rider's top-speed reading (or give a run link)"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!last", "!foil", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!last", "!foil", "!glitch", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
@@ -149,7 +158,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "help", "last", "foil", "sync", "ask", "publish", "room", "rooms"]
+COMMANDS = ["conditions", "help", "last", "foil", "glitch", "sync", "ask", "publish", "room", "rooms"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -506,7 +515,57 @@ def set_foil(mx, room, event_id, rider, name):
               html=f"✅ foil was {escape(was)}<br>{html}")
 
 
-PUBLISH_WORDS = {"publish", "verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
+RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+
+
+def top_speed(dwid):
+    rows = query(f"select max_speed_kmh from run_top_speed where dwid = '{dwid}'")
+    return rows[0]["max_speed_kmh"] if rows else None
+
+
+def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
+    """Exclude run dwid's top-speed point from its top speed (or, with undo,
+    put back every point excluded from it), recompute, then re-export. The
+    trackpoints themselves are left alone (speed_exclusions in schema.sql)."""
+    mx.react(room, event_id, "👀")
+    was = top_speed(dwid)
+    if was is None:
+        mx.notice(room, "That run has no track to take a speed from.", reply_to=event_id)
+        return
+    if undo:
+        change = f"delete from speed_exclusions where dwid = '{dwid}'; "
+    else:
+        change = ("insert into speed_exclusions "
+                  f"select dwid, ts, speed, {sql_str('!glitch by ' + sender)}, now() "
+                  f"from dws d where dwid = '{dwid}' and speed = "
+                  f"(select max_speed_kmh from run_top_speed where dwid = '{dwid}') "
+                  "and not exists (select 1 from speed_exclusions e "
+                  "where e.dwid = d.dwid and e.ts = d.ts) order by ts limit 1; ")
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', 'matrix-bot: top speed of {dwid}'); "
+           + change +
+           "update dwlist as l set max_speed_kmh = t.max_speed_kmh from run_top_speed t "
+           f"where l.id = t.dwid and l.id = '{dwid}'; commit;")
+    ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        try:
+            dwp_publish.run()
+        except dwp_publish.PublishError as e:
+            ok, out = False, str(e)
+    if not ok:
+        mx.notice(room, f"❌ couldn't change the top speed:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't change the top speed:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    now = top_speed(dwid)
+    url = f"https://{rider}.downwind.pro/run.html?id={dwid}"
+    what = "put back every dropped reading" if undo else f"dropped the {was:.1f} km/h reading"
+    mx.notice(room, f"✅ {what}: top speed {was:.1f} → {now:.1f} km/h\n{url}",
+              reply_to=event_id,
+              html=f'✅ {escape(what)}: top speed {was:.1f} → {now:.1f} km/h '
+                   f'(<a href="{url}">run</a>)')
+
+
+PUBLISH_WORDS = {"publish","verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
 LISTED = re.compile(r"(orphan|not in inventory|missing from S3|size differs|"
                     r"publish: would upload|publish: would delete): |/")
 
@@ -1348,6 +1407,29 @@ class Bot:
             else:
                 self.mx.notice(room, "!foil takes a foil, like !foil 585 "
                                      "(or !foil walter orca 685)", reply_to=eid)
+        elif text.startswith("!glitch"):
+            words = text.split()[1:]
+            undo = "undo" in words
+            words = [w for w in words if w != "undo"]
+            target, dwid = rider, None
+            if words and RUN_ID.search(words[0]):
+                dwid = RUN_ID.search(words[0]).group(0)
+                rows = query(f"select rider from dwlist where id = '{dwid}'")
+                target = rows[0]["rider"] if rows else None
+            elif words and words[0] in self.riders():
+                target = words[0]
+            elif words:
+                target = None
+            if target is None or len(words) > 1:
+                self.mx.notice(room, "!glitch takes nothing (your latest run), a run's link, "
+                                     "or a rider, plus undo to put the readings back",
+                               reply_to=eid)
+            elif target != rider and not self.room_admin(room, sender):
+                self.mx.notice(room, "You can only change your own runs.", reply_to=eid)
+            elif not dwid and not latest(target):
+                self.mx.notice(room, f"No runs for {target}.", reply_to=eid)
+            else:
+                glitch(self.mx, room, eid, dwid or latest(target)["id"], target, sender, undo)
         elif text.startswith("!ask"):
             words = text.split()[1:]
             # Whose runs: the sender's plus any rider named anywhere ("walter's

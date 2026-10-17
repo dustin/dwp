@@ -67,6 +67,34 @@ join beaches bs on bs.id = start_pos
 join beaches be on be.id = end_pos
 order by date, time;
 
+-- Trackpoints whose speed must not count toward a run's top speed
+-- (dwlist.max_speed_kmh), added by the bot's !glitch. The dws row itself
+-- is left alone; deleting the exclusion puts it back.
+CREATE TABLE speed_exclusions(
+  dwid UUID,
+  ts TIMESTAMP WITH TIME ZONE, -- the dws point's ts
+  speed DOUBLE, -- its speed, for the record
+  reason VARCHAR,
+  added_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Each run's top speed: the fastest trackpoint not in speed_exclusions
+-- and not a lone spike, i.e. at most 6 km/h above the fastest other point
+-- within 2 s of it. import.sql and !glitch set dwlist.max_speed_kmh from it.
+create or replace view run_top_speed as
+with p as (
+  select d.dwid, d.speed,
+    max(d.speed) over (partition by d.dwid order by d.ts
+      range between interval 2 seconds preceding and interval 2 seconds following
+      exclude current row) as near
+  from dws d
+  anti join speed_exclusions e on e.dwid = d.dwid and e.ts = d.ts
+)
+select dwid, max(speed) as max_speed_kmh
+from p
+where near is null or speed <= near + 6
+group by dwid;
+
 
 -- Cam readings, one row per watcher reading (db/cam-ingest, from
 -- db/cams/cam_motion.py's motion.jsonl). day is the Hawaii day. A

@@ -184,6 +184,12 @@ FROM (
 WHERE l.id = (SELECT dwid FROM new_run);
 -- dwlist.ts is `double` and stores tsi (epoch seconds), despite the column name.
 
+-- Top speed without lone spikes or excluded points (schema.sql).
+UPDATE dwlist AS l
+SET    max_speed_kmh = t.max_speed_kmh
+FROM   run_top_speed t
+WHERE  l.id = t.dwid AND l.id = (SELECT dwid FROM new_run);
+
 -- Name the start and end beaches
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
