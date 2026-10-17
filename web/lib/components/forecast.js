@@ -144,7 +144,7 @@ export function forecastCard(site, rows, obs, {now = new Date(), name = 'Forecas
     ],
   }));
 
-  return html`<div class="card">
+  return html`<div class="card fc-card">
     <h2>${name} <span class="muted" style="font-weight: normal">rest of today · sunset ${fmt.clock(set)}</span></h2>
     <div>${summary}</div>
     ${chart}
@@ -208,13 +208,13 @@ export function finishCard(rows, obs, {now = new Date(), resize, site = "wailea"
     .filter(h => h.ts >= +rise - HOUR / 2 && h.ts <= set);
   const ahead = hours.filter(h => h.ts >= +now - HOUR / 2);
   const title = html`<h2>${place} finish <span class="muted" style="font-weight: normal">rough · PacIOOS as is</span></h2>`;
-  if (now > set) return html`<div class="card">${title}<div class="muted">Dark for the rest of today.</div></div>`;
-  if (!ahead.length) return html`<div class="card">${title}<div class="muted">No ${place} forecast for the rest of today yet.</div></div>`;
+  if (now > set) return html`<div class="card fc-card">${title}<div class="muted">Dark for the rest of today.</div></div>`;
+  if (!ahead.length) return html`<div class="card fc-card">${title}<div class="muted">No ${place} forecast for the rest of today yet.</div></div>`;
   const at = hh => d3.least(ahead, h => Math.abs(hstHour(h.ts) - hh));
   const marks = [12, 14, 16].map(at).filter(h => h && h.ts >= +now - HOUR / 2);
   const seen = obs.filter(d => d.ts >= rise);
   const yMax = Math.max(20, d3.max(seen, d => d.wgust) ?? 0, d3.max(ahead, h => h.wavg) ?? 0);
-  return html`<div class="card">${title}
+  return html`<div class="card fc-card">${title}
     <div>${marks.length
       ? html`Model says ${marks.map((h, i) => html`${i ? ', ' : ''}<b>${Math.round(h.wavg)} kn</b> at ${hourLabel(h.ts)} (${Math.round(h.wdir)}°)`)}.`
       : html`Model says ~${Math.round(ahead.at(-1).wavg)} kn by ${hourLabel(ahead.at(-1).ts)}.`}</div>
