@@ -315,7 +315,7 @@ function camCard({reading: r, images, at, passed}) {
   const share = r.dx < 0 ? r.left : r.right;
   const img = images.flow ?? images.frame;
   return html`<div class="card">
-    <h2>Wailea cam, ${fmt.clock(r.ts)} <span style="color: var(--theme-foreground-muted); font-weight: normal">(${when})</span></h2>
+    <h2><a href="https://www.grandwailea.com/grand-wailea-maui-webcam" target="_blank">Wailea cam</a>, ${fmt.clock(r.ts)} <span style="color: var(--theme-foreground-muted); font-weight: normal">(${when})</span></h2>
     <p style="margin: 0.25rem 0 0.5rem">Water moving ${toward} at ${Math.abs(r.dx).toFixed(1)} px/s
       (${Math.round(100 * share)}% of the moving water)${r.whitecaps != null ? html` · ${r.whitecaps} whitecap${r.whitecaps === 1 ? "" : "s"}` : ""}</p>
     ${img ? html`<a href=${images.frame ?? img} target="_blank"><img src=${img} alt="Wailea cam water with motion arrows" style="width: 100%; border-radius: 4px"></a>` : ""}

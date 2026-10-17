@@ -71,7 +71,7 @@ const forecastRows = await fetchWindForecast("hookipa", d3.range(8).map(k => hst
 const hookipaToday = await fetchRecentWind("hookipa", 14).catch(() => []);
 // Kahului Harbor cam (db/cams/cams.py): whitecaps in and outside the harbor
 // and the swell coming in. Today and yesterday, so night shows the last daylight.
-const HARBOR_CAM = {site: "kahului_harbor", name: "Kahului Harbor cam", left: "westward", right: "eastward"};
+const HARBOR_CAM = {site: "kahului_harbor", name: "Kahului Harbor cam", url: "https://www.surfline.com/surf-report/kahului-harbor/5842041f4e65fad6a7708de6", left: "westward", right: "eastward"};
 const harborCam = {...HARBOR_CAM, readings: (await fetchCamReadings(HARBOR_CAM.site, [hstDay(Date.now() - 86400e3), hstDay(Date.now())]).catch(() => [])).filter(d => d.ts <= Date.now())};
 // The buoy's readings over the last week (NDBC's own summary, rank 1),
 // and the spectrum at its last report, however old.
