@@ -221,7 +221,7 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
 
 ## On the water
 
-<div class="grid grid-cols-4">
+<div class="grid grid-cols-4" style="grid-auto-rows: auto;">
   <div class="card grid-colspan-2">
     <h2>Recent sessions</h2>
     <div class="feed">${allRuns.slice(0, 8).map(d => htl.html`<a class="feed-row" href=${runLink(d)}>
