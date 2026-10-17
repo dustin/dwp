@@ -20,11 +20,16 @@ Files are named like
 i.e. date, route, device, foil code. The folder is mirrored into
 ~/.cache/dwp/drive/<rider> (rclone sync, so only changed files are
 fetched), every GPX there is triaged with strava/triage.py, the same as the
-Strava importers (phone and watch copies of one session collapse to one,
-watch preferred, trimmed to the water), and a session is imported when
+Strava importers (overlapping recordings collapse to one,
+trimmed to the water), and a session is imported when
 any of its files is new or has changed since the last run. import.sql
 replaces the rider's overlapping run, so a re-import (or a run that
 came in from Strava first) is replaced, not duplicated.
+
+A watch and a phone file with the same date, route and foil whose times
+overlap are one run: the phone's positions, with heart rate from the
+watch's nearest fix (within HR_GAP_S). Either one alone is imported as
+it is; when the other turns up later the run is re-imported merged.
 
 The foil comes from the picked file's name via FOILS below; a session
 with a code not listed there is reported and retried on the next run.
@@ -34,6 +39,7 @@ Run it from db's nix dev shell (python3, duckdb, rclone).
 """
 
 import argparse
+import bisect
 import hashlib
 import json
 import os
@@ -58,6 +64,8 @@ FOILS = {
     "hh510": "F4 Hammerhead 510", "hh688": "F4 Hammerhead 688", "code680r": "Code 680R",
 }
 
+HR_GAP_S = 5
+
 NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}) (.+?)_(watch|phone)_(.+)\.gpx$", re.I)
 
 
@@ -69,6 +77,48 @@ def foil_name(code):
         if key.startswith(k):
             return v
     return None
+
+
+def merge_hr(phone, watch):
+    """Phone points with heart rate from the watch's nearest fix."""
+    hr = sorted((p[0], p[3]) for p in watch if p[3] is not None)
+    ts = [t for t, _ in hr]
+    out = []
+    for p in phone:
+        i = bisect.bisect_left(ts, p[0])
+        near = [hr[j] for j in (i - 1, i) if 0 <= j < len(hr)]
+        best = min(near, key=lambda h: abs(h[0] - p[0]), default=None)
+        out.append(p[:3] + ((best[1],) if best and abs(best[0] - p[0]) <= HR_GAP_S
+                            else (p[3],)))
+    return out
+
+
+def pair_devices(files):
+    """Merge each overlapping watch+phone pair in files, a list of
+    (fn, date, route, device, foil, points). Returns (fns, foil, route,
+    points) per run."""
+    key = lambda f: (f[1], f[2].lower(), re.sub(r"[^a-z0-9]", "", f[4].lower()))
+    groups = {}
+    for f in files:
+        groups.setdefault(key(f), []).append(f)
+    runs = []
+    for g in groups.values():
+        phones = [f for f in g if f[3].lower() == "phone"]
+        watches = [f for f in g if f[3].lower() == "watch"]
+        for p in phones:
+            w = next((w for w in watches
+                      if w[5][0][0] <= p[5][-1][0] and p[5][0][0] <= w[5][-1][0]), None)
+            if w is None:
+                runs.append(([p[0]], p[4], p[2], p[5]))
+                continue
+            watches.remove(w)
+            pts = merge_hr(p[5], w[5])
+            n = sum(q[3] is not None for q in pts)
+            print(f"  merged {w[0]} heart rate onto {p[0]} ({n}/{len(pts)} points)",
+                  file=sys.stderr)
+            runs.append(([p[0], w[0]], p[4], p[2], pts))
+        runs.extend(([w[0]], w[4], w[2], w[5]) for w in watches)
+    return runs
 
 
 def state_path(rider):
@@ -123,7 +173,7 @@ def main(argv=None):
         if r.returncode != 0:
             die(f"rclone sync failed (exit {r.returncode})")
 
-    metas, tracks, sums, foils, names = [], {}, {}, {}, {}
+    sums, files = {}, []
     for fn in sorted(os.listdir(cache)):
         m = NAME.match(fn)
         if not m:
@@ -135,16 +185,19 @@ def main(argv=None):
         sums[fn] = md5(path)
         with open(path, "rb") as fh:
             pts = parse_gpx(fh.read())
-        if len(pts) < 10:
-            continue
+        if len(pts) >= 10:
+            files.append((fn,) + m.groups() + (pts,))
+
+    metas, tracks, foils, names = [], {}, {}, {}
+    for fns, foil, route, pts in pair_devices(files):
         # triage joins duplicate ids with spaces and names temp files
         # after them, so give it plain ids.
         fid = f"f{len(names)}"
-        names[fid] = fn
+        names[fid] = fns
         tracks[fid] = pts
-        foils[fid] = m.group(4)
+        foils[fid] = foil
         # Named after the route so triage.verdict treats it as a SUP downwind.
-        metas.append(dict(id=fid, name=m.group(2).replace("_", " "), type="Stand Up Paddling"))
+        metas.append(dict(id=fid, name=route.replace("_", " "), type="Stand Up Paddling"))
 
     seen = st["files"]
     if args.adopt:
@@ -156,7 +209,7 @@ def main(argv=None):
     picked = triage(metas, tracks, *load_geo())
     todo, held = [], set()
     for r in picked:
-        group = [names[i] for i in [r["id"]] + r["duplicates"].split()]
+        group = [fn for i in [r["id"]] + r["duplicates"].split() for fn in names[i]]
         if all(seen.get(f) == sums[f] for f in group):
             continue
         foil = foil_name(foils[r["id"]])
