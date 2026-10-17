@@ -35,6 +35,8 @@ from the room each time) can act for any rider and publish:
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
     short; the full output is in the bot's log.
+  * "!forecast" (anyone) picks the best forecast windows for Kīhei and
+    Maliko (bot/forecast.py, the site's blend and wind classes).
   * "!conditions" (anyone) shows the latest wind at each station with
     its trend over the last hour, Kihei's tides, and each buoy's swells
     with an image of its spectrum and direction rose. Wind and tides come
@@ -105,6 +107,7 @@ from mqtt_weather import Weather, tides  # noqa: E402
 import run_alerts  # noqa: E402
 import sources  # noqa: E402
 import ask  # noqa: E402
+import forecast  # noqa: E402
 
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
@@ -125,6 +128,7 @@ APPROVE = {"✅", "✔️", "✔", "👍"}
 HELP_ANYONE = [
     ("!conditions", "best bet and run scores, latest wind, buoys and the Wailea cam (sea and water motion), with the cam frame"),
     ("!conditions chart", "the same, plus each buoy's spectrum chart"),
+    ("!forecast", "forecast run picks: best now, best overall, Kīhei and Maliko, and the next few days"),
     ("!help", "this"),
 ]
 HELP_RIDER = [
@@ -158,7 +162,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "help", "last", "foil", "glitch", "sync", "ask", "publish", "room", "rooms"]
+COMMANDS = ["conditions", "forecast", "help", "last", "foil", "glitch", "sync", "ask", "publish", "room", "rooms"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -177,6 +181,16 @@ def unalias(text):
         return text
     hits = [c for c in COMMANDS if word[1:] and c.startswith(word[1:])]
     return f"!{hits[0]}{sp}{rest}" if len(hits) == 1 else text
+
+
+def ambiguous(text):
+    """The commands text's first word could be, when it's a prefix of more
+    than one ("!fo" → ["foil", "forecast"]), else []."""
+    word = text.partition(" ")[0]
+    if not word.startswith("!") or word[1:] in COMMANDS:
+        return []
+    hits = [c for c in COMMANDS if word[1:] and c.startswith(word[1:])]
+    return hits if len(hits) > 1 else []
 
 
 def help_text(sections):
@@ -739,10 +753,9 @@ def write_live(weather, dry_run=False):
         time.sleep(LIVE_EVERY)
 
 
-def wind_now():
-    """Per station with readings in the last day: (site, latest reading,
-    its average an hour earlier), in WIND_ORDER. The lake's readings, then
-    the live feed's newer ones on top."""
+def recent_wind():
+    """{site: readings in the last day, oldest first}: the lake's, then the
+    live feed's newer ones on top."""
     rows = query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
                  "where ts > now() - interval 1 day and wavg is not null order by ts")
     by = {}
@@ -752,6 +765,13 @@ def wind_now():
         rs = by.setdefault(site, [])
         newest = rs[-1]["t"] if rs else 0
         rs += [r for r in live if r["t"] > newest]
+    return by
+
+
+def wind_now():
+    """Per station with readings in the last day: (site, latest reading,
+    its average an hour earlier), in WIND_ORDER."""
+    by = recent_wind()
     out = []
     for site, rs in by.items():
         last = rs[-1]
@@ -981,6 +1001,24 @@ def conditions(mx, room, event_id, images, frames, charts=False):
             images[key] = (mx.upload(png, f"{site}-spectrum.png", "image/png"), len(png))
         mxc, size = images[key]
         mx.image(room, mxc, f"{site}-spectrum.png", size, 1800, 760, reply_to=event_id)
+
+
+def forecast_reply(mx, room, event_id):
+    """Reply with forecast.message for the models' newest runs, nudged by
+    what the stations read now."""
+    rows = query("select site, model, epoch(issued) as issued, epoch(ts) as t, wavg, wdir "
+                 "from wind_forecast where site in ('kihei', 'hookipa') and issued is not null "
+                 "and wavg is not null and ts > now() - interval 2 hour "
+                 "qualify issued = max(issued) over (partition by site, model)")
+    if not rows:
+        mx.notice(room, "No forecast to go on right now.", reply_to=event_id)
+        return
+    obs = {s: rs for s, rs in recent_wind().items() if s in forecast.SPOTS}
+    now = time.time()
+    p, quality = forecast.picks(rows, obs, now)
+    lines = forecast.message(p, quality, now, rating=rating_line())
+    mx.notice(room, "\n".join(a + b for a, b in lines), reply_to=event_id,
+              html="<br>".join(a + escape(b) for a, b in lines))
 
 
 # --- the room -------------------------------------------------------------
@@ -1331,6 +1369,14 @@ class Bot:
         eid, sender = ev["event_id"], ev["sender"]
         rider = self.args.users.get(sender)
         text = unalias(c.get("body", "").strip()) if c.get("msgtype") == "m.text" else ""
+        hits = ambiguous(text)
+        if hits:
+            self.mx.notice(room, f"{text.split()[0]} could be " + " or ".join(f"!{h}" for h in hits)
+                           + ". Type a little more of it.", reply_to=eid)
+            return
+        if text.startswith("!forecast"):  # anyone in the room
+            forecast_reply(self.mx, room, eid)
+            return
         if text.startswith("!conditions"):  # anyone in the room
             conditions(self.mx, room, eid, self.images, self.frames,
                        charts="chart" in text[len("!conditions"):])
