@@ -36,7 +36,10 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
   // An approximate route has no speeds or positions worth pointing at;
   // only the lifetime odometer milestones below still mean something.
   if (!data[0]?.approximate) {
-    const maxSpeed = d3.greatest(data, d => d.speed);
+    // The run's top speed leaves out GPS glitches (run_top_speed in
+    // db/schema.sql), so mark the fastest point that isn't faster than it.
+    const top = runMeta?.max_speed_kmh ?? Infinity;
+    const maxSpeed = d3.greatest(data.filter(d => d.speed <= top + 1e-6), d => d.speed);
     const maxDist = d3.greatest(data, d => d.distance_to_land);
     if (maxSpeed) {
       callouts.push({

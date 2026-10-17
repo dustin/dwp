@@ -205,7 +205,7 @@ function segmentTip(d) {
       `Duration: ${fmt.timeDiff(seg.start, seg.end)}`,
       `Distance Traveled: ${fmt.distanceM(dist)}`,
       `Nearest Land: ${fmt.distanceM(landdist)}`,
-      `Max speed: ${fmt.speed(d3.max(speeds))}`,
+      `Max speed: ${fmt.speed(Math.min(d3.max(speeds), runMeta.max_speed_kmh ?? Infinity))}`,
       `Average speed: ${fmt.speed(d3.mean(speeds))}`,
       `Pace: ${fmt.pace(d3.mean(speeds))}`,
       `Average HR: ${fmt.hr(d3.mean(hrs))}`,
