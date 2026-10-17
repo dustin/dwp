@@ -67,6 +67,11 @@ CELLS = {
     "wailea": {
         "pacioos_wrf_mo": (20.686, -156.46),
     },
+    # The Maliko run's finish, just off Kanaha Beach Park. PacIOOS only, as
+    # for Wailea; not yet checked against the Kanaha station (since 2026-10-17).
+    "kanaha": {
+        "pacioos_wrf_mo": (20.905, -156.44),
+    },
 }
 # Where each Open-Meteo model's run times are (its folder in the open-data bucket).
 META = {

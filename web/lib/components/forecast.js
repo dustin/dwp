@@ -196,15 +196,20 @@ export function forecastMini(site, rows, obs, {now = new Date(), name, href, day
 // Beach, as is (nothing to calibrate against yet), with the Wailea station
 // today. rows are wind_forecast rows for site wailea.
 const WAILEA = [20.686, -156.443];
-export function finishCard(rows, obs, {now = new Date(), resize} = {}) {
-  const {rise, set} = sunTimes(hstDay(now), WAILEA);
+const FINISHES = {
+  wailea: {place: "Wailea", spot: WAILEA, note: "Dashed: PacIOOS for the water just off Wailea Beach, uncorrected. Solid: the Wailea station today (inland, so it reads lower than the water)."},
+  kanaha: {place: "Kanaha", spot: [20.898, -156.437], note: "Dashed: PacIOOS for the water just off Kanaha Beach Park, uncorrected. Solid: the Kanaha station today."},
+};
+export function finishCard(rows, obs, {now = new Date(), resize, site = "wailea"} = {}) {
+  const {place, spot, note} = FINISHES[site];
+  const {rise, set} = sunTimes(hstDay(now), spot);
   const hours = newestRuns(rows.filter(d => d.model === 'pacioos_wrf_mo'))
     .map(h => ({ts: h.ts, ...h.models.pacioos_wrf_mo}))
     .filter(h => h.ts >= +rise - HOUR / 2 && h.ts <= set);
   const ahead = hours.filter(h => h.ts >= +now - HOUR / 2);
-  const title = html`<h2>Wailea finish <span class="muted" style="font-weight: normal">rough · PacIOOS as is</span></h2>`;
+  const title = html`<h2>${place} finish <span class="muted" style="font-weight: normal">rough · PacIOOS as is</span></h2>`;
   if (now > set) return html`<div class="card">${title}<div class="muted">Dark for the rest of today.</div></div>`;
-  if (!ahead.length) return html`<div class="card">${title}<div class="muted">No Wailea forecast for the rest of today yet.</div></div>`;
+  if (!ahead.length) return html`<div class="card">${title}<div class="muted">No ${place} forecast for the rest of today yet.</div></div>`;
   const at = hh => d3.least(ahead, h => Math.abs(hstHour(h.ts) - hh));
   const marks = [12, 14, 16].map(at).filter(h => h && h.ts >= +now - HOUR / 2);
   const seen = obs.filter(d => d.ts >= rise);
@@ -225,6 +230,6 @@ export function finishCard(rows, obs, {now = new Date(), resize} = {}) {
         Plot.tip(hours, Plot.pointerX({x: 'ts', y: 'wavg', title: h => `${hourLabel(h.ts)}  ${Math.round(h.wavg)} kn, ${Math.round(h.wdir)}° (model)`})),
       ],
     }))}
-    <div class="muted" style="font-size: 0.85em">Dashed: PacIOOS for the water just off Wailea Beach, uncorrected. Solid: the Wailea station today (inland, so it reads lower than the water). Not yet checked against what the finish actually does.</div>
+    <div class="muted" style="font-size: 0.85em">${note} Not yet checked against what the finish actually does.</div>
   </div>`;
 }

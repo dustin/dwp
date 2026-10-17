@@ -33,7 +33,7 @@ The north shore run from Maliko to Kahului: the Hoʻokipa and Kanaha stations, t
 ```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
-import {forecastCard} from "./components/forecast.js";
+import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS, camCard} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
 import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js";
@@ -74,6 +74,8 @@ const windNow = (async function* () {
 const hstDay = t => new Date(t - 10 * 3600e3).toISOString().slice(0, 10);
 const forecastRows = await fetchWindForecast("hookipa", d3.range(8).map(k => hstDay(Date.now() + k * 86400e3)));
 const hookipaToday = await fetchRecentWind("hookipa", 14).catch(() => []);
+const kanahaForecast = await fetchWindForecast("kanaha", d3.range(2).map(k => hstDay(Date.now() + k * 86400e3))).catch(() => []);
+const kanahaToday = await fetchRecentWind("kanaha", 14).catch(() => []);
 // Kahului Harbor cam (db/cams/cams.py): whitecaps in and outside the harbor
 // and the swell coming in. Today and yesterday, so night shows the last daylight.
 const HARBOR_CAM = {site: "kahului_harbor", name: "Kahului Harbor cam", url: "https://www.surfline.com/surf-report/kahului-harbor/5842041f4e65fad6a7708de6", left: "westward", right: "eastward"};
@@ -145,6 +147,12 @@ function buoyCard(readings, snap) {
   const live = station.rows;
   const obs = [...hookipaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
   return forecastCard("hookipa", forecastRows, obs, {name: "Hoʻokipa forecast", resize});
+})()}</div>
+
+<div class="grid grid-cols-1 spot-col">${(() => {
+  const live = stations[1].rows;
+  const obs = [...kanahaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
+  return finishCard(kanahaForecast, obs, {resize, site: "kanaha"});
 })()}</div>
 
 <div class="grid grid-cols-1 spot-col">${(() => {
