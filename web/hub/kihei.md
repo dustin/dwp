@@ -24,11 +24,19 @@ toc: false
   .fc-day b { font-size: 1rem; }
   .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
     color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
+  /* Readings and forecasts in their own sections, forecast cards tinted
+     and dashed (like the forecast lines) so they don't read as readings. */
+  .section-head { display: flex; align-items: baseline; gap: 0.75rem; max-width: 1100px; margin: 2rem 0 0.25rem;
+    border-bottom: 1px solid var(--theme-foreground-faint); padding-bottom: 0.25rem; }
+  .section-head h2 { margin: 0; font-size: 1.15rem; }
+  .section-head .muted { font-size: 0.85rem; }
+  .card.fc-card { background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
+    border: 1px dashed color-mix(in srgb, var(--theme-foreground-focus) 55%, transparent); }
 </style>
 
 # Kīhei
 
-The top of the run (the Kīhei station at Sugar Beach), the bottom (Wailea's station, inland a bit, and the Grand Wailea cam), the run rating, the forecast for the rest of the day and the coming afternoons, and past runs in wind like now.
+What the run is doing now (the rating, the Kīhei station at Sugar Beach at the top, Wailea's station and the cams at the bottom), then the forecast for the rest of the day and the coming afternoons, then past runs in wind like now.
 
 ```js
 import * as fmt from "./components/formatters.js";
@@ -102,7 +110,21 @@ const top = stations[0].rows.at(-1);
 
 ```
 
+<div class="section-head"><h2>Now</h2><span class="muted">readings from the stations and cams</span></div>
+
 <div class="grid grid-cols-1 kihei-col">${ratingCard(rating, "kihei")}</div>
+
+<div class="grid grid-cols-1 kihei-col">${(() => {
+  // Same scales, one above the other, so the drop from top to bottom reads
+  // straight down.
+  const yMax = Math.max(25, d3.max(stations.flatMap(s => s.rows), d => d.wgust) ?? 0);
+  const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
+  return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
+})()}</div>
+
+<div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site], {resize}))}</div>
+
+<div class="section-head"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {
   // The page's live readings are newer than the day's file; use them where they overlap.
@@ -116,16 +138,6 @@ const top = stations[0].rows.at(-1);
   const obs = [...waileaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
   return finishCard(waileaForecast, obs, {resize});
 })()}</div>
-
-<div class="grid grid-cols-1 kihei-col">${(() => {
-  // Same scales, one above the other, so the drop from top to bottom reads
-  // straight down.
-  const yMax = Math.max(25, d3.max(stations.flatMap(s => s.rows), d => d.wgust) ?? 0);
-  const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
-  return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
-})()}</div>
-
-<div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site], {resize}))}</div>
 
 ## Runs in wind like now
 

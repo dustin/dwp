@@ -24,11 +24,19 @@ toc: false
   .fc-day b { font-size: 1rem; }
   .wq-badge { display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.05rem 0.45rem; border-radius: 999px; vertical-align: 0.2rem;
     color: var(--wq); background: color-mix(in srgb, var(--wq) 16%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
+  /* Readings and forecasts in their own sections, forecast cards tinted
+     and dashed (like the forecast lines) so they don't read as readings. */
+  .section-head { display: flex; align-items: baseline; gap: 0.75rem; max-width: 1100px; margin: 2rem 0 0.25rem;
+    border-bottom: 1px solid var(--theme-foreground-faint); padding-bottom: 0.25rem; }
+  .section-head h2 { margin: 0; font-size: 1.15rem; }
+  .section-head .muted { font-size: 0.85rem; }
+  .card.fc-card { background: color-mix(in srgb, var(--theme-foreground-focus) 6%, var(--theme-background-alt));
+    border: 1px dashed color-mix(in srgb, var(--theme-foreground-focus) 55%, transparent); }
 </style>
 
 # Maliko
 
-The north shore run from Maliko to Kahului: the Hoʻokipa and Kanaha stations, the run rating, the forecast for the rest of the day and the coming afternoons, the Pauwela buoy, and past runs in buoy and wind like now.
+The north shore run from Maliko to Kahului: what it's doing now (the rating, the Hoʻokipa and Kanaha stations, the harbor cam and the Pauwela buoy), then the forecast for the rest of the day and the coming afternoons, then past runs in buoy and wind like now.
 
 ```js
 import * as fmt from "./components/formatters.js";
@@ -140,20 +148,9 @@ function buoyCard(readings, snap) {
 }
 ```
 
+<div class="section-head"><h2>Now</h2><span class="muted">readings from the stations, cam and buoy</span></div>
+
 <div class="grid grid-cols-1 spot-col">${ratingCard(rating, "ns")}</div>
-
-<div class="grid grid-cols-1 spot-col">${(() => {
-  // The page's live readings are newer than the day's file; use them where they overlap.
-  const live = station.rows;
-  const obs = [...hookipaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
-  return forecastCard("hookipa", forecastRows, obs, {name: "Hoʻokipa forecast", resize});
-})()}</div>
-
-<div class="grid grid-cols-1 spot-col">${(() => {
-  const live = stations[1].rows;
-  const obs = [...kanahaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
-  return finishCard(kanahaForecast, obs, {resize, site: "kanaha"});
-})()}</div>
 
 <div class="grid grid-cols-1 spot-col">${(() => {
   // Same scales, one above the other, as on the Kīhei page.
@@ -176,6 +173,21 @@ function buoyCard(readings, snap) {
 <div class="grid grid-cols-1 spot-col">${buoyNow && (buoySpectra.length || buoyEnergyRows.length) ? html`<div class="card">${resize(renderSwellEnergy(spectralPartitions(buoySpectra), buoyEnergyRows))}
   <div class="muted" style="font-size: 0.85em;">The ${BUOY_ENERGY_HOURS} hours up to the last report. Surfline-style kJ: height² × period², so long-period swell counts for a lot more. The line is the total; the bars split it by swell, colored by direction.</div>
 </div>` : ""}</div>
+
+<div class="section-head"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
+
+<div class="grid grid-cols-1 spot-col">${(() => {
+  // The page's live readings are newer than the day's file; use them where they overlap.
+  const live = station.rows;
+  const obs = [...hookipaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
+  return forecastCard("hookipa", forecastRows, obs, {name: "Hoʻokipa forecast", resize});
+})()}</div>
+
+<div class="grid grid-cols-1 spot-col">${(() => {
+  const live = stations[1].rows;
+  const obs = [...kanahaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
+  return finishCard(kanahaForecast, obs, {resize, site: "kanaha"});
+})()}</div>
 
 ## Runs in conditions similar to now
 
