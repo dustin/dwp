@@ -28,7 +28,7 @@ toc: false
 
 # Maliko
 
-The north shore run from Maliko to Kahului: the Hoʻokipa station, the run rating, the forecast for the rest of the day and the coming afternoons, the Pauwela buoy, and past runs in buoy and wind like now.
+The north shore run from Maliko to Kahului: the Hoʻokipa and Kanaha stations, the run rating, the forecast for the rest of the day and the coming afternoons, the Pauwela buoy, and past runs in buoy and wind like now.
 
 ```js
 import * as fmt from "./components/formatters.js";
@@ -41,7 +41,11 @@ import {partitionReading, spectralPartitions} from "./components/spectral-partit
 import {renderSwellEnergy} from "./components/swell-energy.js";
 
 const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
-const STATION = {site: "hookipa", name: "Hoʻokipa", where: "Hoʻokipa Beach Park"};
+// Top and bottom of the run.
+const STATIONS = [
+  {site: "hookipa", name: "Top: Hoʻokipa", where: "Hoʻokipa Beach Park"},
+  {site: "kanaha", name: "Bottom: Kanaha", where: "Kanaha Beach Park"},
+];
 const LIVE_STALE = 15 * 60e3;
 const HOURS = 6;
 // How far back to look for the buoy's last report when it's been offline.
@@ -50,11 +54,12 @@ const BUOY_LOOKBACK_DAYS = 7;
 async function loadWind() {
   const live = await fetchLiveWind();
   const since = Date.now() - HOURS * 3600e3;
-  const rows = live?.stations[STATION.site]?.filter(d => d.ts >= since) ?? [];
-  const station = rows.length && Date.now() - rows.at(-1).ts < LIVE_STALE
-    ? {...STATION, rows, live: true}
-    : await fetchRecentWind(STATION.site, HOURS).then(rows => ({...STATION, rows})).catch(() => ({...STATION, rows: []}));
-  return {station, rating: live?.rating ?? null};
+  const stations = await Promise.all(STATIONS.map(async s => {
+    const rows = live?.stations[s.site]?.filter(d => d.ts >= since) ?? [];
+    if (rows.length && Date.now() - rows.at(-1).ts < LIVE_STALE) return {...s, rows, live: true};
+    return fetchRecentWind(s.site, HOURS).then(rows => ({...s, rows})).catch(() => ({...s, rows: []}));
+  }));
+  return {stations, rating: live?.rating ?? null};
 }
 const windNow = (async function* () {
   while (true) {
@@ -101,7 +106,8 @@ const buoyNow = buoyLast && Date.now() - buoyLast.ts < BUOY_FRESH ? buoyLast : n
 ```
 
 ```js
-const {station, rating} = windNow;
+const {stations, rating} = windNow;
+const station = stations[0];
 const top = station.rows.at(-1);
 ```
 
@@ -142,8 +148,10 @@ function buoyCard(readings, snap) {
 })()}</div>
 
 <div class="grid grid-cols-1 spot-col">${(() => {
-  const yMax = Math.max(25, d3.max(station.rows, d => d.wgust) ?? 0);
-  return stationCard(station, yMax, [new Date(Date.now() - HOURS * 3600e3), new Date()], {resize, hours: HOURS});
+  // Same scales, one above the other, as on the Kīhei page.
+  const yMax = Math.max(25, d3.max(stations.flatMap(s => s.rows), d => d.wgust) ?? 0);
+  const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
+  return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
 })()}</div>
 
 <div class="grid grid-cols-1 spot-col">${camCard(harborCam, null, {resize})}</div>

@@ -681,7 +681,7 @@ def last_sync_slot(now):
 # --- conditions -------------------------------------------------------------
 
 # Wind stations in the order !conditions lists them (any others after).
-WIND_ORDER = ["kihei", "wailea", "hookipa"]
+WIND_ORDER = ["kihei", "wailea", "hookipa", "kanaha"]
 SITE_NAMES = {"kihei": "Kihei", "wailea": "Wailea", "hookipa": "Ho'okipa", "pauwela": "Pauwela",
               "kanaha": "Kanaha"}
 
@@ -1224,7 +1224,7 @@ class Bot:
             lines = {"kihei": [wind[s] for s in ("kihei", "wailea") if s in wind]
                      + ([cam_line(cam)] if cam else [])
                      + [m for m in (motion_line(),) if m],
-                     "ns": [wind[s] for s in ("hookipa",) if s in wind]}
+                     "ns": [wind[s] for s in ("hookipa", "kanaha") if s in wind]}
             for kind, sides in said:
                 self.broadcast({"msgtype": "m.text", "body": run_alerts.message(
                     kind, sides, rating, lines)}, "alerts")
@@ -1245,7 +1245,7 @@ class Bot:
             newest["pauwela"] = rows[0]["t"]
         if WEATHER:
             live = WEATHER.recent()
-            for site in ("kihei", "hookipa", "wailea"):
+            for site in ("kihei", "hookipa", "kanaha", "wailea"):
                 newest[site] = live[site][-1]["t"] if live.get(site) else None
             for cam in ("wailea", "ulua", "poolenalena"):
                 m = WEATHER.water_motion(cam)
