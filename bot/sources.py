@@ -8,12 +8,15 @@ expected to be reporting, so nights and the cams' dark hours aren't outages.
 Watch.see() takes {key: newest epoch, or None for nothing at all, or a
 missing key for "couldn't tell"} and returns what to say: a source is
 announced once when it goes offline (only inside its hours) and once when it
-comes back (any time). The state is saved, so a restart doesn't repeat it.
+comes back (any time) with BACK_AFTER new readings, so one stray reading
+from a failing station isn't "back". The state is saved, so a restart doesn't repeat it.
 """
 
 import json
 import os
 import time
+
+BACK_AFTER = 2  # new readings that make a source back online (the buoy's are hourly: 1)
 
 # key: (name, stale after seconds, watched from HST hour, to HST hour, note)
 SOURCES = {
@@ -36,7 +39,10 @@ class Watch:
         self.path = path
         try:
             with open(path) as fh:
-                self.down = json.load(fh)  # key -> newest epoch when it went down (or None)
+                # key -> {"t": newest epoch when it went down (or None),
+                #         "seen": newer readings' epochs since}
+                self.down = {k: v if isinstance(v, dict) else {"t": v, "seen": []}
+                             for k, v in json.load(fh).items()}
         except (FileNotFoundError, ValueError):
             self.down = {}
 
@@ -51,19 +57,27 @@ class Watch:
         (a float): kind "down" (epoch the last reading, or None) or "back"
         (epoch the new reading)."""
         now = time.time() if now is None else now
-        out = []
+        out, changed = [], False
         for key, (_, stale, start, end, _) in SOURCES.items():
             if key not in newest:
                 continue
             t = newest[key]
             fresh = t is not None and now - t <= stale
-            if key in self.down and fresh:
-                del self.down[key]
-                out.append(("back", key, t))
-            elif key not in self.down and not fresh and start <= hst_hour < end:
-                self.down[key] = t
+            down = self.down.get(key)
+            if down and fresh:
+                if t not in down["seen"] and t > (down["t"] or 0):
+                    down["seen"].append(t)
+                    changed = True
+                if len(down["seen"]) >= (1 if key == "pauwela" else BACK_AFTER):
+                    del self.down[key]
+                    out.append(("back", key, t))
+            elif not down and not fresh and start <= hst_hour < end:
+                self.down[key] = {"t": t, "seen": []}
                 out.append(("down", key, t))
-        if out:
+            elif down and not fresh and down["seen"]:
+                down["seen"] = []  # a stray reading that went stale again
+                changed = True
+        if out or changed:
             self.save()
         return out
 
