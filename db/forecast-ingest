@@ -140,10 +140,12 @@ def live(now):
                 if s is not None and d is not None and now <= ts <= now + timedelta(hours=HOURS):
                     rows.append((site, model, issued, ts, s, d))
     # PacIOOS's ERDDAP has no run time, so issued is when we asked.
-    t0, t1 = now.strftime("%Y-%m-%dT%H:00:00Z"), (now + timedelta(hours=HOURS)).strftime("%Y-%m-%dT%H:00:00Z")
+    # ERDDAP refuses a time range past the run's last hour (wrf_mo runs
+    # about 6 days out), so ask up to (last) and trim here.
+    t0 = now.strftime("%Y-%m-%dT%H:00:00Z")
     for site, cells in CELLS.items():
         lat, lon = cells["pacioos_wrf_mo"]
-        sel = f"[({t0}):1:({t1})][({lat})][({lon})]"
+        sel = f"[({t0}):1:(last)][({lat})][({lon})]"
         try:
             lines = get(f"{ERDDAP}?Uwind{urllib.parse.quote(sel)},Vwind{urllib.parse.quote(sel)}").splitlines()[2:]
         except OSError as e:
@@ -153,10 +155,12 @@ def live(now):
             t, _, _, u, v = line.split(",")
             if "NaN" in (u, v):
                 continue
+            ts = datetime.fromisoformat(t.replace("Z", "+00:00"))
+            if ts > now + timedelta(hours=HOURS):
+                continue
             u, v = float(u), float(v)
             d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
-            rows.append((site, "pacioos_wrf_mo", now, datetime.fromisoformat(t.replace("Z", "+00:00")),
-                         (u * u + v * v) ** 0.5 * KN, d))
+            rows.append((site, "pacioos_wrf_mo", now, ts, (u * u + v * v) ** 0.5 * KN, d))
     return rows
 
 
