@@ -83,10 +83,11 @@ class Watch:
         return out
 
 
-def message(kind, key, t, when):
-    """The announcement; when formats an epoch as the bot does."""
+def message(kind, key, t, when, reading=None):
+    """The announcement; when formats an epoch as the bot does, reading is
+    what a source that's back just read ("18g24 @75")."""
     name, *_, note = SOURCES[key]
     if kind == "back":
-        return f"✅ {name} is back online (latest {when(t)})."
+        return f"✅ {name} is back online: {reading or 'new readings'} at {when(t)}."
     since = f"nothing new since {when(t)}" if t else "no recent readings"
     return f"⚠️ {name} is offline: {since}.{note}"

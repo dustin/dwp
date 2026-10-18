@@ -921,6 +921,33 @@ def motion_line(site="wailea"):
             f"({share:.0%}){caps} · {when(m['t'])}")
 
 
+def source_reading(key):
+    """What a source (a sources.SOURCES key) just read, for its back-online
+    message, or None."""
+    if key == "pauwela":
+        sw = next((sw for s, _, sw in swells_now() if s == key), None)
+        return sw and swell_kj_text(sw)
+    if key == "rating":
+        r = WEATHER and WEATHER.rating
+        return r and (f"Kīhei {run_alerts.out_of_10(r['kihei'])}, "
+                      f"North shore {run_alerts.out_of_10(r['ns'])}")
+    if key.startswith("cam:"):
+        m = WEATHER and WEATHER.water_motion(key[4:])
+        if not m:
+            return None
+        if m["dx"] is None:
+            return "not measured, Kīhei wind too light" if m.get("skipped") else None
+        way = "down the coast" if m["dx"] < 0 else "up the coast"
+        caps = f", {m['whitecaps']} whitecaps" if m.get("whitecaps") else ""
+        return f"water moving {way}, {abs(m['dx']):.1f} px/s{caps}"
+    rs = (WEATHER.recent() if WEATHER else {}).get(key)
+    if not rs:
+        return None
+    r = rs[-1]
+    return (f"{r['wavg']:.0f}" + (f"g{r['wgust']:.0f}" if r.get("wgust") is not None else "")
+            + (f" @{r['wdir']:.0f}" if r.get("wdir") is not None else ""))
+
+
 def send_cam_frame(mx, room, cam, cache, reply_to=None):
     """Post the frame the cam reading was made from, if Node-RED gave its
     URL (fetched from here, so a LAN address is fine); cache maps the
@@ -1291,8 +1318,13 @@ class Bot:
             newest["rating"] = WEATHER.rating and WEATHER.rating["t"]
         h = hst(now)
         for kind, key, t in self.watch.see(newest, h.hour + h.minute / 60, now):
+            try:
+                reading = source_reading(key) if kind == "back" else None
+            except Exception as e:  # the alert matters more than its detail
+                log(f"reading for {key} failed: {e!r}")
+                reading = None
             self.broadcast({"msgtype": "m.text",
-                            "body": sources.message(kind, key, t, when)}, "sources")
+                            "body": sources.message(kind, key, t, when, reading)}, "sources")
 
     def scheduled_sync(self):
         """At each of SYNC_HOURS (Hawaii), sync every rider's Drive in the
