@@ -148,7 +148,7 @@ function buoyCard(readings, snap) {
 }
 ```
 
-<div class="section-head"><h2>Now</h2><span class="muted">readings from the stations, cam and buoy</span></div>
+<div class="section-head" id="now"><h2>Now</h2><span class="muted">readings from the stations, cam and buoy</span></div>
 
 <div class="grid grid-cols-1 spot-col">${ratingCard(rating, "ns")}</div>
 
@@ -174,7 +174,7 @@ function buoyCard(readings, snap) {
   <div class="muted" style="font-size: 0.85em;">The ${BUOY_ENERGY_HOURS} hours up to the last report. Surfline-style kJ: height² × period², so long-period swell counts for a lot more. The line is the total; the bars split it by swell, colored by direction.</div>
 </div>` : ""}</div>
 
-<div class="section-head"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
+<div class="section-head" id="forecast"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
 
 <div class="grid grid-cols-1 spot-col">${(() => {
   // The page's live readings are newer than the day's file; use them where they overlap.
@@ -188,6 +188,16 @@ function buoyCard(readings, snap) {
   const obs = [...kanahaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
   return finishCard(kanahaForecast, obs, {resize, site: "kanaha"});
 })()}</div>
+
+```js
+// The cards above load their data after the browser has jumped to a #forecast
+// link, so jump again once they're in (only the first time; the wind refreshes).
+buoyRows, swellLike;
+if (location.hash && !window.hashJumped) {
+  window.hashJumped = true;
+  requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());
+}
+```
 
 ## Runs in conditions similar to now
 

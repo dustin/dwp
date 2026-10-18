@@ -199,7 +199,7 @@ function pickCard(wind, forecasts, riders) {
 
 <div class="grid grid-cols-4">
   ${pickCard(windNow, forecasts, riders)}
-  ${windNow.map(({site, name, rows}) => forecastMini(site, forecasts[site] ?? [], rows, {name, href: WIND_PAGES[site]}))}
+  ${windNow.map(({site, name, rows}) => forecastMini(site, forecasts[site] ?? [], rows, {name, href: WIND_PAGES[site] && `${WIND_PAGES[site]}#forecast`}))}
 </div>
 
 ## Riders <a class="riders-compare" href="versus.html">Compare two riders →</a>

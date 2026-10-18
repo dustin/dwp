@@ -110,7 +110,7 @@ const top = stations[0].rows.at(-1);
 
 ```
 
-<div class="section-head"><h2>Now</h2><span class="muted">readings from the stations and cams</span></div>
+<div class="section-head" id="now"><h2>Now</h2><span class="muted">readings from the stations and cams</span></div>
 
 <div class="grid grid-cols-1 kihei-col">${ratingCard(rating, "kihei")}</div>
 
@@ -124,7 +124,7 @@ const top = stations[0].rows.at(-1);
 
 <div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site], {resize}))}</div>
 
-<div class="section-head"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
+<div class="section-head" id="forecast"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {
   // The page's live readings are newer than the day's file; use them where they overlap.
@@ -138,6 +138,16 @@ const top = stations[0].rows.at(-1);
   const obs = [...waileaToday.filter(d => !live.length || d.ts < live[0].ts), ...live];
   return finishCard(waileaForecast, obs, {resize});
 })()}</div>
+
+```js
+// The cards above load their data after the browser has jumped to a #forecast
+// link, so jump again once they're in (only the first time; the wind refreshes).
+cams, similar;
+if (location.hash && !window.hashJumped) {
+  window.hashJumped = true;
+  requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());
+}
+```
 
 ## Runs in wind like now
 
