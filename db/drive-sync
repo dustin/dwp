@@ -26,10 +26,13 @@ any of its files is new or has changed since the last run. import.sql
 replaces the rider's overlapping run, so a re-import (or a run that
 came in from Strava first) is replaced, not duplicated.
 
-A watch and a phone file with the same date, route and foil whose times
-overlap are one run: the phone's positions, with heart rate from the
-watch's nearest fix (within HR_GAP_S). Either one alone is imported as
-it is; when the other turns up later the run is re-imported merged.
+When a run has both a watch and a phone file, the watch's track is used
+(unless it's much shorter), as with Strava. Riders in MERGE_PHONE
+(or --merge-phone) get the phone's positions instead, with heart rate
+from the watch's nearest fix (within HR_GAP_S): a watch and a phone file
+with the same date, route and foil whose times overlap. Either way a
+file alone is imported as it is, and when its pair turns up later the
+run is re-imported.
 
 The foil comes from the picked file's name via FOILS below; a session
 with a code not listed there is reported and retried on the next run.
@@ -64,6 +67,9 @@ FOILS = {
     "hh510": "F4 Hammerhead 510", "hh688": "F4 Hammerhead 688", "code680r": "Code 680R",
 }
 
+# Riders who want phone positions with the watch's heart rate. The
+# phone's track is noisier (see the docstring of pair_devices).
+MERGE_PHONE = {"walter"}
 HR_GAP_S = 5
 
 NAME = re.compile(r"^(\d{4}-\d{2}-\d{2}) (.+?)_(watch|phone)_(.+)\.gpx$", re.I)
@@ -96,7 +102,12 @@ def merge_hr(phone, watch):
 def pair_devices(files):
     """Merge each overlapping watch+phone pair in files, a list of
     (fn, date, route, device, foil, points). Returns (fns, foil, route,
-    points) per run."""
+    points) per run.
+
+    Phones read a few percent further and faster than watches over the
+    same run (second-to-second zigzag), and sometimes stall for a few
+    seconds in a turn and then jump to catch up, which shows as a false
+    top speed; the watch smooths both away."""
     key = lambda f: (f[1], f[2].lower(), re.sub(r"[^a-z0-9]", "", f[4].lower()))
     groups = {}
     for f in files:
@@ -157,6 +168,8 @@ def main(argv=None):
     ap.add_argument("rider")
     ap.add_argument("--remote", help="rclone remote (default: <rider>:)")
     ap.add_argument("--board", default="", help="board to record (default: the rider's latest)")
+    ap.add_argument("--merge-phone", action=argparse.BooleanOptionalAction,
+                    help="phone positions with watch heart rate (default: on for MERGE_PHONE riders)")
     ap.add_argument("--dry-run", action="store_true", help="triage only, import nothing")
     ap.add_argument("--adopt", action="store_true",
                     help="record every file as imported without importing anything")
@@ -189,7 +202,10 @@ def main(argv=None):
             files.append((fn,) + m.groups() + (pts,))
 
     metas, tracks, foils, names = [], {}, {}, {}
-    for fns, foil, route, pts in pair_devices(files):
+    merge = args.rider in MERGE_PHONE if args.merge_phone is None else args.merge_phone
+    runs = (pair_devices(files) if merge
+            else [([f[0]], f[4], f[2], f[5]) for f in files])
+    for fns, foil, route, pts in runs:
         # triage joins duplicate ids with spaces and names temp files
         # after them, so give it plain ids.
         fid = f"f{len(names)}"
