@@ -95,6 +95,31 @@ from p
 where near is null or speed <= near + 6
 group by dwid;
 
+-- Each run's foiling heart rate (dwlist.min_foiling_hr, avg_foiling_hr):
+-- trackpoints over 15 km/h, skipping stale readings. A watch can hold its
+-- last heart rate through a paddle-up and then jump to the real one, so a
+-- stretch of one unchanged value followed by a rise of 25 bpm or more is
+-- left out. import.sql sets dwlist from it.
+create or replace view run_foiling_hr as
+with h as (
+  select dwid, ts, speed, hr,
+    hr is distinct from lag(hr) over (partition by dwid order by ts) as starts
+  from dws
+  where hr is not null
+), g as (
+  select *, sum(starts::int) over (partition by dwid order by ts) as held
+  from h
+), n as (
+  select dwid, held, hr,
+    lead(hr) over (partition by dwid order by held) as next_hr
+  from g
+  group by dwid, held, hr
+)
+select g.dwid, min(g.hr) as min_hr, avg(g.hr) as avg_hr
+from g join n using (dwid, held)
+where g.speed > 15 and (n.next_hr is null or n.next_hr < n.hr + 25)
+group by g.dwid;
+
 
 -- Cam readings, one row per watcher reading (db/cam-ingest, from
 -- db/cams/cam_motion.py's motion.jsonl). day is the Hawaii day. A

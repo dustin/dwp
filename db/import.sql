@@ -239,16 +239,12 @@ WHERE  l.id = (SELECT dwid FROM new_run) AND l.foil IS NULL;
 
 SELECT foil FROM dwlist WHERE id = (SELECT dwid FROM new_run);
 
--- heart rates
+-- heart rates, without stale readings (schema.sql)
 UPDATE dwlist AS l
 SET    min_foiling_hr = x.min_hr,
        avg_foiling_hr = x.avg_hr
-FROM   (select dwid, min(HR) as min_hr, avg(HR) as avg_hr
-          from dws
-          where speed > 15 and dwid = (SELECT dwid FROM new_run)
-          group by dwid
-        ) x
-WHERE l.id = x.dwid;
+FROM   run_foiling_hr x
+WHERE  l.id = x.dwid AND l.id = (SELECT dwid FROM new_run);
 
 -- max distance
 UPDATE dwlist AS l
