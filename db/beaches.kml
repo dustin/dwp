@@ -611,7 +611,7 @@
 			</Placemark>
 		</Folder>
 		<Folder>
-			<name>West Maui</name>
+			<name>Maui West</name>
 			<Placemark id="02C79237E040ADC7EB90">
 				<name>DT Fleming</name>
 				<LookAt>
@@ -660,7 +660,7 @@
 			</Placemark>
 		</Folder>
 		<Folder>
-			<name>Molokai</name>
+			<name>Molokai&apos;i</name>
 			<Placemark id="5D7C85AD0F000024">
 				<name>Kaunakakai</name>
 				<styleUrl>#__managed_style_132027EE2742883BCCB7</styleUrl>
