@@ -19,6 +19,15 @@ CREATE TABLE dws(
   dwid UUID
 );
 
+-- Named launch and landing spots; dwlist.start_pos and end_pos point at
+-- id. geom is lon/lat. update-beaches keeps it in step with beaches.kml.
+CREATE TABLE beaches(
+  id UUID,
+  "name" VARCHAR,
+  geom GEOMETRY,
+  region VARCHAR -- e.g. 'Kihei', 'Maui North Shore'
+);
+
 CREATE TABLE dwlist(
   id UUID,
   rider VARCHAR, -- whose run this is: the subdomain, e.g. 'dustin' (migrate-riders.sql)

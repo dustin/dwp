@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""Make the lake's beaches match a KML file (e.g. one exported from Google My Maps).
+
+    ./update-beaches beaches.kml             show what changes, ask, apply
+    ./update-beaches beaches.kml --dry-run   just show what would change
+    ./update-beaches beaches.kml --yes       apply without asking
+
+Each Placemark is a beach, matched to the lake by name. A beach keeps its id
+(runs point at it through dwlist.start_pos and end_pos), so:
+
+  - a known name gets the KML's geometry;
+  - a new name whose geometry is exactly a beach the KML no longer names is
+    that beach renamed, not a new one;
+  - any other new name is a new beach with a fresh id;
+  - a beach the KML no longer names is deleted, unless runs start or end
+    there, in which case it's left alone and listed.
+
+Region: a known beach keeps its own. A new one takes the name of its KML
+folder when that's already a region in the lake, else --region if given,
+else the region of the nearest beach the lake already has.
+
+Placemarks can be points, lines, polygons or multi-geometries; coordinates
+are stored lon/lat as the KML has them. One lake commit. It never creates
+or changes tables: beaches must already exist (schema.sql).
+
+Changing a beach's shape, or adding one, doesn't relabel old runs; only
+runs imported afterwards see it.
+
+Run it from db's nix dev shell, like add-run.
+"""
+
+import argparse
+import csv
+import os
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+
+
+def local(tag):
+    return tag.rsplit("}", 1)[-1]
+
+
+def child(el, name):
+    return next((c for c in el if local(c.tag) == name), None)
+
+
+def coords(el):
+    """'lon lat, lon lat, ...' from a <coordinates> under el."""
+    c = next((c for c in el.iter() if local(c.tag) == "coordinates"), None)
+    if c is None or not (c.text or "").strip():
+        raise ValueError("no coordinates")
+    pts = []
+    for t in c.text.split():
+        lon, lat = t.split(",")[:2]
+        pts.append(f"{float(lon)!r} {float(lat)!r}")
+    return ", ".join(pts)
+
+
+def wkt(g):
+    """WKT for a KML geometry element."""
+    kind = local(g.tag)
+    if kind == "Point":
+        return f"POINT ({coords(g)})"
+    if kind == "LineString":
+        return f"LINESTRING ({coords(g)})"
+    if kind == "Polygon":
+        rings = [f"({coords(b)})" for t in ("outerBoundaryIs", "innerBoundaryIs")
+                 for b in g if local(b.tag) == t]
+        return f"POLYGON ({', '.join(rings)})"
+    if kind == "MultiGeometry":
+        parts = [wkt(c) for c in g if local(c.tag) in GEOMS]
+        if not parts:
+            raise ValueError("empty MultiGeometry")
+        return f"GEOMETRYCOLLECTION ({', '.join(parts)})"
+    raise ValueError(f"unsupported geometry {kind}")
+
+
+GEOMS = {"Point", "LineString", "Polygon", "MultiGeometry"}
+
+
+def placemarks(path):
+    """[(name, folder, wkt)] for every Placemark in the KML."""
+    out = []
+
+    def walk(el, folder):
+        for c in el:
+            t = local(c.tag)
+            if t == "Folder":
+                n = child(c, "name")
+                walk(c, (n.text or "").strip() if n is not None else folder)
+            elif t == "Placemark":
+                n = child(c, "name")
+                name = (n.text or "").strip() if n is not None else ""
+                g = next((g for g in c if local(g.tag) in GEOMS), None)
+                if not name or g is None:
+                    sys.exit(f"update-beaches: a Placemark with no {'name' if not name else 'geometry'}"
+                             f"{' (' + name + ')' if name else ''}")
+                try:
+                    out.append((name, folder, wkt(g)))
+                except ValueError as e:
+                    sys.exit(f"update-beaches: {name}: {e}")
+            else:
+                walk(c, folder)
+
+    walk(ET.parse(path).getroot(), None)
+    dups = sorted({n for n, _, _ in out if sum(1 for m, _, _ in out if m == n) > 1})
+    if dups:
+        sys.exit(f"update-beaches: names used more than once: {', '.join(dups)}")
+    return out
+
+
+def plan(csv_path, region):
+    """The changes that make beaches match kml, as (adds, changes, deletes, kept)."""
+    cols = {r["column_name"] for r in duckdb(
+        "select column_name from information_schema.columns "
+        "where table_catalog = 'lake' and table_name = 'beaches';", json_out=True)}
+    if not {"id", "name", "geom"} <= cols:
+        raise PublishError("no beaches table with id, name and geom in the lake (see schema.sql)")
+    has_region = "region" in cols
+    src = (f"read_csv({sql_str(csv_path)}, header = true, "
+           "columns = {'name': 'VARCHAR', 'folder': 'VARCHAR', 'wkt': 'VARCHAR'})")
+    # Both sides through ST_AsText, so equal shapes compare equal as text.
+    new = duckdb(f"""load spatial;
+        select k.name, k.folder, ST_AsText(ST_GeomFromText(k.wkt)) as g,
+               {'''(select b.region from beaches b where b.region is not null
+                    order by ST_Distance(ST_GeomFromText(k.wkt), b.geom) limit 1)'''
+                if has_region else 'null'} as near
+        from {src} k;""", json_out=True)
+    old = duckdb(f"""load spatial;
+        select b.id::varchar as id, b.name, ST_AsText(b.geom) as g,
+               {'b.region' if has_region else 'null'} as region,
+               (select count(*) from dwlist l where l.start_pos = b.id or l.end_pos = b.id) as runs
+        from beaches b;""", json_out=True)
+    regions = {o["region"] for o in old if o["region"]}
+
+    by_name = {o["name"]: o for o in old}
+    gone = {o["name"]: o for o in old if o["name"] not in {n["name"] for n in new}}
+    adds, changes = [], []
+    for n in new:
+        o = by_name.get(n["name"])
+        if o is None:
+            o = next((g for g in gone.values() if g["g"] == n["g"]), None)
+            if o is not None:
+                del gone[o["name"]]
+        if o is None:
+            r = (n["folder"] if n["folder"] in regions else None) or region or n["near"]
+            adds.append(dict(name=n["name"], g=n["g"], region=r))
+        elif o["name"] != n["name"] or o["g"] != n["g"]:
+            changes.append(dict(id=o["id"], name=n["name"], old=o["name"], g=n["g"],
+                                moved=o["g"] != n["g"], region=o["region"]))
+    deletes = [o for o in gone.values() if not o["runs"]]
+    kept = [o for o in gone.values() if o["runs"]]
+    return has_region, adds, changes, deletes, kept
+
+
+def show(has_region, adds, changes, deletes, kept):
+    def reg(r):
+        return f" [{r or 'no region'}]" if has_region else ""
+    for a in adds:
+        print(f"+ {a['name']}{reg(a['region'])}")
+    for c in changes:
+        what = [f"renamed from {c['old']}"] if c["old"] != c["name"] else []
+        what += ["new shape"] if c["moved"] else []
+        print(f"~ {c['name']}: {', '.join(what)}")
+    for d in deletes:
+        print(f"- {d['name']}")
+    for k in kept:
+        print(f"! {k['name']}: not in the KML, but {k['runs']} run(s) use it; left in the lake")
+    if not (adds or changes or deletes):
+        print("beaches already match the KML")
+
+
+def apply(has_region, adds, changes, deletes, tmp):
+    path = os.path.join(tmp, "apply.csv")
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["op", "id", "name", "wkt", "region"])
+        for a in adds:
+            w.writerow(["add", "", a["name"], a["g"], a["region"] or ""])
+        for c in changes:
+            w.writerow(["change", c["id"], c["name"], c["g"], ""])
+        for d in deletes:
+            w.writerow(["delete", d["id"], d["name"], "", ""])
+    src = (f"read_csv({sql_str(path)}, header = true, "
+           "columns = {'op': 'VARCHAR', 'id': 'VARCHAR', 'name': 'VARCHAR', "
+           "'wkt': 'VARCHAR', 'region': 'VARCHAR'})")
+    region = ", nullif(region, '') as region" if has_region else ""
+    duckdb(f"""load spatial;
+        begin;
+        call lake.set_commit_message('dustin', 'beaches from KML');
+        update beaches as b set name = x.name, geom = ST_GeomFromText(x.wkt)
+        from (select * from {src} where op = 'change') x
+        where b.id = x.id::uuid;
+        insert into beaches by name
+        select uuid() as id, name, ST_GeomFromText(wkt) as geom{region}
+        from {src} where op = 'add';
+        delete from beaches where id in (select id::uuid from {src} where op = 'delete');
+        commit;""")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("kml", help="the beaches KML")
+    ap.add_argument("--region", help="region for new beaches whose KML folder isn't one "
+                                     "(default: the nearest known beach's)")
+    ap.add_argument("--dry-run", action="store_true", help="show the changes and stop")
+    ap.add_argument("--yes", action="store_true", help="apply without asking")
+    a = ap.parse_args(argv)
+
+    marks = placemarks(a.kml)
+    try:
+        with tempfile.TemporaryDirectory(prefix="dwp-beaches-") as tmp:
+            kml_csv = os.path.join(tmp, "kml.csv")
+            with open(kml_csv, "w", newline="") as f:
+                w = csv.writer(f)
+                w.writerow(["name", "folder", "wkt"])
+                w.writerows(marks)
+            p = plan(kml_csv, a.region)
+            show(*p)
+            if a.dry_run or not any(p[1:4]):
+                return 0
+            if not a.yes:
+                if input("apply? [y/N] ").strip().lower() not in ("y", "yes"):
+                    return 1
+            apply(*p[:4], tmp)
+            print(f"{len(p[1])} added, {len(p[2])} changed, {len(p[3])} deleted")
+    except PublishError as e:
+        print(f"update-beaches: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
