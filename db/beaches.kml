@@ -230,501 +230,516 @@
 		<name>DW Beaches</name>
 		<open>1</open>
 		<styleUrl>#__managed_style_0B0C84622142883BCCB7</styleUrl>
-		<Placemark id="5D7C85AD0F000002">
-			<name>Maliko</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.3409321893468,20.93409424258036,0 -156.3369056763931,20.93565404084068,0 -156.341733352737,20.94793217685856,0 -156.3461715517142,20.94619547756525,0 -156.3409321893468,20.93409424258036,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000003">
-			<name>Baldwin Beach</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.3949099499841,20.91306572393131,0 -156.3900288692676,20.91454387449792,0 -156.3906212305226,20.91675006243291,0 -156.3965019596988,20.91486292121675,0 -156.3949099499841,20.91306572393131,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000004">
-			<name>Sugar Cove</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4108832201827,20.91011028739663,0 -156.4105304621693,20.9090046981458,0 -156.4076341639688,20.90969862598461,0 -156.4084965036523,20.91137270249677,0 -156.4108832201827,20.91011028739663,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000005">
-			<name>Kanaha</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4456506744584,20.89867110058841,0 -156.4321836419927,20.90419568525164,0 -156.4327527032879,20.90553193199452,0 -156.4461775394069,20.90051686796431,0 -156.4456506744584,20.89867110058841,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000006">
-			<name>Ka&apos;a</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4469262777687,20.90072658387328,0 -156.4537447132874,20.8988620466359,0 -156.4536722858525,20.89606963171872,0 -156.4460550331352,20.8981894592571,0 -156.4469262777687,20.90072658387328,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000007">
-			<name>Kahului Harbor</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4739277718366,20.90154403551299,0 -156.4787742108799,20.89633871122937,0 -156.4751506440631,20.8935785354074,0 -156.4711670282018,20.90183770933563,0 -156.4739277718366,20.90154403551299,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000008">
-			<name>Keālia Boardwalk</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4862272541286,20.79572018861489,0 -156.4866164604693,20.79457617864244,0 -156.4838667255111,20.79356720690376,0 -156.4839306650572,20.79459282645406,0 -156.4862272541286,20.79572018861489,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000009">
-			<name>Sugar Beach</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4690151676102,20.78678351860557,0 -156.4773297363176,20.79176884549664,0 -156.4824119556509,20.79301033479501,0 -156.4689284884793,20.78595629471408,0 -156.4690151676102,20.78678351860557,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000A">
-			<name>Green Church</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4625846681527,20.78111905460273,0 -156.4630129166385,20.7807862739701,0 -156.4624176786683,20.77994585236071,0 -156.4618488261846,20.78018906846574,0 -156.4625846681527,20.78111905460273,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000B">
-			<name>Ohukai Rd</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4613393325701,20.77601312100605,0 -156.4610490976833,20.77437416135987,0 -156.4603319762993,20.77441108231716,0 -156.4605261368995,20.77598521951358,0 -156.4613393325701,20.77601312100605,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000C">
-			<name>Kalepolepo</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4602456619113,20.76653468269886,0 -156.4597066677767,20.76432715192543,0 -156.4585026919926,20.76465843570508,0 -156.4590408641597,20.7669210883709,0 -156.4602456619113,20.76653468269886,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000D">
-			<name>Coconut Channel</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4580155582614,20.74351658553085,0 -156.4575553205782,20.74160624855471,0 -156.4568698138426,20.74184486271279,0 -156.4573556030555,20.74362034897149,0 -156.4580155582614,20.74351658553085,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000E">
-			<name>Kam I</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4493597496169,20.72468078589786,0 -156.4477582768889,20.71968165667784,0 -156.4468970023468,20.72001642236661,0 -156.4482991626757,20.72481954542652,0 -156.4493597496169,20.72468078589786,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00000F">
-			<name>Kam II</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4472675636009,20.7145637839588,0 -156.4460206740009,20.71514001735841,0 -156.4467945849851,20.71800568065354,0 -156.4478334285281,20.71801311987556,0 -156.4472675636009,20.7145637839588,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000010">
-			<name>Kam III</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4463125769782,20.71107368818274,0 -156.445592212329,20.71150282190403,0 -156.4465865312505,20.71414337724744,0 -156.4473262780883,20.71403819288832,0 -156.4463125769782,20.71107368818274,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000011">
-			<name>Keawakapu</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4458117318349,20.70036857283947,0 -156.4450145642427,20.70055364493914,0 -156.4460998371331,20.7041594132999,0 -156.447046112571,20.70408245543552,0 -156.4458117318349,20.70036857283947,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000012">
-			<name>Keawakapu II</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4449157752889,20.69536461266582,0 -156.4442341889772,20.69527561060127,0 -156.4449599118025,20.69966669637765,0 -156.4459340328283,20.6996953171586,0 -156.4449157752889,20.69536461266582,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000013">
-			<name>Mokapu</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4442125994667,20.69231793985735,0 -156.443680575536,20.69229987840748,0 -156.4442137517794,20.69447679664063,0 -156.4447104559148,20.69440885188822,0 -156.4442125994667,20.69231793985735,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000014">
-			<name>Wailea</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.444002063422,20.68087240809026,0 -156.4431662413358,20.68088459826257,0 -156.4429479341155,20.68434095351073,0 -156.4435939493608,20.68434639798742,0 -156.444002063422,20.68087240809026,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000015">
-			<name>Ulua</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4438693984123,20.69012081050005,0 -156.4433365419958,20.69043305440455,0 -156.4440824616311,20.69163707118951,0 -156.4447504447553,20.69163421924792,0 -156.4438693984123,20.69012081050005,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000016">
-			<name>Polo</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4441210579634,20.67435666405147,0 -156.4433723590416,20.67441183457982,0 -156.443432756752,20.67679194095596,0 -156.4440789282576,20.67704222625735,0 -156.4441210579634,20.67435666405147,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000017">
-			<name>Palauea</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4429174435765,20.66937532987558,0 -156.4424432473644,20.66973695353714,0 -156.4434369650509,20.6718636831632,0 -156.4440009359224,20.67167839737064,0 -156.4429174435765,20.66937532987558,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000018">
-			<name>Po&apos;olenalena</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4418566747255,20.65999563510486,0 -156.4408861454782,20.66023605861046,0 -156.4412506445858,20.66392640304893,0 -156.4425667834805,20.66395157615212,0 -156.4418566747255,20.65999563510486,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000019">
-			<name>Makena Landing</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.441573477331,20.65418372078651,0 -156.441532343993,20.65389074871879,0 -156.4409483203567,20.65337020492009,0 -156.4406931801483,20.65386557413651,0 -156.441573477331,20.65418372078651,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001A">
-			<name>Maluaka</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.443733482826,20.64551340463898,0 -156.4432638145311,20.6454195828724,0 -156.4420530363443,20.64776600847984,0 -156.4424325555532,20.64855035924901,0 -156.443733482826,20.64551340463898,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001B">
-			<name>Big Beach</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4444169046419,20.62751727275086,0 -156.4437896935354,20.62838142470141,0 -156.4463085601881,20.63210902724255,0 -156.4506560393872,20.63463667749789,0 -156.4515099484126,20.63354512200747,0 -156.4444169046419,20.62751727275086,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001C">
-			<name>China Walls</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-157.7113989792064,21.26041389374161,0 -157.7107760828241,21.26064600345449,0 -157.7113076569725,21.26238847804404,0 -157.7118307267453,21.26245845734439,0 -157.7113989792064,21.26041389374161,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001D">
-			<name>ADs</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-157.6554247040717,21.29848647684684,0 -157.6549116834277,21.29606468717824,0 -157.653692045098,21.29633754921297,0 -157.6546381787503,21.29908696731585,0 -157.6554247040717,21.29848647684684,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001E">
-			<name>Kaimana</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-157.8249554016403,21.26239253566242,0 -157.8238680231318,21.26095281964627,0 -157.8213108657556,21.26270513982028,0 -157.8218418700838,21.2644455787437,0 -157.8249554016403,21.26239253566242,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F00001F">
-			<name>Tonggs</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-157.8195879384384,21.25890623188048,0 -157.8192410542515,21.25866224514173,0 -157.8190910903885,21.2587718502212,0 -157.8193846004842,21.25915752943913,0 -157.8195879384384,21.25890623188048,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000020">
-			<name>Kaiko&apos;os</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-157.7976093291203,21.25666098168707,0 -157.7967191896722,21.25684933135799,0 -157.796881991229,21.25712715163443,0 -157.797610146507,21.25697676553774,0 -157.7976093291203,21.25666098168707,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000021">
-			<name>Oneuli</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4462011145331,20.6435669006937,0 -156.4494189155132,20.63882461437584,0 -156.4473126277639,20.63905678643011,0 -156.4457180516885,20.64337624999476,0 -156.4462011145331,20.6435669006937,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000022">
-			<name>Mai Poina</name>
-			<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.4607611821947,20.77381169865944,0 -156.4591409133984,20.76805842930013,0 -156.458751042157,20.76810408916871,0 -156.4602533274086,20.77385649213569,0 -156.4607611821947,20.77381169865944,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000023">
-			<name>Ku&apos;au</name>
-			<styleUrl>#__managed_style_132027EE2742883BCCB7</styleUrl>
-			<LineString>
-				<tessellate>1</tessellate>
-				<coordinates>
-					-156.3699452302509,20.92872641591158,0 -156.3687793175875,20.92942115790359,0 -156.3690686876756,20.93018064474036,0 -156.3704672488177,20.92911777654913,0 -156.369992243856,20.92873816915953,0 
-				</coordinates>
-			</LineString>
-		</Placemark>
-		<Placemark id="02C79237E040ADC7EB90">
-			<name>DT Fleming</name>
-			<LookAt>
-				<longitude>-156.6557408869645</longitude>
-				<latitude>21.00828930912997</latitude>
-				<altitude>0.4048282529891822</altitude>
-				<heading>0</heading>
-				<tilt>0</tilt>
-				<gx:fovy>35</gx:fovy>
-				<range>5578.558538614889</range>
-				<altitudeMode>absolute</altitudeMode>
-			</LookAt>
-			<styleUrl>#__managed_style_01222AADA542883BCCB8</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.6543197581514,21.00391118119409,0 -156.6489623403208,21.00451887369728,0 -156.6495525686026,21.00677418363415,0 -156.6546884937901,21.00639101135928,0 -156.6543197581514,21.00391118119409,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="082AC254DB42883D1788">
-			<name>Honolua</name>
-			<LookAt>
-				<longitude>-156.6461320911569</longitude>
-				<latitude>21.01717146689258</latitude>
-				<altitude>-0.8303420366704484</altitude>
-				<heading>0</heading>
-				<tilt>0</tilt>
-				<gx:fovy>35</gx:fovy>
-				<range>3404.719256889658</range>
-				<altitudeMode>absolute</altitudeMode>
-			</LookAt>
-			<styleUrl>#__managed_style_01222AADA542883BCCB8</styleUrl>
-			<Polygon>
-				<outerBoundaryIs>
-					<LinearRing>
-						<coordinates>
-							-156.6422842759666,21.01493818612535,0 -156.6406829292973,21.01323553369592,0 -156.6394353662293,21.0130743662241,0 -156.6380149298136,21.01267993214033,0 -156.6372437711705,21.01392692294086,0 -156.6384753554845,21.01626477925866,0 -156.6396950291064,21.01718155284884,0 -156.6422842759666,21.01493818612535,0 
-						</coordinates>
-					</LinearRing>
-				</outerBoundaryIs>
-			</Polygon>
-		</Placemark>
-		<Placemark id="5D7C85AD0F000024">
-			<name>Kaunakakai</name>
-			<styleUrl>#__managed_style_132027EE2742883BCCB7</styleUrl>
-			<LineString>
-				<tessellate>1</tessellate>
-				<coordinates>
-					-157.0289796315736,21.08782637040222,0 -157.0272341756674,21.0875364309575,0 -157.0238205602737,21.08607230972498,0 -157.019223074644,21.08554741044648,0 -157.0236653440852,21.07723771959706,0 -157.0318748541603,21.08104350954801,0 -157.0289796315736,21.08782637040222,0 
-				</coordinates>
-			</LineString>
-		</Placemark>
+		<Folder>
+			<name>Maui North Shore</name>
+			<Placemark id="5D7C85AD0F000002">
+				<name>Maliko</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.3409321893468,20.93409424258036,0 -156.3369056763931,20.93565404084068,0 -156.341733352737,20.94793217685856,0 -156.3461715517142,20.94619547756525,0 -156.3409321893468,20.93409424258036,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000003">
+				<name>Baldwin Beach</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.3949099499841,20.91306572393131,0 -156.3900288692676,20.91454387449792,0 -156.3906212305226,20.91675006243291,0 -156.3965019596988,20.91486292121675,0 -156.3949099499841,20.91306572393131,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000004">
+				<name>Sugar Cove</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4108832201827,20.91011028739663,0 -156.4105304621693,20.9090046981458,0 -156.4076341639688,20.90969862598461,0 -156.4084965036523,20.91137270249677,0 -156.4108832201827,20.91011028739663,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000005">
+				<name>Kanaha</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4456506744584,20.89867110058841,0 -156.4321836419927,20.90419568525164,0 -156.4327527032879,20.90553193199452,0 -156.4461775394069,20.90051686796431,0 -156.4456506744584,20.89867110058841,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000006">
+				<name>Ka&apos;a</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4469262777687,20.90072658387328,0 -156.4537447132874,20.8988620466359,0 -156.4536722858525,20.89606963171872,0 -156.4460550331352,20.8981894592571,0 -156.4469262777687,20.90072658387328,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000007">
+				<name>Kahului Harbor</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4739277718366,20.90154403551299,0 -156.4787742108799,20.89633871122937,0 -156.4751506440631,20.8935785354074,0 -156.4711670282018,20.90183770933563,0 -156.4739277718366,20.90154403551299,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000023">
+				<name>Ku&apos;au</name>
+				<styleUrl>#__managed_style_132027EE2742883BCCB7</styleUrl>
+				<LineString>
+					<tessellate>1</tessellate>
+					<coordinates>
+						-156.3699452302509,20.92872641591158,0 -156.3687793175875,20.92942115790359,0 -156.3690686876756,20.93018064474036,0 -156.3704672488177,20.92911777654913,0 -156.369992243856,20.92873816915953,0 
+					</coordinates>
+				</LineString>
+			</Placemark>
+		</Folder>
+		<Folder>
+			<name>Kihei</name>
+			<Placemark id="5D7C85AD0F000008">
+				<name>Keālia Boardwalk</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4862272541286,20.79572018861489,0 -156.4866164604693,20.79457617864244,0 -156.4838667255111,20.79356720690376,0 -156.4839306650572,20.79459282645406,0 -156.4862272541286,20.79572018861489,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000009">
+				<name>Sugar Beach</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4690151676102,20.78678351860557,0 -156.4773297363176,20.79176884549664,0 -156.4824119556509,20.79301033479501,0 -156.4689284884793,20.78595629471408,0 -156.4690151676102,20.78678351860557,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000A">
+				<name>Green Church</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4625846681527,20.78111905460273,0 -156.4630129166385,20.7807862739701,0 -156.4624176786683,20.77994585236071,0 -156.4618488261846,20.78018906846574,0 -156.4625846681527,20.78111905460273,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000B">
+				<name>Ohukai Rd</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4613393325701,20.77601312100605,0 -156.4610490976833,20.77437416135987,0 -156.4603319762993,20.77441108231716,0 -156.4605261368995,20.77598521951358,0 -156.4613393325701,20.77601312100605,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000C">
+				<name>Kalepolepo</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4602456619113,20.76653468269886,0 -156.4597066677767,20.76432715192543,0 -156.4585026919926,20.76465843570508,0 -156.4590408641597,20.7669210883709,0 -156.4602456619113,20.76653468269886,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000D">
+				<name>Coconut Channel</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4580155582614,20.74351658553085,0 -156.4575553205782,20.74160624855471,0 -156.4568698138426,20.74184486271279,0 -156.4573556030555,20.74362034897149,0 -156.4580155582614,20.74351658553085,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000E">
+				<name>Kam I</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4493597496169,20.72468078589786,0 -156.4477582768889,20.71968165667784,0 -156.4468970023468,20.72001642236661,0 -156.4482991626757,20.72481954542652,0 -156.4493597496169,20.72468078589786,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00000F">
+				<name>Kam II</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4472675636009,20.7145637839588,0 -156.4460206740009,20.71514001735841,0 -156.4467945849851,20.71800568065354,0 -156.4478334285281,20.71801311987556,0 -156.4472675636009,20.7145637839588,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000010">
+				<name>Kam III</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4463125769782,20.71107368818274,0 -156.445592212329,20.71150282190403,0 -156.4465865312505,20.71414337724744,0 -156.4473262780883,20.71403819288832,0 -156.4463125769782,20.71107368818274,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000011">
+				<name>Keawakapu</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4458117318349,20.70036857283947,0 -156.4450145642427,20.70055364493914,0 -156.4460998371331,20.7041594132999,0 -156.447046112571,20.70408245543552,0 -156.4458117318349,20.70036857283947,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000012">
+				<name>Keawakapu II</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4449157752889,20.69536461266582,0 -156.4442341889772,20.69527561060127,0 -156.4449599118025,20.69966669637765,0 -156.4459340328283,20.6996953171586,0 -156.4449157752889,20.69536461266582,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000013">
+				<name>Mokapu</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4442125994667,20.69231793985735,0 -156.443680575536,20.69229987840748,0 -156.4442137517794,20.69447679664063,0 -156.4447104559148,20.69440885188822,0 -156.4442125994667,20.69231793985735,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000014">
+				<name>Wailea</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.444002063422,20.68087240809026,0 -156.4431662413358,20.68088459826257,0 -156.4429479341155,20.68434095351073,0 -156.4435939493608,20.68434639798742,0 -156.444002063422,20.68087240809026,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000015">
+				<name>Ulua</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4438693984123,20.69012081050005,0 -156.4433365419958,20.69043305440455,0 -156.4440824616311,20.69163707118951,0 -156.4447504447553,20.69163421924792,0 -156.4438693984123,20.69012081050005,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000016">
+				<name>Polo</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4441210579634,20.67435666405147,0 -156.4433723590416,20.67441183457982,0 -156.443432756752,20.67679194095596,0 -156.4440789282576,20.67704222625735,0 -156.4441210579634,20.67435666405147,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000017">
+				<name>Palauea</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4429174435765,20.66937532987558,0 -156.4424432473644,20.66973695353714,0 -156.4434369650509,20.6718636831632,0 -156.4440009359224,20.67167839737064,0 -156.4429174435765,20.66937532987558,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000018">
+				<name>Po&apos;olenalena</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4418566747255,20.65999563510486,0 -156.4408861454782,20.66023605861046,0 -156.4412506445858,20.66392640304893,0 -156.4425667834805,20.66395157615212,0 -156.4418566747255,20.65999563510486,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000019">
+				<name>Makena Landing</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.441573477331,20.65418372078651,0 -156.441532343993,20.65389074871879,0 -156.4409483203567,20.65337020492009,0 -156.4406931801483,20.65386557413651,0 -156.441573477331,20.65418372078651,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00001A">
+				<name>Maluaka</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.443733482826,20.64551340463898,0 -156.4432638145311,20.6454195828724,0 -156.4420530363443,20.64776600847984,0 -156.4424325555532,20.64855035924901,0 -156.443733482826,20.64551340463898,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00001B">
+				<name>Big Beach</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4444169046419,20.62751727275086,0 -156.4437896935354,20.62838142470141,0 -156.4463085601881,20.63210902724255,0 -156.4506560393872,20.63463667749789,0 -156.4515099484126,20.63354512200747,0 -156.4444169046419,20.62751727275086,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000021">
+				<name>Oneuli</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4462011145331,20.6435669006937,0 -156.4494189155132,20.63882461437584,0 -156.4473126277639,20.63905678643011,0 -156.4457180516885,20.64337624999476,0 -156.4462011145331,20.6435669006937,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000022">
+				<name>Mai Poina</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.4607611821947,20.77381169865944,0 -156.4591409133984,20.76805842930013,0 -156.458751042157,20.76810408916871,0 -156.4602533274086,20.77385649213569,0 -156.4607611821947,20.77381169865944,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+		</Folder>
+		<Folder>
+			<name>West Maui</name>
+			<Placemark id="02C79237E040ADC7EB90">
+				<name>DT Fleming</name>
+				<LookAt>
+					<longitude>-156.6557408869645</longitude>
+					<latitude>21.00828930912997</latitude>
+					<altitude>0.4048282529891822</altitude>
+					<heading>0</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>5578.558538614889</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_01222AADA542883BCCB8</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.6543197581514,21.00391118119409,0 -156.6489623403208,21.00451887369728,0 -156.6495525686026,21.00677418363415,0 -156.6546884937901,21.00639101135928,0 -156.6543197581514,21.00391118119409,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="082AC254DB42883D1788">
+				<name>Honolua</name>
+				<LookAt>
+					<longitude>-156.6461320911569</longitude>
+					<latitude>21.01717146689258</latitude>
+					<altitude>-0.8303420366704484</altitude>
+					<heading>0</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>3404.719256889658</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_01222AADA542883BCCB8</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.6422842759666,21.01493818612535,0 -156.6406829292973,21.01323553369592,0 -156.6394353662293,21.0130743662241,0 -156.6380149298136,21.01267993214033,0 -156.6372437711705,21.01392692294086,0 -156.6384753554845,21.01626477925866,0 -156.6396950291064,21.01718155284884,0 -156.6422842759666,21.01493818612535,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+		</Folder>
+		<Folder>
+			<name>Molokai</name>
+			<Placemark id="5D7C85AD0F000024">
+				<name>Kaunakakai</name>
+				<styleUrl>#__managed_style_132027EE2742883BCCB7</styleUrl>
+				<LineString>
+					<tessellate>1</tessellate>
+					<coordinates>
+						-157.0289796315736,21.08782637040222,0 -157.0272341756674,21.0875364309575,0 -157.0238205602737,21.08607230972498,0 -157.019223074644,21.08554741044648,0 -157.0236653440852,21.07723771959706,0 -157.0318748541603,21.08104350954801,0 -157.0289796315736,21.08782637040222,0 
+					</coordinates>
+				</LineString>
+			</Placemark>
+		</Folder>
+		<Folder>
+			<name>Oahu</name>
+			<Placemark id="5D7C85AD0F00001C">
+				<name>China Walls</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-157.7113989792064,21.26041389374161,0 -157.7107760828241,21.26064600345449,0 -157.7113076569725,21.26238847804404,0 -157.7118307267453,21.26245845734439,0 -157.7113989792064,21.26041389374161,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00001D">
+				<name>ADs</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-157.6554247040717,21.29848647684684,0 -157.6549116834277,21.29606468717824,0 -157.653692045098,21.29633754921297,0 -157.6546381787503,21.29908696731585,0 -157.6554247040717,21.29848647684684,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00001E">
+				<name>Kaimana</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-157.8249554016403,21.26239253566242,0 -157.8238680231318,21.26095281964627,0 -157.8213108657556,21.26270513982028,0 -157.8218418700838,21.2644455787437,0 -157.8249554016403,21.26239253566242,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F00001F">
+				<name>Tonggs</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-157.8195879384384,21.25890623188048,0 -157.8192410542515,21.25866224514173,0 -157.8190910903885,21.2587718502212,0 -157.8193846004842,21.25915752943913,0 -157.8195879384384,21.25890623188048,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="5D7C85AD0F000020">
+				<name>Kaiko&apos;os</name>
+				<styleUrl>#__managed_style_0B98BEC87942883BCCB6</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-157.7976093291203,21.25666098168707,0 -157.7967191896722,21.25684933135799,0 -157.796881991229,21.25712715163443,0 -157.797610146507,21.25697676553774,0 -157.7976093291203,21.25666098168707,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+		</Folder>
 	</Folder>
 </Document>
 </kml>

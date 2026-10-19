@@ -42,6 +42,7 @@ sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
 sys.path.insert(0, DB_DIR)
 import dwp_publish  # noqa: E402
 import gpx_filter  # noqa: E402
+import kml  # noqa: E402
 
 GPX = "{http://www.topografix.com/GPX/1/1}"
 HR = "{http://www.garmin.com/xmlschemas/TrackPointExtension/v1}hr"
@@ -60,21 +61,20 @@ def run(cmd, cwd=None, env=None, stdin=None):
         die(f"{cmd[0]} failed (exit {r.returncode})")
 
 
-def load_shapes(name, col):
-    """(name, rings) rows from one of db's parquet files, via the duckdb CLI.
+def rings(wkt):
+    """A WKT shape's rings, each a list of (x, y) in local metres (see xy)."""
+    return [[xy(float(lat), float(lon)) for lon, lat in
+             (pair.split() for pair in ring.split(","))]
+            for ring in re.findall(r"\(([^()]+)\)", wkt)]
 
-    Each ring is a list of (x, y) in local metres (see xy)."""
+
+def load_shapes(name, col):
+    """(name, rings) rows from one of db's parquet files, via the duckdb CLI."""
     q = (f"install spatial; load spatial; "
          f"copy (select {col}, ST_AsText(geom) as wkt from '{name}') to '/dev/stdout' (format csv)")
     out = subprocess.run(["duckdb", "-c", q], cwd=DB_DIR, check=True,
                          capture_output=True, text=True).stdout
-    rows = []
-    for r in csv.DictReader(out.splitlines()):
-        rings = [[xy(float(lat), float(lon)) for lon, lat in
-                  (pair.split() for pair in ring.split(","))]
-                 for ring in re.findall(r"\(([^()]+)\)", r["wkt"])]
-        rows.append((r[col], rings))
-    return rows
+    return [(r[col], rings(r["wkt"])) for r in csv.DictReader(out.splitlines())]
 
 
 # --- geometry -------------------------------------------------------------
@@ -307,8 +307,9 @@ def load_geo():
     """Land and beach shapes for summarize()."""
     land = Shapes([ring for _, rings in load_shapes("coastline.parquet", "isle")
                    for ring in rings])
-    beaches = [(n, Shapes(rings, cell=1e6))
-               for n, rings in load_shapes("beaches.parquet", "name")]
+    beaches = [(n, Shapes(rs, cell=1e6))
+               for n, _, w in kml.placemarks(os.path.join(DB_DIR, "beaches.kml"))
+               for rs in [rings(w)]]
     return land, beaches
 
 
