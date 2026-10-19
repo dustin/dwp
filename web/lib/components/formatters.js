@@ -57,6 +57,9 @@ export function seconds(totalSeconds) {
     .join(' ');
 }
 
+// A long stretch of time as decimal hours, e.g. 497.9 h.
+export const hours = sec => `${d3.format(",.1f")(sec / 3600)} h`;
+
 export function minutes(x) {
   const m = Math.floor(x);
   const s = Math.floor(60 * (x - m));

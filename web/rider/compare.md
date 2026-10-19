@@ -271,6 +271,44 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
 
 </div>
 
+<div class="card experience-card">
+  <h2>Experience Going In</h2>
+  ${experienceTable(runMeta1, runMeta2)}
+</div>
+
+```js
+// What each rider had behind them before the run: time, time on foil,
+// distance and run count. For two runs by one rider, also how much was
+// gained between them.
+function experienceTable(a, b) {
+  const cols = [
+    ["Total", m => m.sec_before, fmt.hours],
+    ["On foil", m => m.foil_sec_before, fmt.hours],
+    ["Distance", m => m.odometer_km, km => `${fmt.comma(Math.round(km))} km`],
+    ["Runs", m => m.runs_before, fmt.comma],
+  ];
+  const row = (label, cls, cell) => html`<tr><td class=${cls}>${label}</td>${cols.map(c => html`<td>${cell(c)}</td>`)}</tr>`;
+  const [early, late] = a.ts <= b.ts ? [a, b] : [b, a];
+  // Dates alone fit a phone, unless both runs were on the same day.
+  const sameDay = fmt.date(a.ts) === fmt.date(b.ts);
+  const [l1, l2] = together || sameDay ? [label1, label2] : [fmt.date(a.ts), fmt.date(b.ts)];
+  return html`<div style="overflow-x: auto"><table class="experience">
+    <tr class="muted"><td></td>${cols.map(([name]) => html`<td>${name}</td>`)}</tr>
+    ${row(l1, "run1", ([, v, f]) => f(v(a)))}
+    ${row(l2, "run2", ([, v, f]) => f(v(b)))}
+    ${together ? "" : row("Between", "muted", ([, v, f]) => "+" + f(v(late) - v(early)))}
+  </table></div>`;
+}
+```
+
+<style>
+  .experience-card { width: fit-content; max-width: 100%; box-sizing: border-box; }
+  table.experience { max-width: none; font-size: 1.1rem; }
+  table.experience td { padding: 0.15rem 0.6rem 0.15rem 0; white-space: nowrap; }
+  table.experience tr:last-child td { border-bottom: none; }
+  @media (max-width: 480px) { table.experience { font-size: 0.9rem; } table.experience td { padding-right: 0.4rem; } }
+</style>
+
 <div>${together ? html`<h2>Who's Ahead</h2>
 <div class="card">${resize(width => Plot.plot({
   title: `Distance ${label1} is ahead of ${label2} (negative: behind)`,

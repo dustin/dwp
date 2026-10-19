@@ -22,13 +22,27 @@ function isDry(d) {
   return d.longest_segment_distance / d.distance_on_foil > dryLimit;
 }
 
+// Experience going into each run: how many runs, and how much time (in
+// total and on foil) the rider had before it, not counting the run itself.
+// The distance counterpart is runs.csv's odometer_km.
+function addExperience(runs) {
+  let runsBefore = 0, secBefore = 0, foilSecBefore = 0;
+  for (const r of d3.sort(runs, r => r.ts)) {
+    Object.assign(r, { runs_before: runsBefore, sec_before: secBefore, foil_sec_before: foilSecBefore });
+    runsBefore++;
+    secBefore += r.duration_sec || 0;
+    foilSecBefore += r.duration_on_foil || 0;
+  }
+  return runs;
+}
+
 export async function fetchMeta(f) {
   var normalizeFoil = function (fn) {
     return fn.replace(/\s+\d+\.\d+ cm2/, '');
   };
   return f()
     .csv({ typed: true })
-    .then(data =>
+    .then(data => addExperience(
       data.map(d => {
         const ts = new Date(d.ts * 1000);
         return {
@@ -57,7 +71,7 @@ export async function fetchMeta(f) {
           },
         };
       })
-    );
+    ));
 }
 
 // s3.us-east-1.amazonaws.com/db.downwind.pro
