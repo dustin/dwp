@@ -1140,7 +1140,7 @@ class Bot:
         save_state(self.settings_file, json.dumps(self.settings))
         if key == "pinned" and not want:  # take its conditions message down
             path = self.state_path("pinned", target)
-            pinned = load_state(path)
+            pinned = (load_state(path) or "").split(" ")[0]
             if pinned:
                 try:
                     self.mx.unpin(target, pinned)
@@ -1249,14 +1249,23 @@ class Bot:
             self.status, self.edited = line, now
 
     def pin_status(self, room, line, edit):
-        """Post, edit (if edit) and pin room's conditions message."""
+        """Post, edit (if edit) and pin room's conditions message: a new one
+        each Hawaii day, unpinning the day before's. The state file holds
+        "<event id> <day>" (a bare event id from before is an old day's)."""
         path = self.state_path("pinned", room)
-        pinned = load_state(path)
+        pinned, _, day = (load_state(path) or "").partition(" ")
+        today = f"{hst(time.time()):%F}"
+        if pinned and day != today:
+            try:
+                self.mx.unpin(room, pinned)
+            except urllib.error.URLError as e:
+                log(f"unpinning yesterday's conditions in {room} failed: {e}")
+            pinned = None
         if not pinned:
             pinned = self.mx.notice(room, line)
             if not pinned:
                 return
-            save_state(path, pinned)
+            save_state(path, f"{pinned} {today}")
         elif edit:
             self.mx.edit(room, pinned, line)
         # The message is saved before it's pinned, so a bot without the
