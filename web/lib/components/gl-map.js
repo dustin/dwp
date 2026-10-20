@@ -190,3 +190,50 @@ export function pointIndex(datas) {
     },
   };
 }
+
+// A map button that shows or hides the annotations (the emoji callouts:
+// top speed, milestones, ...) by toggling a class on `container`. The
+// choice is remembered in this browser for every map.
+const ANNOTATIONS_KEY = 'dwp-annotations';
+let annotationsStyle = null;
+export class AnnotationsControl {
+  constructor(container) {
+    this.container = container;
+  }
+  onAdd() {
+    annotationsStyle ??= document.head.appendChild(
+      Object.assign(document.createElement('style'), {
+        textContent: '.dwp-hide-annotations .callouts, .dwp-hide-annotations .track-callout { display: none !important; }',
+      })
+    );
+    let shown = true;
+    try {
+      shown = localStorage.getItem(ANNOTATIONS_KEY) !== 'hidden';
+    } catch {}
+    this.el = document.createElement('div');
+    this.el.className = 'mapboxgl-ctrl mapboxgl-ctrl-group';
+    const button = this.el.appendChild(document.createElement('button'));
+    button.type = 'button';
+    button.textContent = '💬';
+    button.style.fontSize = '15px';
+    const apply = () => {
+      this.container.classList.toggle('dwp-hide-annotations', !shown);
+      button.title = shown ? 'Hide annotations' : 'Show annotations';
+      button.setAttribute('aria-label', button.title);
+      button.setAttribute('aria-pressed', String(shown));
+      button.style.opacity = shown ? 1 : 0.45;
+    };
+    button.addEventListener('click', () => {
+      shown = !shown;
+      try {
+        localStorage.setItem(ANNOTATIONS_KEY, shown ? 'shown' : 'hidden');
+      } catch {}
+      apply();
+    });
+    apply();
+    return this.el;
+  }
+  onRemove() {
+    this.el.remove();
+  }
+}

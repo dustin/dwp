@@ -12,6 +12,7 @@ import {
   pointBounds,
   mapTransform,
   pointIndex,
+  AnnotationsControl,
 } from './gl-map.js';
 
 // Approximate routes (runs with no GPS track; see approximateRoute in
@@ -104,6 +105,22 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
         text: isThousand
           ? `${km.toLocaleString()} km lifetime!`
           : `${km.toLocaleString()} km lifetime`,
+      });
+    }
+  }
+
+  // Lifetime hours on the water, every 100 h (lifetime_sec, from fetchRun).
+  for (let i = 1; i < data.length; i++) {
+    const prev = Math.floor(data[i - 1].lifetime_sec / 360000);
+    const curr = Math.floor(data[i].lifetime_sec / 360000);
+    for (let h = prev + 1; h <= curr; h++) {
+      const hours = h * 100;
+      const big = hours % 500 === 0;
+      callouts.push({
+        lat: data[i].lat,
+        lon: data[i].lon,
+        icon: big ? '🎉' : '⏳',
+        text: `${hours.toLocaleString()} hours lifetime${big ? '!' : ''}`,
       });
     }
   }
@@ -550,6 +567,7 @@ export function renderRun(width, datas, callouts = [], opts = { fastestSegments:
     map.keyboard.disableRotation();
     map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-right');
     map.addControl(new mapboxgl.NavigationControl({ showCompass: false }), 'top-right');
+    map.addControl(new AnnotationsControl(root.node()), 'top-right');
 
     let frame = null;
     draw = () => {

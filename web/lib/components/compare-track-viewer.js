@@ -24,6 +24,7 @@ import {
   addTrackLayers,
   whenStyleReady,
   pointBounds,
+  AnnotationsControl,
 } from './gl-map.js';
 
 const RUN_COLORS = ['hsl(140, 80%, 45%)', 'hsl(30, 85%, 55%)'];
@@ -216,6 +217,7 @@ export function compareTrackViewer(
     });
     map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
     map.addControl(new mapboxgl.NavigationControl({ showZoom: false, visualizePitch: false }), 'top-right');
+    map.addControl(new AnnotationsControl(root), 'top-right');
     invalidation?.then(() => {
       map.remove();
       chart?.destroy();

@@ -126,11 +126,20 @@ export function runDataURL(meta) {
   return `${baseFor(meta.rider ?? rider)}dwid%3D${meta.id}/data.csv`;
 }
 
+// The rider's lifetime time on the water at a moment in the run: their
+// time before it (sec_before, from fetchMeta) plus how far into it this is.
+const lifetimeSec = (meta, tsi) => meta.sec_before + Math.max(0, tsi - meta.ts.getTime() / 1000);
+
 export async function fetchRun(meta) {
   if (!meta.has_track) return approximateRoute(meta);
   return d3.csv(runDataURL(meta), d3.autoType).then(data =>
     d3.sort(
-      data.map(d => ({ ...d, odometer: d.distance + 1000 * meta.odometer_km, ts: new Date(d.tsi * 1000) })),
+      data.map(d => ({
+        ...d,
+        odometer: d.distance + 1000 * meta.odometer_km,
+        lifetime_sec: lifetimeSec(meta, d.tsi),
+        ts: new Date(d.tsi * 1000),
+      })),
       d => d.tsi
     )
   );
@@ -211,6 +220,7 @@ export async function approximateRoute(meta, points = 60) {
       distance_to_land: null,
       distance: t * totalM,
       odometer: t * totalM + 1000 * meta.odometer_km,
+      lifetime_sec: lifetimeSec(meta, tsi),
     };
   });
 }

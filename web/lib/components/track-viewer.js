@@ -29,6 +29,7 @@ import {
   addTrackLayers,
   whenStyleReady,
   pointBounds,
+  AnnotationsControl,
 } from './gl-map.js';
 
 // The track colored the way the desktop map colors it (speedColor), so the
@@ -305,6 +306,7 @@ export function trackViewer(
     });
     map.addControl(new mapboxgl.AttributionControl({ compact: true }), 'bottom-left');
     map.addControl(new mapboxgl.NavigationControl({ showZoom: false, visualizePitch: false }), 'top-right');
+    map.addControl(new AnnotationsControl(root), 'top-right');
     invalidation?.then(() => {
       map.remove();
       chart?.destroy();
