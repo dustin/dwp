@@ -290,6 +290,13 @@ class Matrix:
                          "/state/m.room.pinned_events",
                   {"pinned": [event_id] + [e for e in self.pinned(room) if e != event_id]})
 
+    def unpin(self, room, event_id):
+        pinned = self.pinned(room)
+        if event_id in pinned:
+            self.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
+                             "/state/m.room.pinned_events",
+                      {"pinned": [e for e in pinned if e != event_id]})
+
     def download(self, mxc):
         server, media = mxc[len("mxc://"):].split("/", 1)
         tail = f"/download/{urllib.parse.quote(server)}/{urllib.parse.quote(media)}"
@@ -1069,6 +1076,7 @@ class Bot:
     def __init__(self, mx, args):
         self.mx, self.args = mx, args
         self.started = time.time()
+        self.source_pins = os.path.join(args.state_dir, "source-pins.json")
         self.pending = {}  # (room, sender) -> (event_id, gpx path, received at)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
@@ -1133,11 +1141,9 @@ class Bot:
         if key == "pinned" and not want:  # take its conditions message down
             path = self.state_path("pinned", target)
             pinned = load_state(path)
-            if pinned and pinned in self.mx.pinned(target):
+            if pinned:
                 try:
-                    self.mx.call("PUT", f"/_matrix/client/v3/rooms/{urllib.parse.quote(target)}"
-                                        "/state/m.room.pinned_events",
-                                 {"pinned": [e for e in self.mx.pinned(target) if e != pinned]})
+                    self.mx.unpin(target, pinned)
                 except urllib.error.URLError as e:
                     log(f"unpinning in {target} failed: {e}")
             if pinned:
@@ -1323,8 +1329,25 @@ class Bot:
             except Exception as e:  # the alert matters more than its detail
                 log(f"reading for {key} failed: {e!r}")
                 reading = None
-            self.broadcast({"msgtype": "m.text",
-                            "body": sources.message(kind, key, t, when, reading)}, "sources")
+            body = sources.message(kind, key, t, when, reading)
+            for room in (r for r in self.rooms if self.on(r, "sources")):
+                self.source_alert(room, kind, key, body)
+
+    def source_alert(self, room, kind, key, body):
+        """Post a source's offline or back message in room, pinning the
+        offline one until the source is back (state-dir/source-pins.json:
+        room -> key -> event id)."""
+        pins = json.loads(load_state(self.source_pins) or "{}")
+        eid = self.mx.send(room, {"msgtype": "m.text", "body": body})
+        try:
+            if kind == "back" and pins.get(room, {}).get(key):
+                self.mx.unpin(room, pins[room].pop(key))
+            elif kind == "down" and eid:
+                self.mx.pin(room, eid)
+                pins.setdefault(room, {})[key] = eid
+        except urllib.error.URLError as e:  # no power to pin, say: the message still went
+            log(f"{'un' if kind == 'back' else ''}pinning {key} in {room} failed: {e}")
+        save_state(self.source_pins, json.dumps(pins))
 
     def scheduled_sync(self):
         """At each of SYNC_HOURS (Hawaii), sync every rider's Drive in the
