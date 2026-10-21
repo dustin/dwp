@@ -11,7 +11,10 @@
       (system:
         let 
           pkgs = nixpkgs.legacyPackages.${system};
-          pkgs-unstable = nixpkgs-unstable.legacyPackages.${system};
+          pkgs-unstable = import nixpkgs-unstable {
+            inherit system;
+            overlays = [ (import ../nix/overlay.nix) ];
+          };
         in
         {
           packages.db-env = pkgs.callPackage ./db-env.nix { duckdb = pkgs-unstable.duckdb; };
