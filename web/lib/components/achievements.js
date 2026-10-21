@@ -61,6 +61,10 @@ export const categories = [
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
    score: v => v, fmt: v => `${d3.format(",")(v)} km`},
+  // Every 100 hours on the water, counting the run that got there.
+  {key: "hours", label: "Total time", color: "#8c6bb1", ties: false,
+   value: (d, ctx) => Math.floor(ctx.hours.get(d) / 100) * 100,
+   score: v => v, fmt: v => `${d3.format(",")(v)} hours`},
   // Events rather than bests: they show as badges on the run but stay out
   // of the summaries, and never count as beaten. `note` is the hover text.
   {key: "anniversary", label: "Anniversary", color: "#f28e2b", ties: false, event: true,
@@ -93,6 +97,7 @@ export function computeAchievements(allRuns) {
   const ctx = {
     streak: streaks(allRuns), dryStreak: streaks(allRuns.filter(d => d.dry)),
     dryMonth: monthCounts(allRuns.filter(d => d.dry)),
+    hours: hoursAfter(allRuns),
     first: d3.min(allRuns, d => d.ts), firstDry: d3.min(allRuns.filter(d => d.dry), d => d.ts),
   };
   const best = new Map();
@@ -136,6 +141,17 @@ function streaks(runs) {
     streaks.set(run, streak);
   }
   return streaks;
+}
+
+// Total hours on the water through each run, the run included.
+function hoursAfter(runs) {
+  const hours = new Map();
+  let sec = 0;
+  for (const run of d3.sort(runs, d => d.ts)) {
+    sec += run.duration_sec || 0;
+    hours.set(run, sec / 3600);
+  }
+  return hours;
 }
 
 // How many runs so far in the run's calendar month, as of each run.
