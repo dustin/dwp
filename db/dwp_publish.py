@@ -181,7 +181,10 @@ def duckdb(sql, json_out=False, cmd=None):
     if not json_out:
         return None
     out = r.stdout.strip()
-    return json.loads(out) if out else []
+    try:
+        return json.loads(out) if out else []
+    except json.JSONDecodeError:
+        die(f"duckdb printed something other than JSON:\n{out[:2000]}\n--- stderr:\n{r.stderr[:2000]}")
 
 
 def sql_str(s):
