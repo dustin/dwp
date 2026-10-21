@@ -181,6 +181,13 @@ def duckdb(sql, json_out=False, cmd=None):
     if not json_out:
         return None
     out = r.stdout.strip()
+    # DuckDB 2.0 prints warnings (deprecations and such) on stdout, ahead
+    # of the result; the JSON starts at the first line that opens an array.
+    lines = out.splitlines()
+    start = next((i for i, l in enumerate(lines) if l.startswith("[")), None)
+    if start:
+        log("duckdb warned: " + " ".join(l for l in lines[:start] if l.strip()))
+        out = "\n".join(lines[start:])
     try:
         return json.loads(out) if out else []
     except json.JSONDecodeError:
