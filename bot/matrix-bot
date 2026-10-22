@@ -24,7 +24,10 @@ from the room each time) can act for any rider and publish:
     (bot/achievements.mjs, the web's achievements as JSON).
   * "!foil 585" changes the foil on the sender's latest run (matched like
     add-run's, or "new <full name>"), then re-exports. A room admin
-    can name a rider first: "!foil walter orca 685".
+    can name a rider first: "!foil walter orca 685". "!board gator" does
+    the same for the board, matched the same way. A .gpx caption can
+    name the board after the foil: "585 board gator" (or just
+    "board gator", for the foil from that beach).
   * "!glitch" drops the top-speed reading of the sender's latest run as a
     GPS glitch and recomputes its top speed; again drops the next one.
     "!glitch <run link>" does that run, "!glitch walter" Walter's latest
@@ -135,9 +138,11 @@ HELP_RIDER = [
     ("📎 a .gpx captioned 585", "import it as your run, on foil 585"),
     ("📎 a .gpx, no caption", "I'll ask which foil; \"-\" reuses your last one from that beach"),
     ("new Axis Spitfire 1180", "as the foil, for one nobody has ridden yet"),
+    ("📎 a .gpx captioned 585 board gator", "the same, on board gator (default: your latest run's)"),
     ("!last", "your latest run"),
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
+    ("!board gator", "change your latest run's board (\"new <full name>\" for a new one)"),
     ("!glitch", "drop your latest run's top-speed reading as a GPS glitch (again for the next one)"),
     ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
     ("!sync", "import your new runs from your Drive folder"),
@@ -148,11 +153,12 @@ HELP_ADMIN = [
     ("!sync", "sync every rider"),
     ("!sync walter", "sync one rider"),
     ("!foil walter orca 685", "change another rider's latest foil"),
+    ("!board walter gator", "change another rider's latest board"),
     ("!glitch walter", "drop another rider's top-speed reading (or give a run link)"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!last", "!foil", "!glitch", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!last", "!foil", "!board", "!glitch", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
@@ -162,7 +168,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "help", "last", "foil", "glitch", "sync", "ask", "publish", "room", "rooms"]
+COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "sync", "ask", "publish", "room", "rooms"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -361,7 +367,7 @@ def latest(rider, dwid=None):
     """A run's summary fields: dwid's, else the rider's latest."""
     which = f"id = '{dwid}'" if dwid else f"rider = '{rider}' order by ts desc limit 1"
     rows = query(
-        "select id::varchar as id, ts, start_beach, end_beach, foil, distance_km, "
+        "select id::varchar as id, ts, start_beach, end_beach, foil, board, distance_km, "
         "distance_on_foil, duration_on_foil, avg_foiling_hr, min_foiling_hr, max_speed_1k, "
         f"longest_segment_distance from dwlist_resolved where {which}")
     return rows[0] if rows else None
@@ -396,8 +402,9 @@ def summary(r, rider):
         frac = r["longest_segment_distance"] / foil_m
         lines.append("★ dry!" if frac > DRY_LIMIT
                      else f"💦 not dry: longest flight {frac:.0%} of foiling")
-    if r.get("foil"):
-        lines.append(f"🪽 {r['foil']}")
+    gear = " · ".join(r[k] for k in ("foil", "board") if r.get(k))
+    if gear:
+        lines.append(f"🪽 {gear}")
     url = f"https://{rider}.downwind.pro/run.html?id={r['id']}"
     text = "\n".join([head, *lines, url])
     html = "<br>".join([f'<a href="{url}"><b>{escape(head)}</b></a>',
@@ -443,10 +450,27 @@ def tail(out, n=15):
     return "\n".join(out.rstrip().splitlines()[-n:])
 
 
+def split_caption(text):
+    """(foil, board) from a caption or answer like "585 board gator"; the
+    board is None when it names none, the foil "-" when only a board."""
+    m = re.match(r"(.*?)\s*\bboard\s+(.+)$", text, re.I)
+    if not m:
+        return text, None
+    return m.group(1).strip() or "-", m.group(2).strip()
+
+
 def import_gpx(mx, room, event_id, path, foil, rider):
+    foil, board = split_caption(foil)
+    if board:
+        board, why = resolve_gear(rider, "board", board)
+        if why:  # the file waits for another answer
+            mx.notice(room, f"🤔 {why}\nWhich foil and board? e.g. 585 board gator, or "
+                            "\"board new <full name>\" for a board nobody has ridden yet.",
+                      reply_to=event_id)
+            return False
     mx.react(room, event_id, "👀")
     before = runs(rider)
-    cmd = ["./add-run", path, "--rider", rider]
+    cmd = ["./add-run", path, "--rider", rider] + (["--board", board] if board else [])
     new_foil = re.match(r"new\s+(.+)", foil, re.I)
     if new_foil:
         cmd[2:2] = [new_foil.group(1), "--new-foil"]
@@ -483,43 +507,50 @@ def sql_str(v):
     return "'" + v.replace("'", "''") + "'"
 
 
-def resolve_foil(rider, name):
-    """(foil, None) for the one known foil name names, else (None, why).
+GEAR = ("foil", "board")  # dwlist columns !foil and !board set
+NEW_EXAMPLE = {"foil": "Axis Spitfire 1180", "board": "Kalama Gator 95"}
+
+
+def resolve_gear(rider, kind, name):
+    """(name, None) for the one known foil or board (kind) name names, else
+    (None, why).
 
     Matches like import.sql: a case-insensitive piece of the name, an exact
-    name always winning; the rider's own foils first, then everyone's (a
-    rider whose runs say "unknown" may share a foil with someone else)."""
+    name always winning; the rider's own first, then everyone's (a rider
+    whose runs say "unknown" may share a foil with someone else)."""
+    assert kind in GEAR
     new = re.match(r"new\s+(.+)", name, re.I)
     if new:
         return new.group(1).strip(), None
     for where in (f"rider = '{rider}' and ", ""):
-        known = [row["foil"] for row in query(
-            f"select distinct foil from dwlist where {where}foil is not null")]
+        known = [row[kind] for row in query(
+            f"select distinct {kind} from dwlist where {where}{kind} is not null")]
         exact = [f for f in known if f.lower() == name.lower()]
         hits = exact or [f for f in known if name.lower() in f.lower()]
         if len(hits) == 1:
             return hits[0], None
         if len(hits) > 1:
-            return None, f"'{name}' matches more than one foil: {', '.join(sorted(hits))}"
-    return None, f"no foil matches '{name}'"
+            return None, f"'{name}' matches more than one {kind}: {', '.join(sorted(hits))}"
+    return None, f"no {kind} matches '{name}'"
 
 
-def set_foil(mx, room, event_id, rider, name):
-    """Record foil name on the rider's latest run, then re-export."""
+def set_gear(mx, room, event_id, rider, kind, name):
+    """Record foil or board (kind) name on the rider's latest run, then
+    re-export."""
     r = latest(rider)
     if not r:
         mx.notice(room, f"No runs for {rider}.", reply_to=event_id)
         return
-    foil, why = resolve_foil(rider, name)
+    value, why = resolve_gear(rider, kind, name)
     if why:
-        mx.notice(room, f"🤔 {why}. If it's a foil nobody has ridden yet, send its "
-                        "full name after \"new\", e.g. !foil new Axis Spitfire 1180.",
+        mx.notice(room, f"🤔 {why}. If it's a {kind} nobody has ridden yet, send its "
+                        f"full name after \"new\", e.g. !{kind} new {NEW_EXAMPLE[kind]}.",
                   reply_to=event_id)
         return
     mx.react(room, event_id, "👀")
     sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', 'matrix-bot: foil of {r['id']}'); "
-           f"update dwlist set foil = {sql_str(foil)} where id = '{r['id']}'; commit;")
+           f"call lake.set_commit_message('dustin', 'matrix-bot: {kind} of {r['id']}'); "
+           f"update dwlist set {kind} = {sql_str(value)} where id = '{r['id']}'; commit;")
     ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
         try:
@@ -527,13 +558,13 @@ def set_foil(mx, room, event_id, rider, name):
         except dwp_publish.PublishError as e:
             ok, out = False, str(e)
     if not ok:
-        mx.notice(room, f"❌ couldn't change the foil:\n{tail(out)}", reply_to=event_id,
-                  html=f"❌ couldn't change the foil:<pre><code>{escape(tail(out))}</code></pre>")
+        mx.notice(room, f"❌ couldn't change the {kind}:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't change the {kind}:<pre><code>{escape(tail(out))}</code></pre>")
         return
     text, html = summary(latest(rider, r["id"]), rider)
-    was = r.get("foil") or "none"
-    mx.notice(room, f"✅ foil was {was}\n{text}", reply_to=event_id,
-              html=f"✅ foil was {escape(was)}<br>{html}")
+    was = r.get(kind) or "none"
+    mx.notice(room, f"✅ {kind} was {was}\n{text}", reply_to=event_id,
+              html=f"✅ {kind} was {escape(was)}<br>{html}")
 
 
 RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -1502,8 +1533,9 @@ class Bot:
                 self.mx.notice(room, body, reply_to=eid, html=html)
             else:
                 self.mx.notice(room, f"No runs for {who[0]}.", reply_to=eid)
-        elif text.startswith("!foil"):
-            words = text.split()[1:]
+        elif text.startswith(("!foil", "!board")):
+            kind, *words = text.split()
+            kind = kind[1:]
             target = rider
             if len(words) > 1 and words[0] in self.riders():
                 if words[0] != rider and not self.room_admin(room, sender):
@@ -1512,8 +1544,11 @@ class Bot:
                     return
                 target, words = words[0], words[1:]
             name = " ".join(words)
-            if FOIL.match(name):
-                set_foil(self.mx, room, eid, target, name)
+            if kind in GEAR and FOIL.match(name):
+                set_gear(self.mx, room, eid, target, kind, name)
+            elif kind == "board":
+                self.mx.notice(room, "!board takes a board, like !board gator "
+                                     "(or !board walter gator)", reply_to=eid)
             else:
                 self.mx.notice(room, "!foil takes a foil, like !foil 585 "
                                      "(or !foil walter orca 685)", reply_to=eid)
@@ -1639,7 +1674,7 @@ class Bot:
         if len(whose) != 1:
             raise ask.AskError(f"one rider's runs at a time, please, not {' and '.join(sorted(whose))}'s")
         rider = whose.pop()
-        fields = ask.check_set(p.get("set"), lambda f: resolve_foil(rider, f))
+        fields = ask.check_set(p.get("set"), lambda k, v: resolve_gear(rider, k, v))
         lines = [ask.run_line(r) + ": " + ", ".join(
             f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
         if len(picked) > 20:

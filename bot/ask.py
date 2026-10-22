@@ -223,8 +223,9 @@ def sandboxed(path, sql, duckdb="duckdb"):
 
 # --- changes ----------------------------------------------------------------
 
-def check_set(fields, resolve_foil):
-    """fields with foil matched to a known foil, else AskError."""
+def check_set(fields, resolve_gear):
+    """fields with foil and board matched to known ones (resolve_gear(kind,
+    name) → (name, why)), else AskError."""
     if not fields:
         raise AskError("the change sets nothing")
     out = {}
@@ -236,8 +237,8 @@ def check_set(fields, resolve_foil):
         v = str(v).strip()
         if EDITABLE[k] and v not in EDITABLE[k]:
             raise AskError(f"{k} must be one of {', '.join(sorted(EDITABLE[k]))}")
-        if k == "foil":
-            v, why = resolve_foil(v)
+        if k in ("foil", "board"):
+            v, why = resolve_gear(k, v)
             if why:
                 raise AskError(why)
         out[k] = v
