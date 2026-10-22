@@ -79,7 +79,7 @@ def main(argv=None):
                    DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
         with open(os.path.join(DB_DIR, "import.sql")) as sql:
-            run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+            run(["duckdb", "-bail", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
 
     try:
         dwp_publish.run()
