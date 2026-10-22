@@ -269,7 +269,7 @@ WHERE l.id = x.dwid;
 -- Debounced on/off-foil islands, shared by the four blocks below.
 -- raw_islands: alternating fast/slow runs from speed > 11.
 -- fast_islands_merged: slow gaps under 15s are bridged (reclassified
--- fast) and re-merged, since a brief drop doesn't mean coming off foil.
+-- fast) and re-merged, since a brief drop does not mean coming off foil.
 CREATE TEMP TABLE raw_islands AS
 WITH flagged AS (
   SELECT dwid, ts, distance, (speed > 11) AS fast
