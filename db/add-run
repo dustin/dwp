@@ -45,9 +45,9 @@ def die(msg):
     sys.exit(1)
 
 
-def run(cmd, cwd=None, env=None, stdin=None):
+def run(cmd, cwd=None, env=None, input=None):
     print("+ " + " ".join(cmd), file=sys.stderr)
-    r = subprocess.run(cmd, cwd=cwd, env=env, stdin=stdin)
+    r = subprocess.run(cmd, cwd=cwd, env=env, input=input, text=True)
     if r.returncode != 0:
         die(f"{cmd[0]} failed (exit {r.returncode})")
 
@@ -74,12 +74,12 @@ def main(argv=None):
     with tempfile.TemporaryDirectory(prefix="dwp-import-") as tmp:
         csv_path = os.path.join(tmp, "activity.csv")
         gpx_filter.main([args.gpx, "-o", csv_path])
-        # import.sql reads these with getenv().
+        # import.sql reads these with getenv(); import_sql fills them in.
         env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
                    DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
-        with open(os.path.join(DB_DIR, "import.sql")) as sql:
-            run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+        run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env,
+            input=dwp_publish.import_sql(env))
 
     try:
         dwp_publish.run()

@@ -211,6 +211,15 @@ def sql_str(s):
     return "'" + s.replace("'", "''") + "'"
 
 
+def import_sql(env):
+    """import.sql with each getenv('DWP_...') replaced by env's value as a
+    literal: through quack, getenv() runs on the server, which doesn't
+    have the importer's environment."""
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "import.sql")) as fh:
+        sql = fh.read()
+    return re.sub(r"getenv\('(DWP_\w+)'\)", lambda m: sql_str(env.get(m.group(1), "")), sql)
+
+
 class Manifest:
     def __init__(self, path):
         self.db = sqlite3.connect(path)
