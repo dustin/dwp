@@ -43,7 +43,7 @@ FROM (
         MAX(ts) OVER (PARTITION BY dwid) AS max_ts,
 
         LAG(speed) OVER (PARTITION BY filename ORDER BY ts) AS prev_speed
-    FROM dws
+    FROM run_points
     WHERE dwid IN (SELECT id FROM dwlist WHERE rider = getvariable('rider'))
 ) t
 WHERE

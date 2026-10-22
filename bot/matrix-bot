@@ -36,6 +36,12 @@ from the room each time) can act for any rider and publish:
     (room admins), and "undo" after any of them puts the run's readings
     back. The trackpoints stay as they were: see speed_exclusions in
     db/schema.sql. Top speeds skip lone spikes by themselves too.
+  * "!trim start 10:42" (or "start 20m", 20 minutes in) and "!trim end
+    12:05" (or "end 5m") make the sender's latest run count only from or
+    to there, e.g. to leave out a paddle out to the start, recompute its
+    stats and re-export; "!trim undo" puts the whole track back. A run
+    link or (room admins) a rider works as with !glitch. The trackpoints
+    stay as they were: see run_trims in db/schema.sql.
   * "!publish" runs ./publish for a room admin, with
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
@@ -148,6 +154,8 @@ HELP_RIDER = [
     ("!board gator", "change your latest run's board (\"new <full name>\" for a new one)"),
     ("!glitch", "drop your latest run's top-speed reading as a GPS glitch (again for the next one)"),
     ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
+    ("!trim start 10:42", "count your latest run only from 10:42 (or start 20m: 20 minutes in)"),
+    ("!trim end 12:05", "the same for its end (or end 5m); undo puts the whole track back"),
     ("!sync", "import your new runs from your Drive folder"),
     ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
@@ -159,10 +167,11 @@ HELP_ADMIN = [
     ("!foil walter orca 685", "change another rider's latest foil"),
     ("!board walter gator", "change another rider's latest board"),
     ("!glitch walter", "drop another rider's top-speed reading (or give a run link)"),
+    ("!trim walter start 20m", "trim another rider's latest run (or give a run link)"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
@@ -172,7 +181,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "sync", "ask", "publish", "room", "rooms", "retry"]
+COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "trim", "sync", "ask", "publish", "room", "rooms", "retry"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -625,6 +634,91 @@ def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
               reply_to=event_id,
               html=f'✅ {escape(what)}: top speed {was:.1f} → {now:.1f} km/h '
                    f'(<a href="{url}">run</a>)')
+
+
+# Where a !trim puts a run's start or end: a Hawaii time on the run's day
+# (10:42), or minutes in from the track's own start or end (20m, +20m).
+TRIM_AT = re.compile(r"(?:(\d{1,2}):(\d{2})|\+?(\d+)m(?:in)?)$")
+
+
+def trim_at(spec, t0, t1, is_end):
+    """Epoch seconds of trim point spec on a track from t0 to t1, or None
+    if spec isn't one."""
+    m = TRIM_AT.match(spec)
+    if not m:
+        return None
+    if m.group(3):
+        return t1 - 60 * int(m.group(3)) if is_end else t0 + 60 * int(m.group(3))
+    day = datetime.fromtimestamp(t0, HST)
+    return day.replace(hour=int(m.group(1)), minute=int(m.group(2)), second=0).timestamp()
+
+
+def hm(t):
+    return f"{datetime.fromtimestamp(t, HST):%H:%M}"
+
+
+def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=False):
+    """Trim run dwid to its trackpoints from start to end (trim points as
+    TRIM_AT takes them; a missing one keeps the run's current trim there),
+    or with undo, untrim it; then recompute its stats and re-export. The
+    trackpoints themselves are left alone (run_trims in schema.sql)."""
+    raw = query(f"select epoch(min(ts)) as t0, epoch(max(ts)) as t1 from dws where dwid = '{dwid}'")
+    if not raw or raw[0]["t0"] is None:
+        mx.notice(room, "That run has no track to trim.", reply_to=event_id)
+        return
+    t0, t1 = raw[0]["t0"], raw[0]["t1"]
+    cur = query("select epoch(start_ts) as s, epoch(end_ts) as e from run_trims "
+                f"where dwid = '{dwid}'")
+    cur = cur[0] if cur else {"s": None, "e": None}
+    if not (start or end or undo):
+        url = f"https://{rider}.downwind.pro/run.html?id={dwid}"
+        now = (f"trimmed to {hm(cur['s'] or t0)}–{hm(cur['e'] or t1)} "
+               f"of {hm(t0)}–{hm(t1)}" if cur["s"] or cur["e"] else
+               f"not trimmed ({hm(t0)}–{hm(t1)})")
+        mx.notice(room, f"That run is {now}. !trim start 10:42 (or start 20m) and "
+                        f"!trim end 12:05 (or end 5m) trim it, !trim undo puts it back.\n{url}",
+                  reply_to=event_id)
+        return
+    s, e = None, None
+    if not undo:
+        s = trim_at(start, t0, t1, False) if start else cur["s"]
+        e = trim_at(end, t0, t1, True) if end else cur["e"]
+        if (start and s is None) or (end and e is None):
+            mx.notice(room, "A trim point is a time like 10:42 or minutes like 20m.",
+                      reply_to=event_id)
+            return
+        s = None if s is not None and s <= t0 else s
+        e = None if e is not None and e >= t1 else e
+        if (e or t1) - (s or t0) < 60:
+            mx.notice(room, f"That leaves nothing of the run ({hm(t0)}–{hm(t1)}).",
+                      reply_to=event_id)
+            return
+    mx.react(room, event_id, "👀")
+    was = latest(rider, dwid)
+    ts = lambda t: "null" if t is None else f"to_timestamp({t})"  # noqa: E731
+    change = f"delete from run_trims where dwid = '{dwid}'; "
+    if s is not None or e is not None:
+        change += (f"insert into run_trims values ('{dwid}', {ts(s)}, {ts(e)}, "
+                   f"{sql_str('!trim by ' + sender)}, now()); ")
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', 'matrix-bot: trim of {dwid}'); "
+           + change + dwp_publish.run_stats_sql([dwid]) + "\ncommit;")
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        try:
+            dwp_publish.run()
+        except dwp_publish.PublishError as err:
+            ok, out = False, str(err)
+    if not ok:
+        mx.notice(room, f"❌ couldn't trim the run:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't trim the run:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    what = (f"trimmed to {hm(s or t0)}–{hm(e or t1)} of {hm(t0)}–{hm(t1)}"
+            if s is not None or e is not None else f"untrimmed ({hm(t0)}–{hm(t1)})")
+    what += f", was {was['distance_km']:.1f} km" if was and was.get("distance_km") else ""
+    text, html = summary(latest(rider, dwid), rider)
+    mx.notice(room, f"✅ {what}\n{text}", reply_to=event_id,
+              html=f"✅ {escape(what)}<br>{html}")
 
 
 PUBLISH_WORDS = {"publish","verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
@@ -1597,6 +1691,39 @@ class Bot:
                 self.mx.notice(room, f"No runs for {target}.", reply_to=eid)
             else:
                 glitch(self.mx, room, eid, dwid or latest(target)["id"], target, sender, undo)
+        elif text.startswith("!trim"):
+            words = text.split()[1:]
+            undo = "undo" in words
+            words = [w for w in words if w != "undo"]
+            at, bad = {}, False
+            for k in ("start", "end"):
+                if k in words:
+                    i = words.index(k)
+                    if i + 1 < len(words):
+                        at[k] = words[i + 1]
+                        del words[i:i + 2]
+                    else:
+                        bad = True
+            target, dwid = rider, None
+            if words and RUN_ID.search(words[0]):
+                dwid = RUN_ID.search(words[0]).group(0)
+                rows = query(f"select rider from dwlist where id = '{dwid}'")
+                target = rows[0]["rider"] if rows else None
+            elif words and words[0] in self.riders():
+                target = words[0]
+            elif words:
+                target = None
+            if bad or target is None or len(words) > 1 or (undo and at):
+                self.mx.notice(room, "!trim takes start 10:42 (or start 20m), end 12:05 "
+                                     "(or end 5m), or undo, after nothing (your latest run), "
+                                     "a run's link or a rider", reply_to=eid)
+            elif target != rider and not self.room_admin(room, sender):
+                self.mx.notice(room, "You can only change your own runs.", reply_to=eid)
+            elif not dwid and not latest(target):
+                self.mx.notice(room, f"No runs for {target}.", reply_to=eid)
+            else:
+                trim(self.mx, room, eid, dwid or latest(target)["id"], target, sender,
+                     at.get("start"), at.get("end"), undo)
         elif text.startswith("!ask"):
             words = text.split()[1:]
             # Whose runs: the sender's plus any rider named anywhere ("walter's

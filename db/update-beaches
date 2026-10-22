@@ -95,12 +95,13 @@ def kml_src(path):
             "columns = {'name': 'VARCHAR', 'folder': 'VARCHAR', 'wkt': 'VARCHAR'})")
 
 
-# Each tracked run's first and last point, and the beach nearest each
-# (by the same measure as import.sql) among the beaches in {f}.
+# Each tracked run's first and last point within its trim (run_points), and
+# the beach nearest each (by the same measure as import.sql) among the
+# beaches in {f}.
 ENDS = """ends as (
     select dwid, arg_min(lat, ts) as lat0, arg_min(lon, ts) as lon0,
            arg_max(lat, ts) as lat1, arg_max(lon, ts) as lon1
-    from dws group by dwid),
+    from run_points group by dwid),
 near as (
     select e.dwid,
         (select f.{key} from {f} f order by ST_Length(ST_ShortestLine(

@@ -133,7 +133,8 @@ def conditions(table, day="x.day", cols="x.* exclude (site, day)", order="ts"):
 
 TABLES = [
     Table("tracks",
-          "dws x join dwlist l on x.dwid = l.id where l.rider is not null",
+          # Only the points within the run's trim (run_points in schema.sql).
+          "run_points x join dwlist l on x.dwid = l.id where l.rider is not null",
           # The rider is in the key, and so in the fingerprint.
           "'runs/rider=' || l.rider || '/dwid=' || x.dwid || '/data.csv'",
           "x.* exclude (dwid), ST_Distance_Sphere(ST_Point(x.lat, x.lon), "
@@ -211,13 +212,27 @@ def sql_str(s):
     return "'" + s.replace("'", "''") + "'"
 
 
+def read_sql(name):
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name)) as fh:
+        return fh.read()
+
+
 def import_sql(env):
-    """import.sql with each getenv('DWP_...') replaced by env's value as a
-    literal: through quack, getenv() runs on the server, which doesn't
-    have the importer's environment."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "import.sql")) as fh:
-        sql = fh.read()
+    """import.sql with run-stats.sql in place of its "-- @run-stats.sql"
+    line, and each getenv('DWP_...') replaced by env's value as a literal:
+    through quack, getenv() runs on the server, which doesn't have the
+    importer's environment."""
+    sql = read_sql("import.sql").replace("-- @run-stats.sql", read_sql("run-stats.sql"))
     return re.sub(r"getenv\('(DWP_\w+)'\)", lambda m: sql_str(env.get(m.group(1), "")), sql)
+
+
+def run_stats_sql(dwids):
+    """Statements recomputing the stats of runs dwids (run-stats.sql), to
+    go inside a transaction on the lake."""
+    ids = ", ".join(f"({sql_str(d)}::uuid)" for d in dwids)
+    return ("load spatial; set geometry_always_xy = false; "
+            f"create temp table restat as select * from (values {ids}) v(dwid);\n"
+            + read_sql("run-stats.sql"))
 
 
 class Manifest:

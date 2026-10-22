@@ -76,6 +76,32 @@ join beaches bs on bs.id = start_pos
 join beaches be on be.id = end_pos
 order by date, time;
 
+-- A run's trim: only its trackpoints from start_ts to end_ts count toward
+-- its stats and published track (run_points), e.g. to leave out a paddle
+-- out to the start. Either end may be null (not trimmed there). One row
+-- per run, set by the bot's !trim; the dws rows are left alone, and
+-- deleting the row puts them all back.
+CREATE TABLE run_trims(
+  dwid UUID,
+  start_ts TIMESTAMP WITH TIME ZONE,
+  end_ts TIMESTAMP WITH TIME ZONE,
+  reason VARCHAR,
+  added_at TIMESTAMP WITH TIME ZONE
+);
+
+-- The trackpoints that count: dws within each run's trim, with distance
+-- counted from the trimmed start. Everything that computes run stats
+-- (run-stats.sql and the views below) or publishes tracks reads this
+-- instead of dws.
+create or replace view run_points as
+select d.* replace (
+  d.distance - case when t.start_ts is null then 0 else
+    first_value(d.distance) over (partition by d.dwid order by d.ts) end as distance)
+from dws d
+left join run_trims t on t.dwid = d.dwid
+where (t.start_ts is null or d.ts >= t.start_ts)
+  and (t.end_ts is null or d.ts <= t.end_ts);
+
 -- Trackpoints whose speed must not count toward a run's top speed
 -- (dwlist.max_speed_kmh), added by the bot's !glitch. The dws row itself
 -- is left alone; deleting the exclusion puts it back.
@@ -89,14 +115,14 @@ CREATE TABLE speed_exclusions(
 
 -- Each run's top speed: the fastest trackpoint not in speed_exclusions
 -- and not a lone spike, i.e. at most 6 km/h above the fastest other point
--- within 2 s of it. import.sql and !glitch set dwlist.max_speed_kmh from it.
+-- within 2 s of it. run-stats.sql and !glitch set dwlist.max_speed_kmh from it.
 create or replace view run_top_speed as
 with p as (
   select d.dwid, d.speed,
     max(d.speed) over (partition by d.dwid order by d.ts
       range between interval 2 seconds preceding and interval 2 seconds following
       exclude current row) as near
-  from dws d
+  from run_points d
   anti join speed_exclusions e on e.dwid = d.dwid and e.ts = d.ts
 )
 select dwid, max(speed) as max_speed_kmh
@@ -108,12 +134,12 @@ group by dwid;
 -- trackpoints over 15 km/h, skipping stale readings. A watch can hold its
 -- last heart rate through a paddle-up and then jump to the real one, so a
 -- stretch of one unchanged value followed by a rise of 25 bpm or more is
--- left out. import.sql sets dwlist from it.
+-- left out. run-stats.sql sets dwlist from it.
 create or replace view run_foiling_hr as
 with h as (
   select dwid, ts, speed, hr,
     hr is distinct from lag(hr) over (partition by dwid order by ts) as starts
-  from dws
+  from run_points
   where hr is not null
 ), g as (
   select *, sum(starts::int) over (partition by dwid order by ts) as held
