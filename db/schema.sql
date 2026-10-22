@@ -90,13 +90,13 @@ CREATE TABLE run_trims(
 );
 
 -- The trackpoints that count: dws within each run's trim, with distance
--- counted from the trimmed start. Everything that computes run stats
+-- counted from the run's first point (a trimmed start, or a !split's
+-- second half, would otherwise start part way). Everything that computes run stats
 -- (run-stats.sql and the views below) or publishes tracks reads this
 -- instead of dws.
 create or replace view run_points as
 select d.* replace (
-  d.distance - case when t.start_ts is null then 0 else
-    first_value(d.distance) over (partition by d.dwid order by d.ts) end as distance)
+  d.distance - first_value(d.distance) over (partition by d.dwid order by d.ts) as distance)
 from dws d
 left join run_trims t on t.dwid = d.dwid
 where (t.start_ts is null or d.ts >= t.start_ts)

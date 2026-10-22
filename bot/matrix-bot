@@ -42,6 +42,11 @@ from the room each time) can act for any rider and publish:
     stats and re-export; "!trim undo" puts the whole track back. A run
     link or (room admins) a rider works as with !glitch. The trackpoints
     stay as they were: see run_trims in db/schema.sql.
+  * "!split 12:45" (or "!split 40m", 40 minutes in) makes the sender's
+    latest run two: a copy of its record takes the trackpoints from there
+    on, and both are recomputed and re-exported. "!unsplit <run link>" (the
+    first half) joins it back up with the run starting where it ends. A run
+    link or (room admins) a rider works as with !glitch.
   * "!publish" runs ./publish for a room admin, with
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
@@ -102,6 +107,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+import uuid
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
@@ -156,6 +162,8 @@ HELP_RIDER = [
     ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
     ("!trim start 10:42", "count your latest run only from 10:42 (or start 20m: 20 minutes in)"),
     ("!trim end 12:05", "the same for its end (or end 5m); undo puts the whole track back"),
+    ("!split 12:45", "split your latest run in two at 12:45 (or 40m: 40 minutes in)"),
+    ("!unsplit <run link>", "join a split run (the first half) back up"),
     ("!sync", "import your new runs from your Drive folder"),
     ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
@@ -168,10 +176,11 @@ HELP_ADMIN = [
     ("!board walter gator", "change another rider's latest board"),
     ("!glitch walter", "drop another rider's top-speed reading (or give a run link)"),
     ("!trim walter start 20m", "trim another rider's latest run (or give a run link)"),
+    ("!split walter 12:45", "split another rider's latest run (or give a run link)"),
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
@@ -181,7 +190,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "trim", "sync", "ask", "publish", "room", "rooms", "retry"]
+COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "sync", "ask", "publish", "room", "rooms", "retry"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -706,15 +715,7 @@ def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=Fal
     if s is not None or e is not None:
         change += (f"insert into run_trims values ('{dwid}', {ts(s)}, {ts(e)}, "
                    f"{sql_str('!trim by ' + sender)}, now()); ")
-    sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', 'matrix-bot: trim of {dwid}'); "
-           + change + dwp_publish.run_stats_sql([dwid]) + "\ncommit;")
-    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
-    if ok:
-        try:
-            dwp_publish.run()
-        except dwp_publish.PublishError as err:
-            ok, out = False, str(err)
+    ok, out = lake_change("trim", dwid, change, [dwid])
     if not ok:
         mx.notice(room, f"❌ couldn't trim the run:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't trim the run:<pre><code>{escape(tail(out))}</code></pre>")
@@ -725,6 +726,113 @@ def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=Fal
     text, html = summary(latest(rider, dwid), rider)
     mx.notice(room, f"✅ {what}\n{text}", reply_to=event_id,
               html=f"✅ {escape(what)}<br>{html}")
+
+
+def lake_change(what, dwid, change, dwids):
+    """Run change on the lake, recompute runs dwids' stats in the same
+    transaction, then re-export; (ok, output)."""
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', 'matrix-bot: {what} of {dwid}'); "
+           + change + dwp_publish.run_stats_sql(dwids) + "\ncommit;")
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        try:
+            dwp_publish.run()
+        except dwp_publish.PublishError as err:
+            ok, out = False, str(err)
+    return ok, out
+
+
+def raw_span(dwid):
+    """(first, last) epoch seconds of run dwid's trackpoints, untrimmed, or None."""
+    rows = query(f"select epoch(min(ts)) as t0, epoch(max(ts)) as t1 from dws where dwid = '{dwid}'")
+    return (rows[0]["t0"], rows[0]["t1"]) if rows and rows[0]["t0"] is not None else None
+
+
+def split(mx, room, event_id, dwid, rider, sender, at):
+    """Split run dwid at trim point at (TRIM_AT): a copy of its dwlist row
+    becomes a new run, its trackpoints from there on move to it (with their
+    speed exclusions and the run's end trim), and both are recomputed and
+    re-exported. !unsplit puts them back together."""
+    span = raw_span(dwid)
+    if not span:
+        mx.notice(room, "That run has no track to split.", reply_to=event_id)
+        return
+    t0, t1 = span
+    trim = query("select epoch(start_ts) as s, epoch(end_ts) as e from run_trims "
+                 f"where dwid = '{dwid}'")
+    lo = (trim and trim[0]["s"]) or t0
+    hi = (trim and trim[0]["e"]) or t1
+    t = trim_at(at, t0, t1, False)
+    if t is None:
+        mx.notice(room, "!split takes a time like 12:45 or minutes in like 40m.",
+                  reply_to=event_id)
+        return
+    if not lo + 60 <= t <= hi - 60:
+        mx.notice(room, f"Split somewhere within the run ({hm(lo)}–{hm(hi)}).",
+                  reply_to=event_id)
+        return
+    mx.react(room, event_id, "👀")
+    new = str(uuid.uuid4())
+    change = (
+        f"insert into dwlist select * replace ('{new}'::uuid as id) from dwlist where id = '{dwid}'; "
+        f"update dws set dwid = '{new}' where dwid = '{dwid}' and ts >= to_timestamp({t}); "
+        f"update speed_exclusions set dwid = '{new}' where dwid = '{dwid}' and ts >= to_timestamp({t}); "
+        f"insert into run_trims select '{new}', null, end_ts, reason, added_at from run_trims "
+        f"where dwid = '{dwid}' and end_ts is not null; "
+        f"update run_trims set end_ts = null where dwid = '{dwid}'; "
+        f"delete from run_trims where dwid = '{dwid}' and start_ts is null; ")
+    ok, out = lake_change("split", dwid, change, [dwid, new])
+    if not ok:
+        mx.notice(room, f"❌ couldn't split the run:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't split the run:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    a, ah = summary(latest(rider, dwid), rider)
+    b, bh = summary(latest(rider, new), rider)
+    url = f"https://{rider}.downwind.pro/run.html?id="
+    mx.notice(room, f"✅ split at {hm(t)} (!unsplit {url}{dwid} puts it back)\n{a}\n\n{b}",
+              reply_to=event_id,
+              html=f'✅ split at {hm(t)} (<code>!unsplit</code> the <a href="{url}{dwid}">first '
+                   f'half</a> puts it back)<br>{ah}<br><br>{bh}')
+
+
+def unsplit(mx, room, event_id, dwid, rider, sender):
+    """Join run dwid with the run split off it: the rider's run whose track
+    starts within a minute of dwid's end (separate runs are always further
+    apart). Its trackpoints move back, it is deleted, dwid keeps its own
+    start trim and takes the other's end trim, and dwid is recomputed."""
+    span = raw_span(dwid)
+    if not span:
+        mx.notice(room, "That run has no track.", reply_to=event_id)
+        return
+    nxt = query(f"select dwid::varchar as id from dws where dwid in "
+                f"(select id from dwlist where rider = {sql_str(rider)} and id <> '{dwid}') "
+                f"group by dwid having min(ts) > to_timestamp({span[1]}) "
+                f"and min(ts) <= to_timestamp({span[1]}) + interval 60 second")
+    if len(nxt) != 1:
+        mx.notice(room, "No run starts right where that one ends, so it wasn't split "
+                        "(or give the first half).", reply_to=event_id)
+        return
+    nxt = nxt[0]["id"]
+    mx.react(room, event_id, "👀")
+    change = (
+        f"create temp table joined as select "
+        f"(select start_ts from run_trims where dwid = '{dwid}') as s, "
+        f"(select end_ts from run_trims where dwid = '{nxt}') as e; "
+        f"delete from run_trims where dwid in ('{dwid}', '{nxt}'); "
+        f"insert into run_trims select '{dwid}', s, e, {sql_str('!unsplit by ' + sender)}, now() "
+        "from joined where s is not null or e is not null; drop table joined; "
+        f"update dws set dwid = '{dwid}' where dwid = '{nxt}'; "
+        f"update speed_exclusions set dwid = '{dwid}' where dwid = '{nxt}'; "
+        f"delete from dwlist where id = '{nxt}'; ")
+    ok, out = lake_change("unsplit", dwid, change, [dwid])
+    if not ok:
+        mx.notice(room, f"❌ couldn't unsplit the run:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't unsplit the run:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    text, html = summary(latest(rider, dwid), rider)
+    mx.notice(room, f"✅ joined back up\n{text}", reply_to=event_id,
+              html=f"✅ joined back up<br>{html}")
 
 
 PUBLISH_WORDS = {"publish","verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
@@ -1710,16 +1818,8 @@ class Bot:
                         del words[i:i + 2]
                     else:
                         bad = True
-            target, dwid = rider, None
-            if words and RUN_ID.search(words[0]):
-                dwid = RUN_ID.search(words[0]).group(0)
-                rows = query(f"select rider from dwlist where id = '{dwid}'")
-                target = rows[0]["rider"] if rows else None
-            elif words and words[0] in self.riders():
-                target = words[0]
-            elif words:
-                target = None
-            if bad or target is None or len(words) > 1 or (undo and at):
+            target, dwid = self.run_target(words, rider)
+            if bad or target is None or words or (undo and at):
                 self.mx.notice(room, "!trim takes start 10:42 (or start 20m), end 12:05 "
                                      "(or end 5m), or undo, after nothing (your latest run), "
                                      "a run's link or a rider", reply_to=eid)
@@ -1730,6 +1830,25 @@ class Bot:
             else:
                 trim(self.mx, room, eid, dwid or latest(target)["id"], target, sender,
                      at.get("start"), at.get("end"), undo)
+        elif re.match(r"!(un)?split\b", text):
+            words = text.split()[1:]
+            join = text.startswith("!unsplit")
+            at = [w for w in words if TRIM_AT.match(w)]
+            words = [w for w in words if not TRIM_AT.match(w)]
+            target, dwid = self.run_target(words, rider)
+            if target is None or words or len(at) != (0 if join else 1):
+                self.mx.notice(room, "!unsplit takes a run's link (the first half) or nothing "
+                                     "(your latest run)" if join else
+                                     "!split takes a time like 12:45 (or 40m in), plus a run's "
+                                     "link or a rider (default: your latest run)", reply_to=eid)
+            elif target != rider and not self.room_admin(room, sender):
+                self.mx.notice(room, "You can only change your own runs.", reply_to=eid)
+            elif not dwid and not latest(target):
+                self.mx.notice(room, f"No runs for {target}.", reply_to=eid)
+            elif join:
+                unsplit(self.mx, room, eid, dwid or latest(target)["id"], target, sender)
+            else:
+                split(self.mx, room, eid, dwid or latest(target)["id"], target, sender, at[0])
         elif text.startswith("!ask"):
             words = text.split()[1:]
             # Whose runs: the sender's plus any rider named anywhere ("walter's
@@ -1900,6 +2019,18 @@ class Bot:
         pl = self.mx.call("GET", f"/_matrix/client/v3/rooms/{urllib.parse.quote(room)}"
                                  "/state/m.room.power_levels")
         return pl.get("users", {}).get(sender, pl.get("users_default", 0)) >= 100
+
+    def run_target(self, words, rider):
+        """(rider, run id or None) a command's words name: a run link, a rider
+        (their latest run) or nothing (the sender's); rider None if the
+        first word is neither. A link or rider is taken out of words."""
+        if words and RUN_ID.search(words[0]):
+            dwid = RUN_ID.search(words.pop(0)).group(0)
+            rows = query(f"select rider from dwlist where id = '{dwid}'")
+            return (rows[0]["rider"] if rows else None), dwid
+        if words and words[0] in self.riders():
+            return words.pop(0), None
+        return (None if words else rider), None
 
     def riders(self):
         """Every rider: the users' and any others with runs in the lake."""
