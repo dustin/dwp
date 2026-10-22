@@ -34,7 +34,7 @@ FROM (
         speed,
 
         AVG(speed) OVER (
-            PARTITION BY filename
+            PARTITION BY dwid
             ORDER BY ts
             RANGE BETWEEN INTERVAL 15 SECOND PRECEDING AND CURRENT ROW
         ) AS avg_speed,
@@ -42,7 +42,7 @@ FROM (
         MIN(ts) OVER (PARTITION BY dwid) AS min_ts,
         MAX(ts) OVER (PARTITION BY dwid) AS max_ts,
 
-        LAG(speed) OVER (PARTITION BY filename ORDER BY ts) AS prev_speed
+        LAG(speed) OVER (PARTITION BY dwid ORDER BY ts) AS prev_speed
     FROM run_points
     WHERE dwid IN (SELECT id FROM dwlist WHERE rider = getvariable('rider'))
 ) t
