@@ -1378,6 +1378,17 @@ class Bot:
             body = sources.message(kind, key, t, when, reading)
             for room in (r for r in self.rooms if self.on(r, "sources")):
                 self.source_alert(room, kind, key, body)
+        # Outages without a pin in some room (from before pins, or a room
+        # that joined or turned sources on since) get one now, so every
+        # room shows what the bot knows is down.
+        pins = json.loads(load_state(self.source_pins) or "{}")
+        for key, down in list(self.watch.down.items()):
+            if key not in sources.SOURCES:
+                continue
+            body = sources.message("down", key, down["t"], when)
+            for room in (r for r in self.rooms if self.on(r, "sources")):
+                if key not in pins.get(room, {}):
+                    self.source_alert(room, "down", key, body)
 
     def source_alert(self, room, kind, key, body):
         """Post a source's offline or back message in room, pinning the
@@ -1389,8 +1400,9 @@ class Bot:
             if kind == "back" and pins.get(room, {}).get(key):
                 self.mx.unpin(room, pins[room].pop(key))
             elif kind == "down" and eid:
-                self.mx.pin(room, eid)
+                # Kept even if pinning fails, so the message isn't posted again.
                 pins.setdefault(room, {})[key] = eid
+                self.mx.pin(room, eid)
         except urllib.error.URLError as e:  # no power to pin, say: the message still went
             log(f"{'un' if kind == 'back' else ''}pinning {key} in {room} failed: {e}")
         save_state(self.source_pins, json.dumps(pins))
