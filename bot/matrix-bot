@@ -463,8 +463,14 @@ def achievements(rider, dwid):
     return lines
 
 
+# The init file's result sets (boxes and "N rows"), which crowd the real
+# error out of a reply.
+RESULT_BOX = re.compile(r"\s*([┌│├└].*|\d+ rows?)$")
+
+
 def tail(out, n=15):
-    return "\n".join(out.rstrip().splitlines()[-n:])
+    lines = [ln for ln in out.rstrip().splitlines() if not RESULT_BOX.match(ln)]
+    return "\n".join(lines[-n:])
 
 
 def split_caption(text):
@@ -703,7 +709,7 @@ def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=Fal
     sql = ("use lake; begin; "
            f"call lake.set_commit_message('dustin', 'matrix-bot: trim of {dwid}'); "
            + change + dwp_publish.run_stats_sql([dwid]) + "\ncommit;")
-    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
         try:
             dwp_publish.run()
