@@ -348,11 +348,15 @@ def query(sql):
     r = subprocess.run(["duckdb", "--init", "quack-init.sql", "-json", "-c", "use lake; " + sql],
                        cwd=LAKE_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                        text=True)
-    out = r.stdout[r.stdout.find("["):] if "[" in r.stdout else "[]"
-    try:
-        return json.loads(out)
-    except json.JSONDecodeError:
-        return []
+    # The init file's statements print their own result sets first; the
+    # query's rows are the last JSON array.
+    dec, i, rows = json.JSONDecoder(), 0, []
+    while (i := r.stdout.find("[", i)) >= 0:
+        try:
+            rows, i = dec.raw_decode(r.stdout, i)
+        except json.JSONDecodeError:
+            i += 1
+    return rows
 
 
 def runs(rider):

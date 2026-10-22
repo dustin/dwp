@@ -186,17 +186,25 @@ def duckdb(sql, json_out=False, cmd=None):
     if not json_out:
         return None
     out = r.stdout.strip()
-    # DuckDB 2.0 prints warnings (deprecations and such) on stdout, ahead
-    # of the result; the JSON starts at the first line that opens an array.
-    lines = out.splitlines()
-    start = next((i for i, l in enumerate(lines) if l.startswith("[")), None)
-    if start:
-        log("duckdb warned: " + " ".join(l for l in lines[:start] if l.strip()))
-        out = "\n".join(lines[start:])
     try:
-        return json.loads(out) if out else []
+        return last_json(out)
     except json.JSONDecodeError:
         die(f"duckdb printed something other than JSON:\n{out[:2000]}\n--- stderr:\n{r.stderr[:2000]}")
+
+
+def last_json(out):
+    """The last JSON array in duckdb's output: the init file's statements
+    print their own result sets first, and DuckDB 2.0 may print warnings
+    ahead of them, so skip everything up to the final result."""
+    dec, i, rows = json.JSONDecoder(), 0, None
+    while (i := out.find("[", i)) >= 0:
+        try:
+            rows, i = dec.raw_decode(out, i)
+        except json.JSONDecodeError:
+            i += 1
+    if rows is None and out:
+        raise json.JSONDecodeError("no JSON array", out, 0)
+    return rows or []
 
 
 def sql_str(s):
