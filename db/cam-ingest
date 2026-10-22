@@ -59,13 +59,14 @@ def ingest(images, tmp):
         "where table_catalog = 'lake' and table_name = 'cam_motion';", json_out=True)]
     if not have:
         raise PublishError("no cam_motion table in the lake (see schema.sql)")
-    stmts = ["begin;", "call lake.set_commit_message('dustin', 'cam readings and images');"]
+    stmts = ["set TimeZone = 'UTC';", "begin;", "call lake.set_commit_message('dustin', 'cam readings and images');"]
     for site, d in CAMS.items():
         jsonl = os.path.join(d, "motion.jsonl")
         if not os.path.exists(jsonl):
             continue
-        # read_json types the stamps as naive TIMESTAMPs (the Z dropped), so
-        # say they're UTC; a plain cast would read them in the session's zone.
+        # read_json types the stamps as naive TIMESTAMPs (the Z dropped) before
+        # DuckDB 2.0 and as TIMESTAMPTZs since; with the session in UTC (set
+        # above), ::timestamp gives the UTC wall time either way.
         src = f"read_json({sql_str(jsonl)}, format = 'newline_delimited', sample_size = -1)"
         fields = [r["column_name"] for r in duckdb(f"describe select * from {src};", json_out=True)]
         extra = sorted(set(fields) - set(have) - {"stamp"})
