@@ -338,7 +338,8 @@ def import_run(gpx_path, rider, board, foil, tmp):
     env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil, DWP_RIDER=rider,
                DWP_BOARD=board, DWP_NEW_FOIL="1")
     with open(os.path.join(DB_DIR, "import.sql")) as sql:
-        r = subprocess.run(["duckdb", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+        r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env,
+                           stdin=sql)
     return r.returncode == 0
 
 
