@@ -14,6 +14,8 @@ from the room each time) can act for any rider and publish:
     the bot asks for the foil; answer with one, or "-" for the rider's
     last foil from that start beach. A foil they haven't used before
     takes its full name after "new": "new Axis Spitfire 1180".
+    If the import fails, the file is kept for a day: "!retry" runs it
+    again with the same caption, "!retry 585" with another foil.
   * "!sync" runs drive-sync for the sender's rider: their shared Google
     Drive folder, an rclone remote named after them. A room admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
@@ -124,6 +126,7 @@ WATCH_GRACE = 10 * 60  # after starting, so the live feed has a chance to arrive
 SYNC_HOURS = (16, 18, 23)  # Hawaii hours the bot syncs every Drive by itself
 G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.js
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
+RETRY_TTL = 24 * 3600  # how long a GPX that failed to import waits for !retry
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
 APPROVE = {"✅", "✔️", "✔", "👍"}
 # (command, what it does) for each permission level; !help shows the
@@ -146,6 +149,7 @@ HELP_RIDER = [
     ("!glitch", "drop your latest run's top-speed reading as a GPS glitch (again for the next one)"),
     ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
     ("!sync", "import your new runs from your Drive folder"),
+    ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
     ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
 ]
@@ -158,7 +162,7 @@ HELP_ADMIN = [
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!last", "!foil", "!board", "!glitch", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
     ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
@@ -168,7 +172,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "sync", "ask", "publish", "room", "rooms"]
+COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "sync", "ask", "publish", "room", "rooms", "retry"]
 ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
@@ -486,8 +490,10 @@ def import_gpx(mx, room, event_id, path, foil, rider):
                             "before, send its full name after \"new\", e.g. "
                             "new Axis Spitfire 1180.", reply_to=event_id)
         else:
-            mx.notice(room, f"❌ add-run failed:\n{tail(out)}", reply_to=event_id,
-                      html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>")
+            again = "\nSend !retry to try this file again."
+            mx.notice(room, f"❌ add-run failed:\n{tail(out)}{again}", reply_to=event_id,
+                      html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>"
+                           f"{escape(again)}")
         return False
     new = runs(rider) - before
     r = latest(rider, new.pop()) if len(new) == 1 else None
@@ -1108,7 +1114,7 @@ class Bot:
         self.mx, self.args = mx, args
         self.started = time.time()
         self.source_pins = os.path.join(args.state_dir, "source-pins.json")
-        self.pending = {}  # (room, sender) -> (event_id, gpx path, received at)
+        self.pending = {}  # (room, sender) -> (event_id, gpx path, received at, foil tried)
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
@@ -1506,7 +1512,7 @@ class Bot:
             if foil and FOIL.match(foil):
                 self.attempt(room, sender, eid, path, foil, rider)
             else:
-                self.pending[room, sender] = (eid, path, time.time())
+                self.pending[room, sender] = (eid, path, time.time(), None)
                 self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
                                      "one from that beach)", reply_to=eid)
             return
@@ -1616,11 +1622,28 @@ class Bot:
             body, html = help_text(sections)
             self.mx.notice(room, body, reply_to=eid, html=html)
         elif (room, sender) in self.pending and FOIL.match(text):
-            gpx_eid, path, at = self.pending.pop((room, sender))
+            gpx_eid, path, at, _ = self.pending.pop((room, sender))
             if time.time() - at < PENDING_TTL:
                 self.attempt(room, sender, gpx_eid, path, text, rider)
             else:
                 os.unlink(path)
+        elif text.startswith("!retry"):
+            p = self.pending.pop((room, sender), None)
+            if p and time.time() - p[2] >= RETRY_TTL:
+                os.unlink(p[1])
+                p = None
+            if not p:
+                self.mx.notice(room, "There's no GPX of yours waiting. Send it again.",
+                               reply_to=eid)
+                return
+            gpx_eid, path, _, tried = p
+            foil = text[len("!retry"):].strip() or tried
+            if foil:
+                self.attempt(room, sender, gpx_eid, path, foil, rider)
+            else:
+                self.pending[room, sender] = (gpx_eid, path, time.time(), None)
+                self.mx.notice(room, "Which foil? (e.g. 585, or - for your last "
+                                     "one from that beach)", reply_to=eid)
 
     def ask_runs(self, room, eid, me, riders, question):
         """Answer question (from rider me) about riders' runs, or propose the
@@ -1736,11 +1759,11 @@ class Bot:
                 "select distinct rider from dwlist where rider is not null")}
 
     def attempt(self, room, sender, eid, path, foil, rider):
-        """Import; if that fails, the file waits for another foil."""
+        """Import; if that fails, the file waits for another foil or !retry."""
         if import_gpx(self.mx, room, eid, path, foil, rider):
             os.unlink(path)
         else:
-            self.pending[room, sender] = (eid, path, time.time())
+            self.pending[room, sender] = (eid, path, time.time(), foil)
 
 
 def load_state(path):
