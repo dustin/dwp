@@ -75,10 +75,7 @@ from the room each time) can act for any rider and publish:
 When the conditions/rating feed (Node-RED's 0-4 score per side) says a
 run is getting good, the bot says so in the room, once per session per
 side, plus once if it gets really good and once when it drops off: see
-run_alerts.py. And once a day, when Kīhei is starting to look good (a
-rating of LOOK or more) and the Wailea cam reads lively (Node-RED's vision
-read of the frame on weather/conditions/wailea), it suggests a look at the
-cam, with the frame.
+run_alerts.py. Kīhei alerts carry the Wailea cam's read and water motion.
 
 The bot also pins a one-line version of !conditions in the room and edits
 it in place every few minutes (Element X shows the pinned message in a
@@ -132,8 +129,6 @@ STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
 EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
 CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
 CAM_STALE = 30 * 60  # a cam reading older than this isn't shown
-LIVELY = ("textured", "scattered whitecaps", "many whitecaps")  # the cam's sea values worth a look
-LOOK = 2.0  # Kīhei's 0-4 rating at which a lively cam is worth mentioning ("doable")
 WATCH_EVERY = 2 * 60  # how often the bot checks its data sources (sources.py)
 WATCH_GRACE = 10 * 60  # after starting, so the live feed has a chance to arrive
 SYNC_HOURS = (16, 18, 23)  # Hawaii hours the bot syncs every Drive by itself
@@ -185,7 +180,7 @@ HELP_ADMIN = [
 RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!ask", "!publish"}
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
-    ("!room 2 alerts off", "per room: alerts (run alerts), cam (cam nudges), pinned (conditions), "
+    ("!room 2 alerts off", "per room: alerts (run alerts), pinned (conditions), "
                            "sources (data going offline), runs (new runs from the 16:00, 18:00 "
                            "and 23:00 syncs), on or off"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
@@ -193,7 +188,7 @@ HELP_ROOMS = [
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
 COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "sync", "ask", "publish", "room", "rooms", "retry"]
-ROOM_SETTINGS = {"alerts": "run alerts", "cam": "cam nudges", "pinned": "pinned conditions",
+ROOM_SETTINGS = {"alerts": "run alerts", "pinned": "pinned conditions",
                  "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
@@ -1365,7 +1360,7 @@ class Bot:
                              for k, v in ROOM_SETTINGS.items())
             lines.append(f"{i}. {self.room_name(r)}{' (this room)' if r == room else ''}: {what}")
         self.mx.notice(room, "\n".join(lines + ["Change one with !room N alerts off "
-                                                "(or cam, pinned; on; leave)."]), reply_to=eid)
+                                                "(or pinned, sources, runs; on; leave)."]), reply_to=eid)
 
     def room_command(self, room, eid, words):
         """!room N (alerts|cam|pinned|sources) (on|off), or !room N leave."""
@@ -1659,26 +1654,6 @@ class Bot:
                     self.broadcast(content, "runs")
         except Exception as e:
             log(f"scheduled sync failed: {e!r}")
-
-    def suggest_cam(self):
-        """Once a Hawaii day, when Kīhei's rating reaches LOOK and the Wailea
-        cam reads LIVELY (both fresh), suggest a look at the cam."""
-        cam, rating = fresh_cam(), WEATHER.rating if WEATHER else None
-        if not cam or cam["sea"] not in LIVELY or not rating:
-            return
-        if time.time() - rating["t"] > run_alerts.STALE or rating["kihei"] < LOOK:
-            return
-        path, today = os.path.join(self.args.state_dir, "cam-nudge"), f"{hst(time.time()):%F}"
-        if load_state(path) == today:
-            return
-        save_state(path, today)
-        text = (f"👀 The Wailea cam shows {cam['sea']} and Kīhei is at "
-                f"{run_alerts.out_of_10(rating['kihei'])}. Worth a look: {CAM_PAGE}")
-        self.broadcast({"msgtype": "m.text", "body": text, "format": "org.matrix.custom.html",
-                        "formatted_body": escape(text).replace(
-                            CAM_PAGE, f'<a href="{CAM_PAGE}">{CAM_PAGE}</a>')}, "cam")
-        for room in (r for r in self.rooms if self.on(r, "cam")):
-            send_cam_frame(self.mx, room, cam, self.frames)
 
     def handle(self, room, ev):
         c = ev.get("content", {})
@@ -2189,10 +2164,6 @@ def main(argv=None):
             bot.scheduled_sync()
         except Exception as e:
             log(f"scheduled sync failed: {e!r}")
-        try:
-            bot.suggest_cam()
-        except Exception as e:
-            log(f"cam suggestion failed: {e!r}")
         try:
             bot.refresh_status()
         except Exception as e:  # the pinned conditions are nice to have
