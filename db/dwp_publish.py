@@ -167,6 +167,11 @@ def die(msg):
     raise PublishError(msg)
 
 
+# The tracks export's ST_Point(lat, lon) is the pre-2.0 axis order, which
+# DuckDB 2.0 makes ST_Distance_Sphere ask for.
+XY = "load spatial;\nset geometry_always_xy = false;\n"
+
+
 def duckdb(sql, json_out=False, cmd=None):
     """Run sql against the lake; with json_out, return the result's rows."""
     args = ["duckdb", "-bail", "--init", "init.sql"]
@@ -174,7 +179,7 @@ def duckdb(sql, json_out=False, cmd=None):
         args.append("-json")
     if cmd:
         args += ["-cmd", cmd]
-    r = subprocess.run(args, cwd=LAKE_DIR, input="use lake;\n" + sql,
+    r = subprocess.run(args, cwd=LAKE_DIR, input="use lake;\n" + XY + sql,
                        capture_output=True, text=True)
     if r.returncode != 0 or "Error:" in r.stderr:
         die(f"duckdb failed:\n{r.stderr}")

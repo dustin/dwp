@@ -1,5 +1,10 @@
 use lake;
 
+-- Every ST_Point here (and coastline_swapped) is (lat, lon); DuckDB 2.0
+-- makes ST_Distance_Sphere ask which order. Keep the pre-2.0 one.
+LOAD spatial;
+SET geometry_always_xy = false;
+
 begin;
 
 -- The CSV path, rider and foil come from the environment; add-run sets
