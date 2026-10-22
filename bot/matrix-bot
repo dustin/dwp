@@ -26,7 +26,8 @@ from the room each time) can act for any rider and publish:
     (bot/achievements.mjs, the web's achievements as JSON).
   * "!foil 585" changes the foil on the sender's latest run (matched like
     add-run's, or "new <full name>"), then re-exports. A room admin
-    can name a rider first: "!foil walter orca 685". "!board gator" does
+    can name a rider first: "!foil walter orca 685"; anyone can give one of
+    their runs' links first instead. "!board gator" does
     the same for the board, matched the same way. A .gpx caption can
     name the board after the foil: "585 board gator" (or just
     "board gator", for the foil from that beach).
@@ -157,6 +158,7 @@ HELP_RIDER = [
     ("!last", "your latest run"),
     ("!last walter", "someone else's latest run"),
     ("!foil 585", "change your latest run's foil"),
+    ("!foil <run link> 585", "change that run's foil (the same for !board)"),
     ("!board gator", "change your latest run's board (\"new <full name>\" for a new one)"),
     ("!glitch", "drop your latest run's top-speed reading as a GPS glitch (again for the next one)"),
     ("!glitch <run link>", "the same for that run; add undo to put its readings back"),
@@ -568,10 +570,10 @@ def resolve_gear(rider, kind, name):
     return None, f"no {kind} matches '{name}'"
 
 
-def set_gear(mx, room, event_id, rider, kind, name):
-    """Record foil or board (kind) name on the rider's latest run, then
-    re-export."""
-    r = latest(rider)
+def set_gear(mx, room, event_id, rider, kind, name, dwid=None):
+    """Record foil or board (kind) name on run dwid, else the rider's latest
+    run, then re-export."""
+    r = latest(rider, dwid)
     if not r:
         mx.notice(room, f"No runs for {rider}.", reply_to=event_id)
         return
@@ -1766,22 +1768,27 @@ class Bot:
         elif text.startswith(("!foil", "!board")):
             kind, *words = text.split()
             kind = kind[1:]
-            target = rider
-            if len(words) > 1 and words[0] in self.riders():
-                if words[0] != rider and not self.room_admin(room, sender):
+            target, dwid = rider, None
+            if len(words) > 1 and (RUN_ID.search(words[0]) or words[0] in self.riders()):
+                target, dwid = self.run_target(words, rider)
+                if target is None:
+                    self.mx.notice(room, "No such run.", reply_to=eid)
+                    return
+                if target != rider and not self.room_admin(room, sender):
                     self.mx.notice(room, "You can only change your own runs.",
                                    reply_to=eid)
                     return
-                target, words = words[0], words[1:]
             name = " ".join(words)
             if kind in GEAR and FOIL.match(name):
-                set_gear(self.mx, room, eid, target, kind, name)
+                set_gear(self.mx, room, eid, target, kind, name, dwid)
             elif kind == "board":
                 self.mx.notice(room, "!board takes a board, like !board gator "
-                                     "(or !board walter gator)", reply_to=eid)
+                                     "(or !board walter gator, or a run's link first)",
+                               reply_to=eid)
             else:
                 self.mx.notice(room, "!foil takes a foil, like !foil 585 "
-                                     "(or !foil walter orca 685)", reply_to=eid)
+                                     "(or !foil walter orca 685, or a run's link first)",
+                               reply_to=eid)
         elif text.startswith("!glitch"):
             words = text.split()[1:]
             undo = "undo" in words
