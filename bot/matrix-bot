@@ -345,7 +345,7 @@ def run(cmd, env=None, cwd=DB_DIR):
 
 def query(sql):
     """Rows of a query against the lake, as dicts."""
-    r = subprocess.run(["duckdb", "--init", "init.sql", "-json", "-c", "use lake; " + sql],
+    r = subprocess.run(["duckdb", "--init", "quack-init.sql", "-json", "-c", "use lake; " + sql],
                        cwd=LAKE_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                        text=True)
     out = r.stdout[r.stdout.find("["):] if "[" in r.stdout else "[]"
@@ -557,7 +557,7 @@ def set_gear(mx, room, event_id, rider, kind, name):
     sql = ("use lake; begin; "
            f"call lake.set_commit_message('dustin', 'matrix-bot: {kind} of {r['id']}'); "
            f"update dwlist set {kind} = {sql_str(value)} where id = '{r['id']}'; commit;")
-    ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -604,7 +604,7 @@ def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
            + change +
            "update dwlist as l set max_speed_kmh = t.max_speed_kmh from run_top_speed t "
            f"where l.id = t.dwid and l.id = '{dwid}'; commit;")
-    ok, out = run(["duckdb", "--init", "init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -1745,7 +1745,7 @@ class Bot:
         if not self.room_admin(room, ev["sender"]):
             return
         del self.asks[pid]
-        ok, out = run(["duckdb", "--init", "init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
+        ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
         if ok:
             try:
                 dwp_publish.run()

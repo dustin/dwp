@@ -44,4 +44,4 @@ if [ -n "$2" ]; then
 fi
 
 cd "$lake"
-duckdb --init init.sql -cmd "$vars" < "$here/update.sql"
+duckdb --init quack-init.sql -cmd "$vars" < "$here/update.sql"

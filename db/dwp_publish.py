@@ -174,7 +174,7 @@ XY = "load spatial;\nset geometry_always_xy = false;\n"
 
 def duckdb(sql, json_out=False, cmd=None):
     """Run sql against the lake; with json_out, return the result's rows."""
-    args = ["duckdb", "-bail", "--init", "init.sql"]
+    args = ["duckdb", "-bail", "--init", "quack-init.sql"]
     if json_out:
         args.append("-json")
     if cmd:

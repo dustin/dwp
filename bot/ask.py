@@ -188,7 +188,7 @@ def snapshot(lake_dir, riders, path):
     sql = "use lake; " + "".join(
         f"copy ({q.format(riders=who)}) to {sql_str(os.path.join(path, name))} (format parquet); "
         for q, name in ((SNAPSHOT_SQL, "runs.parquet"), (TOGETHER_SQL, "together.parquet")))
-    r = subprocess.run(["duckdb", "--init", "init.sql", "-c", sql], cwd=lake_dir,
+    r = subprocess.run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=lake_dir,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if r.returncode != 0:
         raise AskError(f"couldn't read the runs: {r.stdout.strip()[-300:]}")

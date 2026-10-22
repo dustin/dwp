@@ -297,7 +297,7 @@ def existing_runs(rider):
         die(f"odd rider name: {rider}")
     q = (f"use lake; select ts, ts + duration_sec from dwlist "
          f"where rider = '{rider}' and ts is not null and duration_sec is not null")
-    out = subprocess.run(["duckdb", "--init", "init.sql", "-noheader", "-csv", "-c", q],
+    out = subprocess.run(["duckdb", "--init", "quack-init.sql", "-noheader", "-csv", "-c", q],
                          cwd=LAKE_DIR, check=True, capture_output=True, text=True).stdout
     return [tuple(map(float, line.split(","))) for line in out.splitlines()
             if line and line[0].isdigit()]
@@ -338,7 +338,7 @@ def import_run(gpx_path, rider, board, foil, tmp):
     env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil, DWP_RIDER=rider,
                DWP_BOARD=board, DWP_NEW_FOIL="1")
     with open(os.path.join(DB_DIR, "import.sql")) as sql:
-        r = subprocess.run(["duckdb", "--init", "init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
+        r = subprocess.run(["duckdb", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env, stdin=sql)
     return r.returncode == 0
 
 
