@@ -48,7 +48,7 @@ import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js"
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderSwellEnergy} from "./components/swell-energy.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"], ["anonymous", "Anonymous"]];
 // Top and bottom of the run.
 const STATIONS = [
   {site: "hookipa", name: "Top: Hoʻokipa", where: "Hoʻokipa Beach Park"},

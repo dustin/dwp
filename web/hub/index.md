@@ -15,7 +15,7 @@ import {qualityStrip, qualityBadge, CLASSES} from "./components/wind-quality.js"
 import {forecastMini, todayWindow, hstDay} from "./components/forecast.js";
 import {fetchWindForecast} from "./components/data.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"], ["anonymous", "Anonymous"]];
 const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 // Stations with a page of their own to dig into.
 const WIND_PAGES = {kihei: "kihei.html", hookipa: "maliko.html"};
