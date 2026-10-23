@@ -28,7 +28,7 @@ import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile} from "./components/data.js";
 import {WIND_QUALITY, CLASSES, windClass} from "./components/wind-quality.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"], ["anonymous", "Anonymous"]];
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 // Each station with the runs it describes. Kīhei's reverse (northbound)
 // runs are too few to score yet, so only southbound runs count there.
 const STATIONS = [

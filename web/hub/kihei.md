@@ -44,7 +44,7 @@ import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, 
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard} from "./components/conditions.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"], ["anonymous", "Anonymous"]];
+const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
 // Top and bottom of a north run.
 const STATIONS = [
   {site: "kihei", name: "Top: Kīhei", where: "Sugar Beach"},

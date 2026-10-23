@@ -6,7 +6,7 @@ toc: false
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, RIDERS} from "./components/data.js";
+import {fetchMeta, riderFile, LISTED_RIDERS as RIDERS} from "./components/data.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
 // ?a=dustin&b=walter picks the two riders; the pickers below rewrite the URL

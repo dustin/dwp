@@ -82,6 +82,9 @@ const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
 // unknown names show Dustin's for now. ?rider=walter overrides it, for
 // trying one rider's data anywhere.
 export const RIDERS = ['dustin', 'walter', 'jeff', 'anonymous'];
+// Riders the hub lists and offers in pickers. anonymous only shows up
+// beside other riders on a ride they shared (together.html).
+export const LISTED_RIDERS = RIDERS.filter(r => r !== 'anonymous');
 export const rider = (() => {
   const asked = new URLSearchParams(location.search).get('rider');
   if (RIDERS.includes(asked)) return asked;
