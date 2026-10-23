@@ -25,10 +25,10 @@ The wind cards label each reading magic, good, harder, too light or no go. The l
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile} from "./components/data.js";
+import {fetchMeta, riderFile, ridersWith} from "./components/data.js";
 import {WIND_QUALITY, CLASSES, windClass} from "./components/wind-quality.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+const RIDER_NAMES = (await ridersWith("hub")).map(r => [r.rider, r.name]);
 // Each station with the runs it describes. Kīhei's reverse (northbound)
 // runs are too few to score yet, so only southbound runs count there.
 const STATIONS = [

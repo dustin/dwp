@@ -78,19 +78,38 @@ export async function fetchMeta(f) {
 const DATAHOST = 'd2qwe1xndvncw9.cloudfront.net';
 
 // Whose runs this site shows: the hostname's first label, so
-// walter.downwind.pro shows Walter's. downwind.pro itself, localhost and
-// unknown names show Dustin's for now. ?rider=walter overrides it, for
-// trying one rider's data anywhere.
-export const RIDERS = ['dustin', 'walter', 'jeff', 'anonymous'];
-// Riders the hub lists and offers in pickers. anonymous only shows up
-// beside other riders on a ride they shared (together.html).
-export const LISTED_RIDERS = RIDERS.filter(r => r !== 'anonymous');
+// walter.downwind.pro shows Walter's. downwind.pro itself and localhost
+// show Dustin's. ?rider=walter overrides it, for trying one rider's data
+// anywhere.
+const SLUG = /^[a-z][a-z0-9-]*$/;
 export const rider = (() => {
   const asked = new URLSearchParams(location.search).get('rider');
-  if (RIDERS.includes(asked)) return asked;
-  const label = location.hostname.split('.')[0];
-  return RIDERS.includes(label) ? label : 'dustin';
+  if (SLUG.test(asked ?? '')) return asked;
+  const [label, ...rest] = location.hostname.split('.');
+  return rest.join('.') === 'downwind.pro' && SLUG.test(label) ? label : 'dustin';
 })();
+
+// Everyone with runs, oldest first, and what they take part in: the
+// riders table (db/schema.sql), published as runs/riders.csv by
+// db/publish. A blank flag means yes. hub: listed on the hub's pages;
+// versus: offered on versus.html; compare: a rider on compare.html;
+// together: shown beside other riders on a ride they shared.
+const FLAGS = ['hub', 'versus', 'compare', 'together'];
+let ridersP = null;
+export function fetchRiders() {
+  ridersP ??= d3.csv(`https://${DATAHOST}/runs/riders.csv`, d3.autoType)
+    // Until the first publish with the riders table.
+    .catch(() => ['dustin', 'walter', 'jeff'].map(rider => ({ rider })))
+    .then(rows => rows.map(r => ({
+      rider: r.rider,
+      name: r.name || r.rider[0].toUpperCase() + r.rider.slice(1),
+      ...Object.fromEntries(FLAGS.map(f => [f, r[f] !== false])),
+    })));
+  return ridersP;
+}
+
+// The riders who take part in `flag`, e.g. ridersWith('hub').
+export const ridersWith = flag => fetchRiders().then(rs => rs.filter(r => r[flag]));
 
 // Each rider's files live under runs/rider=<rider>/ on the CDN (see
 // db/publish): runs.csv, crashes.csv and run_buoy.csv beside the

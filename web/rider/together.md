@@ -9,15 +9,16 @@ import {renderRun, findCallouts, findFastest1kSegment} from "./components/map.js
 import {createColorizer, FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, rider, RIDERS, withRider, fetchRun, fetchWind, fetchTogether} from "./components/data.js";
+import {fetchMeta, riderFile, rider, ridersWith, withRider, fetchRun, fetchWind, fetchTogether} from "./components/data.js";
 
 const urlParams = new URLSearchParams(window.location.search);
 
 // The riders out on one run: this site's rider's run (?id=) plus everyone
 // together.csv says went with it. ?runs=rider:id,rider:id,... names them
 // outright instead.
+const together = (await ridersWith("together")).map(r => r.rider);
 const picked = urlParams.get("runs")
-  ? urlParams.get("runs").split(",").map(s => s.split(":")).filter(([r]) => RIDERS.includes(r))
+  ? urlParams.get("runs").split(",").map(s => s.split(":")).filter(([r]) => r === rider || together.includes(r))
   : [[rider, urlParams.get("id")],
      ...((await fetchTogether()).get(urlParams.get("id")) ?? []).map(t => [t.other_rider, t.other_id])];
 

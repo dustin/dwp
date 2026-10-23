@@ -138,7 +138,9 @@ copy (
    and b.start_pos = a.start_pos
    and b.ts < a.ts + a.duration_sec
    and a.ts < b.ts + b.duration_sec
+  left join riders r on r.rider = b.rider
   where a.rider = getvariable('rider')
+    and r.together is not false
     and least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts) >= 600
   order by a.ts, overlap_sec desc
 ) to '/Users/dustin/stuff/dwlists/together.csv';

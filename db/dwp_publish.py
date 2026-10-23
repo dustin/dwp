@@ -29,8 +29,9 @@ rows it was made from (row count and the sum of the rows' hashes). A publish:
      picks the ones whose fingerprint differs from the manifest's: new runs,
      re-imported or edited ones, the day the last ingest added to, a day a
      backfill rewrote;
-  2. exports just those, plus every rider's four lists (small, and they
-     depend on wind and buoy data as well as runs), into a temp dir;
+  2. exports just those, plus every rider's four lists and riders.csv
+     (small, and the lists depend on wind and buoy data as well as runs),
+     into a temp dir;
   3. skips files whose bytes and headers S3 already has: a day whose cache
      lifetime goes from short to long is re-sent for its headers alone;
   4. gzips the rest, uploads them with rclone (no listing, no HEAD per
@@ -403,6 +404,18 @@ def list_bucket():
     return out
 
 
+def export_riders(path):
+    """runs/riders.csv: every rider with runs, oldest first, with their
+    riders row (blank where they have none)."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    duckdb(f"""copy (
+  select d.rider, r.name, r.hub, r.versus, r.compare, r.together
+  from (select rider, min(ts) as first_ts from dwlist where rider is not null group by rider) d
+  left join riders r using (rider)
+  order by d.first_ts
+) to {sql_str(path)};""")
+
+
 def riders():
     return sorted(r["rider"] for r in duckdb(
         "select distinct rider from dwlist where rider is not null;", json_out=True)
@@ -448,6 +461,8 @@ def publish(manifest, dry_run=False):
             export_lists(rider, d)
             lists += [(f"runs/rider={rider}/{n}.csv", os.path.join(d, n + ".csv"), None, SHORT, False)
                       for n in LISTS]
+        export_riders(os.path.join(raw, "lists", "riders.csv"))
+        lists.append(("runs/riders.csv", os.path.join(raw, "lists", "riders.csv"), None, SHORT, False))
 
         # Images first: the cam_images files point at them. They never
         # change, so one in the manifest is done.
@@ -536,7 +551,7 @@ def orphans(manifest, delete=False, force=False, dry_run=False):
         if k.startswith(prefixes):
             inventory.add(k)
 
-    expected = {f"runs/rider={r}/{n}.csv" for r in riders() for n in LISTS}
+    expected = {f"runs/rider={r}/{n}.csv" for r in riders() for n in LISTS} | {"runs/riders.csv"}
     for t in TABLES:
         expected |= set(fingerprints(t))
     orphaned = sorted(inventory - expected)

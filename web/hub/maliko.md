@@ -40,7 +40,7 @@ The north shore run from Maliko to Kahului: what it's doing now (the rating, the
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
+import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS, camCard} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
@@ -48,7 +48,7 @@ import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js"
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderSwellEnergy} from "./components/swell-energy.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+const RIDER_NAMES = (await ridersWith("hub")).map(r => [r.rider, r.name]);
 // Top and bottom of the run.
 const STATIONS = [
   {site: "hookipa", name: "Top: Hoʻokipa", where: "Hoʻokipa Beach Park"},

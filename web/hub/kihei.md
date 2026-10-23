@@ -40,11 +40,11 @@ What the run is doing now (the rating, the Kīhei station at Sugar Beach at the 
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
+import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard} from "./components/conditions.js";
 
-const RIDER_NAMES = [["dustin", "Dustin"], ["walter", "Walter"], ["jeff", "Jeff"]];
+const RIDER_NAMES = (await ridersWith("hub")).map(r => [r.rider, r.name]);
 // Top and bottom of a north run.
 const STATIONS = [
   {site: "kihei", name: "Top: Kīhei", where: "Sugar Beach"},

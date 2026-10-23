@@ -6,14 +6,16 @@ toc: false
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, LISTED_RIDERS as RIDERS} from "./components/data.js";
+import {fetchMeta, riderFile, ridersWith} from "./components/data.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
 // ?a=dustin&b=walter picks the two riders; the pickers below rewrite the URL
 // in place so the comparison can be shared.
 const params = new URLSearchParams(location.search);
+const versusRiders = await ridersWith("versus");
+const RIDERS = versusRiders.map(r => r.rider);
 const pick = (key, fallback) => RIDERS.includes(params.get(key)) ? params.get(key) : fallback;
-const riderName = slug => slug[0].toUpperCase() + slug.slice(1);
+const riderName = slug => versusRiders.find(r => r.rider === slug).name;
 ```
 
 ```js

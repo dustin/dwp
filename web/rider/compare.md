@@ -21,7 +21,7 @@ import {compareColorizers, FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, rider, RIDERS, withRider, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
+import {fetchMeta, riderFile, rider, ridersWith, withRider, fetchRun, fetchWind, fetchSwell, toRelative} from "./components/data.js";
 import {primarySwell} from "./components/swell.js";
 import {fetchBuoySnapshot, hasBuoyData, buoySite, runMidpoint, BUOY_DATA_START} from "./components/data.js";
 import {buoyComparison} from "./components/buoy-snapshot.js";
@@ -33,8 +33,9 @@ const id2 = urlParams.get("id2");
 
 // r1/r2 name each run's rider (default: this site's), so two riders who
 // rode together can be compared.
-const r1 = RIDERS.includes(urlParams.get("r1")) ? urlParams.get("r1") : rider;
-const r2 = RIDERS.includes(urlParams.get("r2")) ? urlParams.get("r2") : rider;
+const comparable = (await ridersWith("compare")).map(r => r.rider);
+const r1 = comparable.includes(urlParams.get("r1")) ? urlParams.get("r1") : rider;
+const r2 = comparable.includes(urlParams.get("r2")) ? urlParams.get("r2") : rider;
 const runsOf = who => fetchMeta(() => riderFile('runs.csv', who))
   .then(data => withRider(data, who));
 const [runs1, runs2] = await Promise.all([runsOf(r1), r2 === r1 ? null : runsOf(r2)]);

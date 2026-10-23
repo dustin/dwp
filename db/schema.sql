@@ -28,6 +28,20 @@ CREATE TABLE beaches(
   region VARCHAR -- e.g. 'Kihei', 'Maui North Shore'
 );
 
+-- What each rider takes part in on the site (published as
+-- runs/riders.csv). A rider without a row, or a null flag, is in: hub
+-- (listed on downwind.pro's pages), versus (versus.html), compare
+-- (compare.html) and together (shown beside other riders on a ride they
+-- shared; db/export-lists.sql leaves the rider out of together.csv).
+CREATE TABLE riders(
+  rider VARCHAR, -- dwlist.rider
+  "name" VARCHAR, -- as the site shows it; null capitalizes the slug
+  hub BOOLEAN,
+  versus BOOLEAN,
+  compare BOOLEAN,
+  together BOOLEAN
+);
+
 CREATE TABLE dwlist(
   id UUID,
   rider VARCHAR, -- whose run this is: the subdomain, e.g. 'dustin' (migrate-riders.sql)
