@@ -36,7 +36,7 @@ toc: false
 
 # Maliko
 
-The north shore run from Maliko to Kahului: what it's doing now (the rating, the Hoʻokipa and Kanaha stations, the harbor cam and the Pauwela buoy), then the forecast for the rest of the day and the coming afternoons, then past runs in buoy and wind like now.
+Maliko conditions: present, future, and past.
 
 ```js
 import * as fmt from "./components/formatters.js";
