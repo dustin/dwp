@@ -87,8 +87,10 @@ function summarize(slug, runs) {
       foilKm: d3.sum(runs, d => d.distance_on_foil) / 1000, foilH: d3.sum(runs, d => d.duration_on_foil) / 3600,
       paddleUps: d3.sum(runs, d => d.paddle_up_count), avgKm: d3.mean(runs, d => d.distance_km),
       onFoil: d3.sum(runs, d => d.distance_on_foil) / 1000 / d3.sum(runs, d => d.distance_km)},
-    year: {n: year.length, km: d3.sum(year, d => d.distance_km), h: d3.sum(year, d => d.duration_sec) / 3600},
+    year: {n: year.length, km: d3.sum(year, d => d.distance_km), h: d3.sum(year, d => d.duration_sec) / 3600,
+      foilKm: d3.sum(year, d => d.distance_on_foil) / 1000, foilH: d3.sum(year, d => d.duration_on_foil) / 3600},
     recent: {n: recent.length, km: d3.sum(recent, d => d.distance_km),
+      foilKm: d3.sum(recent, d => d.distance_on_foil) / 1000, foilH: d3.sum(recent, d => d.duration_on_foil) / 3600,
       days: new Set(recent.map(d => +d3.timeDay(d.ts))).size},
     longestRun: best("distance_km"),
     records: bestRecords(runs),
@@ -161,9 +163,13 @@ const n = v => fmt.comma(v);
     <div class="vs-head"><span style=${`color:${colorA}`}>${A.name}</span><span></span><span style=${`color:${colorB}`}>${B.name}</span></div>
     ${versusRow(`Runs in ${thisYear}`, A.year.n, B.year.n, n)}
     ${versusRow(`Distance in ${thisYear}`, A.year.km, B.year.km, km)}
+    ${versusRow(`Distance on foil in ${thisYear}`, A.year.foilKm, B.year.foilKm, km)}
     ${versusRow(`Hours in ${thisYear}`, A.year.h, B.year.h, hrs)}
+    ${versusRow(`Hours on foil in ${thisYear}`, A.year.foilH, B.year.foilH, hrs)}
     ${versusRow("Runs, last 90 days", A.recent.n, B.recent.n, n)}
     ${versusRow("Distance, last 90 days", A.recent.km, B.recent.km, km)}
+    ${versusRow("Distance on foil, last 90", A.recent.foilKm, B.recent.foilKm, km)}
+    ${versusRow("Hours on foil, last 90", A.recent.foilH, B.recent.foilH, hrs)}
     ${versusRow("Days on water, last 90", A.recent.days, B.recent.days, n)}
     <div class="vs-foot">Last run ${A.latest ? fmt.relativeTime(A.latest.ts) : "–"} · ${B.latest ? fmt.relativeTime(B.latest.ts) : "–"}</div>
   </div>
