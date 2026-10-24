@@ -14,7 +14,9 @@ and keeps an arrow overlay per reading as DIR/<stamp>-flow.jpg; db/cam-ingest
 puts both in the lake, db/publish the images in S3.
 It skips a cam's video (publishing {"stamp", "skipped": "<station> light"})
 while the station that cam watches for (its "gate" in cams.py, weather/<gate>)
-reads under 9 kn. Run it every 10 min in daylight
+reads under 9 kn. An AlertWest panorama cam ("alertwest" in cams.py) has no
+motion and no gate: each round just keeps the crops of its latest panorama
+in its --log dir as <stamp>-<kind>.jpg. Run it every 10 min in daylight
 (launchd/cron); the streams are up 05:00-19:30 HST.
 
     cam-motion --mqtt bee1 [--cam wailea --cam ulua] [--log ~/.cache/{cam}-motion] [--segments 3]
@@ -30,6 +32,9 @@ import whitecaps  # noqa: E402
 from cams import CAMS  # noqa: E402
 
 RELAY = "https://relay.ozolio.com/ses.api"
+ALERTWEST = "https://alertwest.live/api/panorama/list/byCamId"
+ALERTWEST_IMG = "https://img.cdn.prod.alertwest.com/data/img"
+PANO_STALE = 3600  # s; an older panorama means the camera is down
 UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
 LIGHT_MIN = 9  # kn; under this a side is LIGHT in the run rating (floor 12 - 3)
 
@@ -227,6 +232,35 @@ def measure(name, a):
         publish(a.mqtt, topic, line)
 
 
+def pano(name, a):
+    """Keep the crops of an AlertWest cam's latest panorama (cams.py "crops")
+    as <stamp>-<kind>.jpg in its --log dir, stamped when the panorama was
+    taken. Without --log, just say which panorama it would crop."""
+    import cv2
+    import numpy as np
+    cam = CAMS[name]
+    cid = str(cam["alertwest"])
+    cur = json.loads(get(ALERTWEST, {"camId": cid, "timestamp": ""}))["data"][cid]["cur"]
+    taken = datetime.fromtimestamp(int(cur["cmlg_timestamp"]), timezone.utc)
+    if time.time() - taken.timestamp() > PANO_STALE:
+        raise OSError(f"latest panorama is from {taken:%Y-%m-%d %H:%M}Z")
+    stamp = taken.strftime("%Y-%m-%dT%H%M%SZ")
+    url = f"{ALERTWEST_IMG}/{cid}/{taken:%Y/%m/%d}/{cur['cmlg_img_name']}"
+    print(name, stamp, url)
+    if not a.log:
+        return
+    d = os.path.expanduser(a.log.format(cam=name))
+    os.makedirs(d, exist_ok=True)
+    paths = {k: os.path.join(d, f"{stamp}-{k}.jpg") for k in cam["crops"]}
+    if all(os.path.exists(p) for p in paths.values()):
+        return  # no new panorama since last round
+    img = cv2.imdecode(np.frombuffer(get(url), np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise OSError(f"can't decode {url}")
+    for k, (x, y, w, h) in cam["crops"].items():
+        cv2.imwrite(paths[k], img[y:y + h, x:x + w], [cv2.IMWRITE_JPEG_QUALITY, 90])
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mqtt", help="broker host; without it, just print")
@@ -245,6 +279,13 @@ def main():
     lights = {}  # station -> light?, read once per round
     failed = False
     for name in names:  # one at a time: never two stream sessions open at once
+        if CAMS[name].get("alertwest"):
+            try:
+                pano(name, a)
+            except Exception as e:
+                print(f"{name}: {e!r}", file=sys.stderr)
+                failed = True
+            continue
         gate = CAMS[name].get("gate", "kihei")
         if a.mqtt and not a.any_time:
             if gate not in lights:

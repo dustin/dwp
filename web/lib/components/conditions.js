@@ -156,3 +156,18 @@ export function camCard({name, url, readings, left, right, mark}, read, {resize}
     </div>
   </div>`;
 }
+
+// A panorama cam's latest crops ({kind, label} in crops), one above the
+// other, from fetchCamImages. Each opens full size.
+export function panoCard({name, url, shots, crops}) {
+  const title = url ? html`<a href=${url} target="_blank">${name}</a>` : name;
+  const r = shots.at(-1);
+  if (!r) return html`<div class="card"><h2>${title}</h2><div class="muted">No images today or yesterday</div></div>`;
+  return html`<div class="card">
+    <h2>${title} <span class="muted" style="font-weight: normal">${fmt.minuteStamp(r.ts)}</span></h2>
+    ${crops.filter(c => r.images[c.kind]).map(c => html`<div style="margin-top: 0.5rem">
+      <div class="muted" style="font-size: 0.85em">${c.label}</div>
+      <a href=${r.images[c.kind]} target="_blank"><img class="cam-img" style="margin-top: 0.15rem" src=${r.images[c.kind]} alt="${name}: ${c.label}"></a>
+    </div>`)}
+  </div>`;
+}

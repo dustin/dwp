@@ -14,6 +14,10 @@ Boxes are (x, y, w, h) in the cam's frame (Ozolio 1920x1080, Brownrice 1280x720)
   caps:  the band whitecaps are counted in (whitecaps.py)
   caps_mask: parts of it where waves always break (rocks, reef)
 
+A cam with "alertwest" (an AlertWest camera id) isn't a stream: it's the
+panorama that camera stitches about every minute, too far off for motion, so
+cam_motion.py only keeps "crops" of it, {kind: box}, as <stamp>-<kind>.jpg.
+
 dx < 0 (right to left in the picture) is down the coast toward Mākena on
 Wailea and Ulua. Poʻolenalena looks up the coast, so south is toward the
 camera there (dy > 0) and dx < 0 is offshore. The px/s scale differs per cam (distance, zoom), so a
@@ -54,5 +58,14 @@ CAMS = {
         "referer": "https://www.surfline.com/", "gate": "hookipa",
         "water": (0, 400, 1920, 120), "land": (300, 1000, 400, 60),
         "caps": (0, 335, 1920, 390), "caps_mask": [(0, 350, 1190, 42), (570, 525, 500, 300)],
+    },
+    # AlertWest "Wailea_2" (HECO), up the hill above Wailea: a 392° panorama,
+    # 11520x1080, six 1920px frames each exposed on its own. The water is the
+    # right third: Mākena and Puʻu Ōlaʻi, the Wailea coast (a pole crosses
+    # it), and Kīhei up to Maʻalaea, thin and far.
+    "wailea_pano": {
+        "alertwest": 15812,
+        "crops": {"makena": (7100, 540, 580, 120), "wailea": (7680, 560, 1920, 230),
+                  "kihei": (9600, 650, 1200, 120)},
     },
 }

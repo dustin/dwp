@@ -32,7 +32,7 @@ in
     };
     cams = mkOption {
       type = types.listOf types.str;
-      default = [ "wailea" "ulua" "poolenalena" "kahului_harbor" ];
+      default = [ "wailea" "ulua" "poolenalena" "kahului_harbor" "wailea_pano" ];
       description = "Cams (names in cams.py) to measure, one after another.";
     };
     interval = mkOption {

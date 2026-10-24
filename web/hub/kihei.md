@@ -40,9 +40,9 @@ Kīhei conditions: present, future, and past.
 
 ```js
 import * as fmt from "./components/formatters.js";
-import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast} from "./components/data.js";
+import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchCamImages, fetchWindForecast} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";
-import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard} from "./components/conditions.js";
+import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard, panoCard} from "./components/conditions.js";
 
 const RIDER_NAMES = (await ridersWith("hub")).map(r => [r.rider, r.name]);
 // Top and bottom of a north run.
@@ -59,6 +59,10 @@ const CAMS = [
   {site: "wailea", name: "Grand Wailea cam", url: "https://www.grandwailea.com/grand-wailea-maui-webcam", ...DOWN_COAST, mark: {dx: -2, label: "where the finish usually carries"}},
   {site: "poolenalena", name: "Poʻolenalena cam", url: "https://makenasurf.org/makena-surf-beach-camera/", left: "offshore", right: "inshore"},
 ];
+// AlertWest's panorama from up the hill above Wailea: crops of its water
+// (db/cams/cams.py "wailea_pano"), north to south. Pictures only.
+const PANO = {site: "wailea_pano", name: "Wailea hillside panorama", url: "https://alertwest.live/cam-console/15812",
+  crops: [{kind: "kihei", label: "Kīhei to Maʻalaea"}, {kind: "wailea", label: "Wailea coast"}, {kind: "makena", label: "Mākena and Puʻu Ōlaʻi"}]};
 const LIVE_STALE = 15 * 60e3;
 const HOURS = 6;
 
@@ -90,6 +94,7 @@ const cams = await Promise.all(CAMS.map(async c => {
   const readings = (await fetchCamReadings(c.site, camDays)).filter(d => d.ts <= Date.now());
   return {...c, readings};
 }));
+const pano = {...PANO, shots: (await fetchCamImages(PANO.site, camDays)).filter(d => d.ts <= Date.now())};
 // Forecasts for today and the coming week, and the top station since
 // before sunrise for the forecast card.
 const forecastRows = await fetchWindForecast("kihei", d3.range(8).map(k => hstDay(Date.now() + k * 86400e3)));
@@ -124,6 +129,8 @@ const top = stations[0].rows.at(-1);
 
 <div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site], {resize}))}</div>
 
+<div class="grid grid-cols-1 kihei-col">${panoCard(pano)}</div>
+
 <div class="section-head" id="forecast"><h2>Forecast</h2><span class="muted">models, not readings</span></div>
 
 <div class="grid grid-cols-1 kihei-col">${(() => {
@@ -142,7 +149,7 @@ const top = stations[0].rows.at(-1);
 ```js
 // The cards above load their data after the browser has jumped to a #forecast
 // link, so jump again once they're in (only the first time; the wind refreshes).
-cams, similar;
+cams, pano, similar;
 if (location.hash && !window.hashJumped) {
   window.hashJumped = true;
   requestAnimationFrame(() => document.getElementById(location.hash.slice(1))?.scrollIntoView());

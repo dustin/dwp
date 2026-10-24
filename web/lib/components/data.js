@@ -359,6 +359,15 @@ export async function fetchCamReadings(site, days) {
     .sort((a, b) => a.ts - b.ts);
 }
 
+// A cam's images over days (HST, from cam_images) with no motion readings,
+// like the AlertWest panorama crops: [{ts, images: kind -> URL}], oldest first.
+export async function fetchCamImages(site, days) {
+  const rows = (await Promise.all(days.map(day => fetchCsvForDay('cam_images', site, day, camRow)))).flat();
+  return d3.groups(rows, d => +d.ts)
+    .map(([ts, imgs]) => ({ts: new Date(ts), images: Object.fromEntries(imgs.map(i => [i.kind, `https://${DATAHOST}/${i.key}`]))}))
+    .sort((a, b) => a.ts - b.ts);
+}
+
 // live/wind.json, which matrix-bot replaces as the stations' MQTT feed
 // reports (see db/bot/mqtt_weather.py): {stations: site -> readings, oldest
 // first, over the last 24 hours; rating: Node-RED's latest run rating
