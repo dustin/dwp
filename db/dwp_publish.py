@@ -197,7 +197,10 @@ def duckdb(sql, json_out=False, cmd=None):
 def last_json(out):
     """The last JSON array in duckdb's output: the init file's statements
     print their own result sets first, and DuckDB 2.0 may print warnings
-    ahead of them, so skip everything up to the final result."""
+    ahead of them, or even inside a result's opening bracket (a WARNING:
+    block running to a blank line), so drop those and skip everything up
+    to the final result."""
+    out = re.sub(r"WARNING:.*?\n\s*\n", "", out, flags=re.S)
     dec, i, rows = json.JSONDecoder(), 0, None
     while (i := out.find("[", i)) >= 0:
         try:
