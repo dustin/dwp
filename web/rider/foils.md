@@ -30,6 +30,11 @@ const totals = {
   max_dist: d3.max(runCsv, d => d.max_distance)
 };
 
+totals.foil_time = d3.sum(runCsv, d => d.duration_on_foil);
+totals.foil_dist = d3.sum(runCsv, d => d.distance_on_foil) / 1000;
+totals.foil_speed = d3.mean(runCsv, foilSpeed);
+totals.best_foil_speed = bestBy(runCsv, foilSpeed);
+
 totals.max_speed_id = runCsv.find(d => d.max_speed_kmh === totals.max_speed).id;
 totals.max_speed_1k_id = runCsv.find(d => d.max_speed_1k === totals.max_speed_1k).id;
 totals.longest_seg_id = runCsv.find(d => d.longest_segment_distance === totals.longest_seg).id;
@@ -41,6 +46,13 @@ function bestOf(rows, field) {
   return rows.reduce((best, d) => (d[field] > (best?.[field] ?? -Infinity) ? d : best), null);
 }
 
+// Average speed while up on foil, kph (achievements.js foil_speed).
+const foilSpeed = d => d.duration_on_foil > 0 ? 3.6 * d.distance_on_foil / d.duration_on_foil : undefined;
+
+function bestBy(rows, f) {
+  return rows.reduce((best, d) => (f(d) > (best ? f(best) : -Infinity) ? d : best), null);
+}
+
 const foilStats = new Map(foils.map(f => {
   const rows = runCsv.filter(d => d.foil === f);
   return [f, {
@@ -50,6 +62,10 @@ const foilStats = new Map(foils.map(f => {
     paddle_ups: d3.sum(rows, d => d.paddle_up_count),
     avg_speed: d3.mean(rows, d => d.avg_speed_kmh),
     pct_dist_on_foil: d3.mean(rows, d => d.pct_dist_on_foil),
+    foil_time: d3.sum(rows, d => d.duration_on_foil),
+    foil_dist: d3.sum(rows, d => d.distance_on_foil) / 1000,
+    foil_speed: d3.mean(rows, foilSpeed),
+    best_foil_speed: bestBy(rows, foilSpeed),
     max_speed: bestOf(rows, "max_speed_kmh"),
     max_speed_1k: bestOf(rows, "max_speed_1k"),
     longest_seg: bestOf(rows, "longest_segment_distance"),
@@ -119,10 +135,24 @@ function foilBreakdown(items) {
     })))}
   </div>
   <div class="card">
+    <h2>Paddle Ups</h2>
+    <span class="big">${fmt.comma(totals.paddle_ups)}</span>
+    ${foilBreakdown(foils.map(f => ({
+      foil: f, value: foilStats.get(f).paddle_ups, text: fmt.comma(foilStats.get(f).paddle_ups)
+    })))}
+  </div>
+  <div class="card">
     <h2>Total Time</h2>
     <span class="big">${fmt.seconds(totals.time)}</span>
     ${foilBreakdown(foils.map(f => ({
       foil: f, value: foilStats.get(f).time, text: fmt.seconds(foilStats.get(f).time)
+    })))}
+  </div>
+  <div class="card">
+    <h2>Time on Foil</h2>
+    <span class="big">${fmt.seconds(totals.foil_time)}</span>
+    ${foilBreakdown(foils.map(f => ({
+      foil: f, value: foilStats.get(f).foil_time, text: fmt.seconds(foilStats.get(f).foil_time)
     })))}
   </div>
   <div class="card">
@@ -133,38 +163,11 @@ function foilBreakdown(items) {
     })))}
   </div>
   <div class="card">
-    <h2>Paddle Ups</h2>
-    <span class="big">${fmt.comma(totals.paddle_ups)}</span>
+    <h2>Distance on Foil</h2>
+    <span class="big">${fmt.comma(totals.foil_dist.toFixed(2))} km</span>
     ${foilBreakdown(foils.map(f => ({
-      foil: f, value: foilStats.get(f).paddle_ups, text: fmt.comma(foilStats.get(f).paddle_ups)
+      foil: f, value: foilStats.get(f).foil_dist, text: fmt.comma(foilStats.get(f).foil_dist.toFixed(2)) + " km"
     })))}
-  </div>
-
-  <div class="card">
-    <h2>Max Speed</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_id}">
-        ${totals.max_speed.toFixed(2)} kph</a>`}</span>
-    ${foilBreakdown(foils.map(f => {
-      const best = foilStats.get(f).max_speed;
-      return best ? {
-        foil: f, value: best.max_speed_kmh,
-        text: `${best.max_speed_kmh.toFixed(2)} kph`,
-        href: `/run.html?id=${best.id}`
-      } : { foil: f, value: null };
-    }))}
-  </div>
-  <div class="card">
-    <h2>Best 1k Pace</h2>
-    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_1k_id}">
-        ${fmt.pace(totals.max_speed_1k)}</a>`}</span>
-    ${foilBreakdown(foils.map(f => {
-      const best = foilStats.get(f).max_speed_1k;
-      return best ? {
-        foil: f, value: best.max_speed_1k,
-        text: fmt.pace(best.max_speed_1k),
-        href: `/run.html?id=${best.id}`
-      } : { foil: f, value: null };
-    }))}
   </div>
   <div class="card">
     <h2>Longest Continuous Foiling Segment</h2>
@@ -188,6 +191,53 @@ function foilBreakdown(items) {
       return best ? {
         foil: f, value: best.max_distance,
         text: (best.max_distance / 1000).toFixed(2) + " km",
+        href: `/run.html?id=${best.id}`
+      } : { foil: f, value: null };
+    }))}
+  </div>
+  <div class="card">
+    <h2>Max Speed</h2>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_id}">
+        ${totals.max_speed.toFixed(2)} kph</a>`}</span>
+    ${foilBreakdown(foils.map(f => {
+      const best = foilStats.get(f).max_speed;
+      return best ? {
+        foil: f, value: best.max_speed_kmh,
+        text: `${best.max_speed_kmh.toFixed(2)} kph`,
+        href: `/run.html?id=${best.id}`
+      } : { foil: f, value: null };
+    }))}
+  </div>
+  <div class="card">
+    <h2>Avg Foiling Speed</h2>
+    <span class="big">${totals.foil_speed.toFixed(2)} kph</span>
+    ${foilBreakdown(foils.map(f => {
+      const v = foilStats.get(f).foil_speed;
+      return { foil: f, value: v, text: v != null ? `${v.toFixed(2)} kph` : "" };
+    }))}
+  </div>
+  <div class="card">
+    <h2>Best Avg Foiling Speed</h2>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.best_foil_speed.id}">
+        ${foilSpeed(totals.best_foil_speed).toFixed(2)} kph</a>`}</span>
+    ${foilBreakdown(foils.map(f => {
+      const best = foilStats.get(f).best_foil_speed;
+      return best ? {
+        foil: f, value: foilSpeed(best),
+        text: `${foilSpeed(best).toFixed(2)} kph`,
+        href: `/run.html?id=${best.id}`
+      } : { foil: f, value: null };
+    }))}
+  </div>
+  <div class="card">
+    <h2>Best 1k Pace</h2>
+    <span class="big">${htl.html`<a href="/run.html?id=${totals.max_speed_1k_id}">
+        ${fmt.pace(totals.max_speed_1k)}</a>`}</span>
+    ${foilBreakdown(foils.map(f => {
+      const best = foilStats.get(f).max_speed_1k;
+      return best ? {
+        foil: f, value: best.max_speed_1k,
+        text: fmt.pace(best.max_speed_1k),
         href: `/run.html?id=${best.id}`
       } : { foil: f, value: null };
     }))}
