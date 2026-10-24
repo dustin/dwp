@@ -18,7 +18,7 @@ import {partitionReading, spectralPartitions} from "./components/spectral-partit
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes, fetchCamReport} from "./components/data.js";
+import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes, fetchCamReport, fetchPanoReport} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 
@@ -305,14 +305,33 @@ wind && wind.length > 0
 
 ```js
 const camReport = await fetchCamReport(runMeta, runCsv);
+const panoReport = await fetchPanoReport(runMeta, runCsv);
 ```
 
 <div>${camReport ? camCard(camReport) : ""}</div>
+
+<div>${panoReport.length ? panoCard(panoReport) : ""}</div>
 
 ```js
 // The Wailea cam's water motion near when the run passed it
 // (fetchCamReport). dx < 0 is right to left in the picture: down the coast
 // toward Makena, the way a north run goes.
+// The hillside panorama's crops the run went through (fetchPanoReport),
+// each from about when the rider was in it.
+function panoCard(shots) {
+  return html`<div class="card">
+    <h2><a href="https://alertwest.live/cam-console/15812" target="_blank">Wailea hillside panorama</a></h2>
+    ${shots.map(s => {
+      const mins = Math.round((s.ts - s.at) / 60000);
+      const when = mins === 0 ? "as you went through" : `${Math.abs(mins)} min ${mins < 0 ? "before" : "after"} you went through`;
+      return html`<div style="margin-top: 0.5rem">
+        <div style="color: var(--theme-foreground-muted); font-size: 0.85em">${s.label}, ${fmt.clock(s.ts)} (${when})</div>
+        <a href=${s.url} target="_blank"><img src=${s.url} alt="${s.label} from the hillside panorama" style="width: 100%; border-radius: 4px; margin-top: 0.15rem"></a>
+      </div>`;
+    })}
+  </div>`;
+}
+
 function camCard({reading: r, images, at, passed}) {
   const mins = Math.round((r.ts - at) / 60000);
   const when = mins === 0 ? "as you passed" : `${Math.abs(mins)} min ${mins < 0 ? "before" : "after"} ${passed ? "you passed" : "you finished"}`;

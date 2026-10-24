@@ -345,6 +345,45 @@ export async function fetchCamReport(meta, track) {
   };
 }
 
+// AlertWest's panorama from the hill above Wailea (db/cams/cams.py
+// "wailea_pano") and the compass wedge each crop of it looks along, from
+// landmarks in the panorama (Puʻu Ōlaʻi, the Kaheawa turbines; about ±2°).
+export const WAILEA_PANO = {lat: 20.681792, lon: -156.413713, crops: [
+  {kind: 'kihei', label: 'Kīhei to Maʻalaea', from: 292, to: 333},
+  {kind: 'wailea', label: 'Wailea coast', from: 227, to: 292},
+  {kind: 'makena', label: 'Mākena and Puʻu Ōlaʻi', from: 207, to: 227},
+]};
+const PANO_RANGE_M = 15000;
+const PANO_WINDOW_MS = 15 * 60 * 1000;
+
+function bearing(from, to) {
+  const r = Math.PI / 180, φ1 = from.lat * r, φ2 = to.lat * r, dλ = (to.lon - from.lon) * r;
+  const y = Math.sin(dλ) * Math.cos(φ2);
+  const x = Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(dλ);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+
+// The panorama crops a run's track went through: for each crop whose wedge
+// the track entered (within PANO_RANGE_M of the cam), the image nearest the
+// middle of its time there, no further than PANO_WINDOW_MS away.
+// [{kind, label, ts, at, url}], north to south; empty when none.
+export async function fetchPanoReport(meta, track) {
+  if (!track?.length || !track[0].ts) return [];
+  const images = await fetchCsvForDay('cam_images', 'wailea_pano', fmt.date(meta.ts), camRow);
+  if (!images.length) return [];
+  return WAILEA_PANO.crops.flatMap(c => {
+    const inside = track.filter(d => {
+      const b = bearing(WAILEA_PANO, d);
+      return b >= c.from && b < c.to && d3.geoDistance([d.lon, d.lat], [WAILEA_PANO.lon, WAILEA_PANO.lat]) * 6371e3 <= PANO_RANGE_M;
+    });
+    if (!inside.length) return [];
+    const at = inside[Math.floor(inside.length / 2)].ts;
+    const img = d3.least(images.filter(d => d.kind === c.kind), d => Math.abs(d.ts - at));
+    if (!img || Math.abs(img.ts - at) > PANO_WINDOW_MS) return [];
+    return [{kind: c.kind, label: c.label, ts: img.ts, at, url: `https://${DATAHOST}/${img.key}`}];
+  });
+}
+
 // A cam's readings over the given HST days (cam_motion), oldest first, each
 // with the images taken with it (kind -> URL, from cam_images).
 export async function fetchCamReadings(site, days) {
