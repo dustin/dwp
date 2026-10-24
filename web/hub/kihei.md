@@ -152,7 +152,9 @@ if (location.hash && !window.hashJumped) {
 ## Runs in wind like now
 
 ```js
-const similar = similarRuns(allRuns, "Kihei", top);
+// Only the last year's runs: older ones are too stale to compare with.
+const yearAgo = Date.now() - 365 * 86400e3;
+const similar = similarRuns(allRuns.filter(d => d.ts >= yearAgo), "Kihei", top);
 ```
 
 ${similarRunsCard(similar, top, {station: "Kīhei", region: "Kīhei"})}
