@@ -84,6 +84,7 @@ function summarize(slug, runs) {
     slug, name: riderName(slug), runs,
     first: d3.least(runs, d => d.ts), latest: d3.greatest(runs, d => d.ts),
     total: {n: runs.length, km: d3.sum(runs, d => d.distance_km), h: d3.sum(runs, d => d.duration_sec) / 3600,
+      foilKm: d3.sum(runs, d => d.distance_on_foil) / 1000, foilH: d3.sum(runs, d => d.duration_on_foil) / 3600,
       paddleUps: d3.sum(runs, d => d.paddle_up_count), avgKm: d3.mean(runs, d => d.distance_km),
       onFoil: d3.sum(runs, d => d.distance_on_foil) / 1000 / d3.sum(runs, d => d.distance_km)},
     year: {n: year.length, km: d3.sum(year, d => d.distance_km), h: d3.sum(year, d => d.duration_sec) / 3600},
@@ -148,7 +149,9 @@ const n = v => fmt.comma(v);
     <div class="vs-head"><span style=${`color:${colorA}`}>${A.name}</span><span></span><span style=${`color:${colorB}`}>${B.name}</span></div>
     ${versusRow("Runs", A.total.n, B.total.n, n)}
     ${versusRow("Distance", A.total.km, B.total.km, km)}
+    ${versusRow("Distance on foil", A.total.foilKm, B.total.foilKm, km)}
     ${versusRow("Time on water", A.total.h, B.total.h, hrs)}
+    ${versusRow("Time on foil", A.total.foilH, B.total.foilH, hrs)}
     ${versusRow("Paddle ups", A.total.paddleUps, B.total.paddleUps, n)}
     ${versusRow("Routes ridden", A.spotCount, B.spotCount, n)}
     <div class="vs-foot">Since ${A.first ? fmt.mmYYYY(A.first.ts) : "–"} · since ${B.first ? fmt.mmYYYY(B.first.ts) : "–"}</div>
