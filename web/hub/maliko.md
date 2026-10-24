@@ -202,8 +202,11 @@ if (location.hash && !window.hashJumped) {
 ## Runs in conditions similar to now
 
 ```js
-const swellLike = similarBuoyRuns(nsRuns, runBuoy, buoyNow, top);
-const windLike = similarRuns(nsRuns, "Maui North Shore", top).map(d => ({...d, buoy: runBuoy.get(d.id)?.primary}));
+// Only the last year's runs: older ones are too stale to compare with.
+const yearAgo = Date.now() - 365 * 86400e3;
+const recentRuns = nsRuns.filter(d => d.ts >= yearAgo);
+const swellLike = similarBuoyRuns(recentRuns, runBuoy, buoyNow, top);
+const windLike = similarRuns(recentRuns, "Maui North Shore", top).map(d => ({...d, buoy: runBuoy.get(d.id)?.primary}));
 const withBuoy = nsRuns.filter(d => runBuoy.get(d.id)?.primary).length;
 ```
 
