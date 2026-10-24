@@ -36,7 +36,7 @@ toc: false
 
 # Kīhei
 
-What the run is doing now (the rating, the Kīhei station at Sugar Beach at the top, Wailea's station and the cams at the bottom), then the forecast for the rest of the day and the coming afternoons, then past runs in wind like now.
+Kīhei conditions: present, future, and past.
 
 ```js
 import * as fmt from "./components/formatters.js";
