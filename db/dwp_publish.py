@@ -16,7 +16,9 @@ Cam readings and images (cam_motion and cam_images, which cam-ingest
 fills) publish per site and day like the conditions, under cam_motion/ and
 cam_images/. Before them, every image cam_images lists that the manifest
 doesn't have goes to S3 at its key from the local file it names, once,
-cached a year (images never change). Wind forecasts (wind_forecast, from
+cached a year (images never change). Once an image has been in S3 since an
+earlier publish and its local copy is over 14 days old (DWP_IMAGE_KEEP_DAYS),
+publish deletes the local copy. Wind forecasts (wind_forecast, from
 forecast-ingest) publish the same way under wind_forecast/. publish only
 reads the lake.
 
@@ -102,6 +104,8 @@ GZ_CSV = ["Content-Encoding: gzip", "Content-Type: text/csv; charset=utf-8"]
 SHORT = GZ_CSV + ["Cache-Control: public, max-age=300"]
 LONG = GZ_CSV + ["Cache-Control: public, max-age=31536000"]
 IMAGE = ["Content-Type: image/jpeg", "Cache-Control: public, max-age=31536000, immutable"]
+# Local cam images already in S3 are deleted once this old (DWP_IMAGE_KEEP_DAYS).
+IMAGE_KEEP_DAYS = float(os.environ.get("DWP_IMAGE_KEEP_DAYS") or 14)
 
 
 class Table:
@@ -490,6 +494,7 @@ def publish(manifest, dry_run=False):
         upload(stage_dir, new, IMAGE, dry_run)
         if not dry_run:
             manifest.record(record)
+            prune_images(images, have)
 
         invalidate = []
         # Tracks and conditions first, then the lists that point at tracks.
@@ -591,6 +596,23 @@ def remove(keys, dry_run):
     if r.returncode != 0:
         die(f"rclone delete failed (exit {r.returncode})")
     log(f"deleted {len(keys)} orphans")
+
+
+def prune_images(images, have):
+    """Delete local cam images an earlier publish put in S3 (so they're in
+    the manifest) once they're over IMAGE_KEEP_DAYS old. One that never made
+    it to S3 stays, however old."""
+    cutoff = time.time() - IMAGE_KEEP_DAYS * 86400
+    gone = 0
+    for k, src in images.items():
+        try:
+            if k in have and os.path.getmtime(src) < cutoff:
+                os.unlink(src)
+                gone += 1
+        except FileNotFoundError:
+            pass
+    if gone:
+        log(f"pruned {gone} uploaded cam images over {IMAGE_KEEP_DAYS:g} days old")
 
 
 def locked(path):
