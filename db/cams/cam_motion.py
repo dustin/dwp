@@ -241,9 +241,13 @@ def measure(name, a):
 
 def pano_at(cam, t=None):
     """The AlertWest cam's panorama taken nearest before unix time t (the
-    latest without t): (taken as a UTC datetime, image URL)."""
+    latest without t): (taken as a UTC datetime, image URL), or None when
+    the archive has nothing then (it starts in early October 2024)."""
     cid = str(cam["alertwest"])
-    cur = json.loads(get(ALERTWEST, {"camId": cid, "timestamp": "" if t is None else int(t)}))["data"][cid]["cur"]
+    data = json.loads(get(ALERTWEST, {"camId": cid, "timestamp": "" if t is None else int(t)}))["data"]
+    if not isinstance(data, dict) or not data.get(cid, {}).get("cur"):
+        return None  # {"data": [], "err": "Incomplete data found"}
+    cur = data[cid]["cur"]
     taken = datetime.fromtimestamp(int(cur["cmlg_timestamp"]), timezone.utc)
     return taken, f"{ALERTWEST_IMG}/{cid}/{taken:%Y/%m/%d}/{cur['cmlg_img_name']}"
 
@@ -274,7 +278,10 @@ def pano(name, a):
     as <stamp>-<kind>.jpg in its --log dir, stamped when the panorama was
     taken. Without --log, just say which panorama it would crop."""
     cam = CAMS[name]
-    taken, url = pano_at(cam)
+    got = pano_at(cam)
+    if not got:
+        raise OSError("no panorama")
+    taken, url = got
     if time.time() - taken.timestamp() > PANO_STALE:
         raise OSError(f"latest panorama is from {taken:%Y-%m-%d %H:%M}Z")
     print(name, taken.strftime("%Y-%m-%dT%H%M%SZ"), url)
@@ -333,15 +340,19 @@ def backfill(name, d, since):
                     went.append(kind)
             print(f"{rider} {run['date']} {run['time']}: {', '.join(went) or '-'}", flush=True)
     wrote = missed = 0
-    for at, kinds in sorted(wants.items()):
+    for i, (at, kinds) in enumerate(sorted(wants.items()), 1):
+        when = f"{datetime.fromtimestamp(at, timezone.utc):%Y-%m-%d %H:%M}Z"
         try:
-            taken, url = pano_at(cam, at + 60)  # the API gives the one before
-            if abs(taken.timestamp() - at) > PANO_WINDOW:
+            got = pano_at(cam, at + 60)  # the API gives the one before
+            if not got or abs(got[0].timestamp() - at) > PANO_WINDOW:
+                print(f"[{i}/{len(wants)}] {when}: no panorama", flush=True)
                 missed += 1
                 continue
-            wrote += save_crops(cam, d, taken, url, kinds)
+            n = save_crops(cam, d, *got, kinds)
+            wrote += n
+            print(f"[{i}/{len(wants)}] {when}: {n} crop{'' if n == 1 else 's'}", flush=True)
         except Exception as e:
-            print(f"{datetime.fromtimestamp(at, timezone.utc):%Y-%m-%d %H:%M}Z: {e!r}", file=sys.stderr)
+            print(f"[{i}/{len(wants)}] {when}: {e!r}", file=sys.stderr, flush=True)
             missed += 1
         time.sleep(0.5)
     print(f"{name}: {wrote} crops written, {missed} passes without a panorama")
