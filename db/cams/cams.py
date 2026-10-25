@@ -16,7 +16,8 @@ Boxes are (x, y, w, h) in the cam's frame (Ozolio 1920x1080, Brownrice 1280x720)
 
 A cam with "alertwest" (an AlertWest camera id) isn't a stream: it's the
 panorama that camera stitches about every minute, too far off for motion, so
-cam_motion.py only keeps "crops" of it, {kind: box}, as <stamp>-<kind>.jpg.
+cam_motion.py only keeps "crops" of it, {kind: box}, as <stamp>-<kind>.jpg;
+"at" is where it is and "wedges" what each crop covers, for --backfill.
 
 dx < 0 (right to left in the picture) is down the coast toward Mākena on
 Wailea and Ulua. Poʻolenalena looks up the coast, so south is toward the
@@ -64,8 +65,13 @@ CAMS = {
     # right third: Mākena and Puʻu Ōlaʻi, the Wailea coast (a pole crosses
     # it), and Kīhei up to Maʻalaea, thin and far.
     "wailea_pano": {
-        "alertwest": 15812,
+        "alertwest": 15812, "at": (20.681792, -156.413713),
         "crops": {"makena": (7100, 540, 580, 120), "wailea": (7680, 560, 1920, 230),
                   "kihei": (9600, 650, 1200, 120)},
+        # The compass wedge (degrees from the cam) each crop looks along, from
+        # landmarks: Puʻu Ōlaʻi 210.8° at x 7200, the Kaheawa turbines 312.9°
+        # at x 10180 (29.4 px/°, about ±2°). Same as WAILEA_PANO in
+        # web/lib/components/data.js; --backfill uses them.
+        "wedges": {"kihei": (292, 333), "wailea": (227, 292), "makena": (207, 227)},
     },
 }

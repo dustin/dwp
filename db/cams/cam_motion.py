@@ -20,6 +20,10 @@ in its --log dir as <stamp>-<kind>.jpg. Run it every 10 min in daylight
 (launchd/cron); the streams are up 05:00-19:30 HST.
 
     cam-motion --mqtt bee1 [--cam wailea --cam ulua] [--log ~/.cache/{cam}-motion] [--segments 3]
+    cam-motion --cam wailea_pano --backfill 2024-10-01 --log ~/.cache/{cam}-motion
+
+--backfill fills in an AlertWest cam's crops for past Kihei runs from its
+panorama archive (back to at least 2024-10), then run cam-ingest and publish.
 
 Packaged with OpenCV and numpy in default.nix (`cam-motion`); hm-module.nix runs it.
 """
@@ -35,6 +39,9 @@ RELAY = "https://relay.ozolio.com/ses.api"
 ALERTWEST = "https://alertwest.live/api/panorama/list/byCamId"
 ALERTWEST_IMG = "https://img.cdn.prod.alertwest.com/data/img"
 PANO_STALE = 3600  # s; an older panorama means the camera is down
+PANO_RANGE_M = 15000  # backfill: as the run page's fetchPanoReport
+PANO_WINDOW = 15 * 60  # s
+DATAHOST = "d2qwe1xndvncw9.cloudfront.net"  # the site's published data
 UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
 LIGHT_MIN = 9  # kn; under this a side is LIGHT in the run rating (floor 12 - 3)
 
@@ -232,33 +239,112 @@ def measure(name, a):
         publish(a.mqtt, topic, line)
 
 
+def pano_at(cam, t=None):
+    """The AlertWest cam's panorama taken nearest before unix time t (the
+    latest without t): (taken as a UTC datetime, image URL)."""
+    cid = str(cam["alertwest"])
+    cur = json.loads(get(ALERTWEST, {"camId": cid, "timestamp": "" if t is None else int(t)}))["data"][cid]["cur"]
+    taken = datetime.fromtimestamp(int(cur["cmlg_timestamp"]), timezone.utc)
+    return taken, f"{ALERTWEST_IMG}/{cid}/{taken:%Y/%m/%d}/{cur['cmlg_img_name']}"
+
+
+def save_crops(cam, d, taken, url, kinds=None):
+    """Crop the panorama at url into d as <stamp>-<kind>.jpg (cams.py
+    "crops"; only kinds, if given), skipping crops already there. The
+    number of crops written."""
+    import cv2
+    import numpy as np
+    stamp = taken.strftime("%Y-%m-%dT%H%M%SZ")
+    paths = {k: os.path.join(d, f"{stamp}-{k}.jpg") for k in cam["crops"] if kinds is None or k in kinds}
+    todo = {k: p for k, p in paths.items() if not os.path.exists(p)}
+    if not todo:
+        return 0
+    img = cv2.imdecode(np.frombuffer(get(url), np.uint8), cv2.IMREAD_COLOR)
+    if img is None:
+        raise OSError(f"can't decode {url}")
+    os.makedirs(d, exist_ok=True)
+    for k, p in todo.items():
+        x, y, w, h = cam["crops"][k]
+        cv2.imwrite(p, img[y:y + h, x:x + w], [cv2.IMWRITE_JPEG_QUALITY, 90])
+    return len(todo)
+
+
 def pano(name, a):
     """Keep the crops of an AlertWest cam's latest panorama (cams.py "crops")
     as <stamp>-<kind>.jpg in its --log dir, stamped when the panorama was
     taken. Without --log, just say which panorama it would crop."""
-    import cv2
-    import numpy as np
     cam = CAMS[name]
-    cid = str(cam["alertwest"])
-    cur = json.loads(get(ALERTWEST, {"camId": cid, "timestamp": ""}))["data"][cid]["cur"]
-    taken = datetime.fromtimestamp(int(cur["cmlg_timestamp"]), timezone.utc)
+    taken, url = pano_at(cam)
     if time.time() - taken.timestamp() > PANO_STALE:
         raise OSError(f"latest panorama is from {taken:%Y-%m-%d %H:%M}Z")
-    stamp = taken.strftime("%Y-%m-%dT%H%M%SZ")
-    url = f"{ALERTWEST_IMG}/{cid}/{taken:%Y/%m/%d}/{cur['cmlg_img_name']}"
-    print(name, stamp, url)
-    if not a.log:
-        return
-    d = os.path.expanduser(a.log.format(cam=name))
-    os.makedirs(d, exist_ok=True)
-    paths = {k: os.path.join(d, f"{stamp}-{k}.jpg") for k in cam["crops"]}
-    if all(os.path.exists(p) for p in paths.values()):
-        return  # no new panorama since last round
-    img = cv2.imdecode(np.frombuffer(get(url), np.uint8), cv2.IMREAD_COLOR)
-    if img is None:
-        raise OSError(f"can't decode {url}")
-    for k, (x, y, w, h) in cam["crops"].items():
-        cv2.imwrite(paths[k], img[y:y + h, x:x + w], [cv2.IMWRITE_JPEG_QUALITY, 90])
+    print(name, taken.strftime("%Y-%m-%dT%H%M%SZ"), url)
+    if a.log:
+        save_crops(cam, os.path.expanduser(a.log.format(cam=name)), taken, url)
+
+
+def published(path):
+    """Rows of a CSV the site publishes (gzipped or not), as dicts."""
+    import csv, gzip, io
+    body = get(f"https://{DATAHOST}/{path}")
+    if body[:2] == b"\x1f\x8b":
+        body = gzip.decompress(body)
+    return list(csv.DictReader(io.StringIO(body.decode())))
+
+
+def bearing(lat1, lon1, lat2, lon2):
+    import math
+    p1, p2, dl = math.radians(lat1), math.radians(lat2), math.radians(lon2 - lon1)
+    y = math.sin(dl) * math.cos(p2)
+    x = math.cos(p1) * math.sin(p2) - math.sin(p1) * math.cos(p2) * math.cos(dl)
+    return (math.degrees(math.atan2(y, x)) + 360) % 360
+
+
+def metres(lat1, lon1, lat2, lon2):
+    import math
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    a = (math.sin((p2 - p1) / 2) ** 2
+         + math.cos(p1) * math.cos(p2) * math.sin(math.radians(lon2 - lon1) / 2) ** 2)
+    return 2 * 6371e3 * math.asin(math.sqrt(a))
+
+
+def backfill(name, d, since):
+    """Crops of an AlertWest cam's archived panoramas for every published
+    Kihei run since `since` (YYYY-MM-DD), the way the run page picks them
+    (fetchPanoReport in web/lib/components/data.js): for each crop wedge
+    (cams.py "wedges") the track entered within PANO_RANGE_M of the cam,
+    the panorama nearest the middle of its time there, if within
+    PANO_WINDOW. Safe to rerun; cam-ingest and publish take it from there."""
+    cam = CAMS[name]
+    lat, lon = cam["at"]
+    wants = {}  # when (unix s) -> crop kinds
+    for r in published("runs/riders.csv"):
+        rider = r["rider"]
+        for run in published(f"runs/rider={rider}/runs.csv"):
+            if run["region"] != "Kihei" or run["has_track"] != "true" or run["date"] < since:
+                continue
+            track = [(float(p["tsi"]), float(p["lat"]), float(p["lon"]))
+                     for p in published(f"runs/rider={rider}/dwid={run['id']}/data.csv") if p["lat"]]
+            went = []
+            for kind, (lo, hi) in cam["wedges"].items():
+                inside = [t for t, la, lo_ in track
+                          if lo <= bearing(lat, lon, la, lo_) < hi and metres(lat, lon, la, lo_) <= PANO_RANGE_M]
+                if inside:
+                    wants.setdefault(inside[len(inside) // 2], set()).add(kind)
+                    went.append(kind)
+            print(f"{rider} {run['date']} {run['time']}: {', '.join(went) or '-'}", flush=True)
+    wrote = missed = 0
+    for at, kinds in sorted(wants.items()):
+        try:
+            taken, url = pano_at(cam, at + 60)  # the API gives the one before
+            if abs(taken.timestamp() - at) > PANO_WINDOW:
+                missed += 1
+                continue
+            wrote += save_crops(cam, d, taken, url, kinds)
+        except Exception as e:
+            print(f"{datetime.fromtimestamp(at, timezone.utc):%Y-%m-%d %H:%M}Z: {e!r}", file=sys.stderr)
+            missed += 1
+        time.sleep(0.5)
+    print(f"{name}: {wrote} crops written, {missed} passes without a panorama")
 
 
 def main():
@@ -269,8 +355,17 @@ def main():
     ap.add_argument("--log", help="directory for motion.jsonl and overlays; {cam} is the cam's name")
     ap.add_argument("--segments", type=int, default=3)
     ap.add_argument("--any-time", action="store_true", help="run outside 05:30-19:00 HST too")
+    ap.add_argument("--backfill", metavar="YYYY-MM-DD",
+                    help="instead: crops of AlertWest cams' archived panoramas for Kihei runs since then (needs --log)")
     a = ap.parse_args()
     names = a.cam or sorted(CAMS)
+    if a.backfill:
+        if not a.log:
+            ap.error("--backfill needs --log")
+        for name in names:
+            if CAMS[name].get("alertwest"):
+                backfill(name, os.path.expanduser(a.log.format(cam=name)), a.backfill)
+        return
     if a.log and len(names) > 1 and "{cam}" not in a.log:
         ap.error("--log needs {cam} in it when measuring more than one cam")
     hst = datetime.fromtimestamp(time.time() - 10 * 3600, timezone.utc)
