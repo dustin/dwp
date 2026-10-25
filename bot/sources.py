@@ -22,7 +22,7 @@ BACK_AFTER = 2  # new readings that make a source back online (the buoy's are ho
 SOURCES = {
     "pauwela": ("Pauwela buoy", 3 * 3600, 0, 24, ""),
     "kihei": ("Kīhei wind", 30 * 60, 7, 18, ""),
-    "hookipa": ("Hoʻokipa wind", 30 * 60, 7, 18, ""),
+    "hookipa": ("Hoʻokipa wind", 60 * 60, 7, 18, ""),
     "kanaha": ("Kanaha wind", 30 * 60, 7, 18, ""),
     "wailea": ("Wailea wind", 30 * 60, 7.5, 17.5, ""),
     # The cams are measured every 10 min from 05:30 to 19:00, light wind
