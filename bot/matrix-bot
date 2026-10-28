@@ -143,6 +143,7 @@ HELP_ANYONE = [
     ("!conditions", "best bet and run scores, latest wind, buoys and the Wailea cam (sea and water motion), with the cam frame"),
     ("!conditions chart", "the same, plus each buoy's spectrum chart"),
     ("!forecast", "forecast run picks: best now, best overall, Kīhei and Maliko, and the next few days"),
+    ("!alerts", "what this room gets from me, each on or off"),
     ("!help", "this"),
 ]
 HELP_RIDER = [
@@ -178,18 +179,27 @@ HELP_ADMIN = [
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
 RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!ask", "!publish"}
+HELP_ALERTS = [
+    ("!alerts runs off", "stop new-run posts from the 16:00, 18:00 and 23:00 syncs in this room"),
+    ("!alerts sources off", "stop data source alerts (a feed going offline and coming back)"),
+    ("!alerts ratings off", "stop run alerts (worth considering, good, really good, and the drop-off)"),
+    ("!alerts pinned off", "stop the pinned conditions message (and unpin it)"),
+    ("!alerts ratings on", "turn one back on"),
+]
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
-    ("!room 2 alerts off", "per room: alerts (run alerts), pinned (conditions), "
-                           "sources (data going offline), runs (new runs from the 16:00, 18:00 "
-                           "and 23:00 syncs), on or off"),
+    ("!room 2 sources off", "!alerts for another room, by its !rooms number"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "sync", "ask", "publish", "room", "rooms", "retry"]
-ROOM_SETTINGS = {"alerts": "run alerts", "pinned": "pinned conditions",
-                 "sources": "data source alerts", "runs": "new runs from scheduled syncs"}
+COMMANDS = ["conditions", "forecast", "alerts", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "sync", "ask", "publish", "room", "rooms", "retry"]
+ROOM_SETTINGS = {"alerts": "run alerts", "sources": "data source alerts",
+                 "runs": "new runs from scheduled syncs", "pinned": "pinned conditions"}
+# What !alerts and !room call each setting: "ratings" for run alerts, since
+# "!alerts alerts off" reads badly; "alerts" still works.
+SETTING_WORDS = {"ratings": "alerts", **{k: k for k in ROOM_SETTINGS}}
+SETTING_NAMES = {"alerts": "ratings"}
 HELP_ROOM_ADMIN = [
     ("!publish", "publish whatever changed (--dry-run to just look)"),
     ("!publish verify", "check the bucket against the manifest (--fix to repair)"),
@@ -1359,12 +1369,45 @@ class Bot:
             what = ", ".join(f"{v} {'on' if self.on(r, k) else 'off'}"
                              for k, v in ROOM_SETTINGS.items())
             lines.append(f"{i}. {self.room_name(r)}{' (this room)' if r == room else ''}: {what}")
-        self.mx.notice(room, "\n".join(lines + ["Change one with !room N alerts off "
-                                                "(or pinned, sources, runs; on; leave)."]), reply_to=eid)
+        self.mx.notice(room, "\n".join(lines + ["Change one with !room N ratings off "
+                                                "(or sources, runs, pinned; on; leave)."]), reply_to=eid)
+
+    def alerts_command(self, room, sender, eid, words):
+        """!alerts: what room gets; !alerts SETTING on|off changes it (room admins)."""
+        if not words:
+            lines = [f"{'✅' if self.on(room, k) else '⛔'} {v} "
+                     f"(!alerts {SETTING_NAMES.get(k, k)} {'off' if self.on(room, k) else 'on'})"
+                     for k, v in ROOM_SETTINGS.items()]
+            self.mx.notice(room, "\n".join(["This room gets:"] + lines), reply_to=eid)
+        elif len(words) != 2 or words[0] not in SETTING_WORDS or words[1] not in ("on", "off"):
+            self.mx.notice(room, "!alerts takes a setting and on or off, like !alerts sources off "
+                                 "(settings: ratings, sources, runs, pinned)", reply_to=eid)
+        elif not self.room_admin(room, sender):
+            self.mx.notice(room, "Only room admins can change what this room gets.", reply_to=eid)
+        else:
+            self.set_setting(room, eid, room, SETTING_WORDS[words[0]], words[1] == "on")
+
+    def set_setting(self, room, eid, target, key, want):
+        """Turn ROOM_SETTINGS key on or off in target, answering in room."""
+        self.settings.setdefault(target, {})[key] = want
+        save_state(self.settings_file, json.dumps(self.settings))
+        if key == "pinned" and not want:  # take its conditions message down
+            path = self.state_path("pinned", target)
+            pinned = (load_state(path) or "").split(" ")[0]
+            if pinned:
+                try:
+                    self.mx.unpin(target, pinned)
+                except urllib.error.URLError as e:
+                    log(f"unpinning in {target} failed: {e}")
+            if pinned:
+                os.unlink(path)
+        where = "this room" if target == room else self.room_name(target)
+        self.mx.notice(room, f"✅ {ROOM_SETTINGS[key]} {'on' if want else 'off'} in {where}",
+                       reply_to=eid)
 
     def room_command(self, room, eid, words):
-        """!room N (alerts|cam|pinned|sources) (on|off), or !room N leave."""
-        usage = "!room takes a number from !rooms and a setting, like !room 2 alerts off or !room 2 leave"
+        """!room N SETTING (on|off), or !room N leave."""
+        usage = "!room takes a number from !rooms and a setting, like !room 2 sources off or !room 2 leave"
         if not words or not words[0].isdigit() or not 1 <= int(words[0]) <= len(self.rooms):
             self.mx.notice(room, usage, reply_to=eid)
             return
@@ -1378,24 +1421,10 @@ class Bot:
             self.left(target)
             self.mx.notice(room, f"✅ left {name}", reply_to=eid)
             return
-        if len(words) != 3 or words[1] not in ROOM_SETTINGS or words[2] not in ("on", "off"):
+        if len(words) != 3 or words[1] not in SETTING_WORDS or words[2] not in ("on", "off"):
             self.mx.notice(room, usage, reply_to=eid)
             return
-        key, want = words[1], words[2] == "on"
-        self.settings.setdefault(target, {})[key] = want
-        save_state(self.settings_file, json.dumps(self.settings))
-        if key == "pinned" and not want:  # take its conditions message down
-            path = self.state_path("pinned", target)
-            pinned = (load_state(path) or "").split(" ")[0]
-            if pinned:
-                try:
-                    self.mx.unpin(target, pinned)
-                except urllib.error.URLError as e:
-                    log(f"unpinning in {target} failed: {e}")
-            if pinned:
-                os.unlink(path)
-        self.mx.notice(room, f"✅ {ROOM_SETTINGS[key]} {words[2]} in {self.room_name(target)}",
-                       reply_to=eid)
+        self.set_setting(room, eid, target, SETTING_WORDS[words[1]], words[2] == "on")
 
     def save_rooms(self):
         """Keep the rooms joined by invite (the --room ones are always in)."""
@@ -1415,7 +1444,7 @@ class Bot:
                   "someone")
         text = (f"📨 {by} invited me to {where}. A room admin's ✅ here "
                 "and I'll join; I'll answer commands there and post run alerts and "
-                "conditions there too (!rooms to change what it gets).")
+                "conditions there too (!alerts there, or !rooms here, to change what it gets).")
         qid = self.mx.notice(self.rooms[0], text)
         if qid:
             self.invites[qid] = room
@@ -1687,6 +1716,9 @@ class Bot:
             body, html = help_text([("Anyone", HELP_ANYONE)])
             self.mx.notice(room, body, reply_to=eid, html=html)
             return
+        if re.match(r"!alerts\b", text):
+            self.alerts_command(room, sender, eid, text.split()[1:])
+            return
         if room == self.rooms[0] and re.match(r"!rooms?\b", text):
             if not self.room_admin(room, sender):
                 self.mx.notice(room, "Only room admins can change rooms.", reply_to=eid)
@@ -1866,7 +1898,8 @@ class Bot:
                 sections = [("Anyone", HELP_ANYONE),
                             ("Your runs", [h for h in HELP_RIDER if h[0] != "!sync"]),
                             ("Room admins: any rider", HELP_ADMIN),
-                            ("Room admins: publishing", HELP_ROOM_ADMIN)]
+                            ("Room admins: publishing", HELP_ROOM_ADMIN),
+                            ("Room admins: what this room gets", HELP_ALERTS)]
                 if room == self.rooms[0]:
                     sections.append(("Room admins: rooms", HELP_ROOMS))
             body, html = help_text(sections)
