@@ -5,6 +5,8 @@ toc: false
 ---
 
 <style>
+  .buoy-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .buoy-rose { flex: none; color: var(--theme-foreground); }
   .muted { color: var(--theme-foreground-muted); }
   .lead { font-size: 1.6rem; font-weight: 600; line-height: 1.2; }
   .lead .unit { font-size: 1rem; font-weight: normal; color: var(--theme-foreground-muted); }
@@ -44,7 +46,7 @@ import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchC
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS, camCard} from "./components/conditions.js";
 import {snapshotCard} from "./components/buoy-snapshot.js";
-import {directionColor, renderSpectrumHistogram} from "./components/spectrum.js";
+import {directionColor, renderSpectrumHistogram, renderMiniRose} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
 import {renderSwellEnergy} from "./components/swell-energy.js";
 
@@ -118,6 +120,7 @@ const buoyNow = buoyLast && Date.now() - buoyLast.ts < BUOY_FRESH ? buoyLast : n
 const waimeaReadings = (await fetchSwellPartitionWindow("waimea", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []))
   .map(d => ({ts: d.ts, ...d.values.find(v => v.rank === 1)}))
   .filter(d => d.height != null);
+const waimeaSnap = waimeaReadings.length ? await fetchBuoySnapshot(waimeaReadings.at(-1).ts, "waimea").catch(() => null) : null;
 ```
 
 ```js
@@ -128,7 +131,8 @@ const top = station.rows.at(-1);
 
 ```js
 // NDBC's height, period and direction over the last two days of reports.
-function buoyCard(readings, {site = "pauwela", name = "Pauwela buoy", note = ""} = {}) {
+// The rose is the spectrum at the last report (snap), as on the hub's card.
+function buoyCard(readings, {snap = null, site = "pauwela", name = "Pauwela buoy", note = ""} = {}) {
   const last = readings.at(-1);
   if (!last) return html`<div class="card"><h2><a href="buoy/${site}.html">${name}</a></h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
   // Old readings say nothing about now, so only say when the last one was.
@@ -137,7 +141,10 @@ function buoyCard(readings, {site = "pauwela", name = "Pauwela buoy", note = ""}
   const recent = readings.filter(d => d.ts >= +last.ts - 48 * 3600e3);
   return html`<div class="card">
     <h2><a href="buoy/${site}.html">${name}</a> <span class="muted" style="font-weight: normal">${fmt.relativeTime(last.ts)}</span></h2>
-    <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
+    <div class="buoy-head">
+      <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
+      ${snap?.spectrum.length ? html`<div class="buoy-rose">${renderMiniRose(snap.spectrum)}</div>` : ""}
+    </div>
     ${resize(width => Plot.plot({
       width, height: 140, marginLeft: 28, marginRight: 28, marginBottom: 20,
       x: {type: "time", ticks: 6, tickFormat: fmt.timeTick, label: null},
@@ -166,9 +173,9 @@ function buoyCard(readings, {site = "pauwela", name = "Pauwela buoy", note = ""}
 
 <div class="grid grid-cols-1 spot-col">${camCard(harborCam, null, {resize})}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings)}</div>
+<div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings, {snap: buoySnap})}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoyCard(waimeaReadings, {site: "waimea", name: "Waimea Bay buoy (Oʻahu)", note: " NW swell reaches Oʻahu a few hours before Maui."})}</div>
+<div class="grid grid-cols-1 spot-col">${buoyCard(waimeaReadings, {snap: waimeaSnap, site: "waimea", name: "Waimea Bay buoy (Oʻahu)", note: " NW swell reaches Oʻahu a few hours before Maui."})}</div>
 
 <div class="grid grid-cols-1 spot-col">${buoyNow && buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
 
