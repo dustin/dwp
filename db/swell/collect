@@ -1,0 +1,62 @@
+#!/bin/sh -e
+#
+# Collect an NDBC buoy into the lake: its standard readings into swell
+# (stdmet.sql) and its spectra into swell_spectrum and swell_partition
+# (update.sql), the same data Pauwela gets.
+#
+# usage: swell/collect STATION SITE
+#        swell/collect --history STATION SITE
+#   e.g. swell/collect 51201 waimea
+#
+# Run it with the buoy update, every half hour or so: NDBC's realtime files
+# only go back about 45 days. The first run picks up all 45 days of spectra.
+#
+# --history first adds every standard reading NDBC has archived for the
+# station (yearly files, then this year's monthly ones), then does a normal
+# run. Run it once when adding a buoy; running it again only adds what's
+# missing. NDBC doesn't archive these buoys' spectra, so swell_spectrum and
+# swell_partition start with the realtime window.
+#
+# Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
+# elsewhere. Never creates tables: swell, swell_spectrum and swell_partition
+# must already exist.
+
+history=
+if [ "$1" = "--history" ]; then
+    history=1
+    shift
+fi
+if [ $# -ne 2 ]; then
+    echo "usage: $0 [--history] STATION SITE" >&2
+    exit 64
+fi
+station=$1
+site=$2
+
+here=`cd "$(dirname "$0")" && pwd`
+lake=${LAKE:-$HOME/stuff/duck}
+ndbc=https://www.ndbc.noaa.gov/data
+
+files="'$ndbc/realtime2/$station.txt'"
+if [ -n "$history" ]; then
+    archived=$(curl -fsS "$ndbc/historical/stdmet/" |
+        grep -o "\"${station}h[0-9]*\.txt\.gz\"" | tr -d '"' | sort -u |
+        sed "s|^|'$ndbc/historical/stdmet/|; s|\$|'|")
+    # This year's months, by number (1-9, then a-c) or, for the month
+    # just ended, uncompressed. A month the buoy was out has none.
+    for mon in Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec; do
+        month=$(curl -fsS "$ndbc/stdmet/$mon/" |
+            grep -o "\"${station}[0-9a-c]*\.txt\(\.gz\)\{0,1\}\"" | tr -d '"' |
+            sed "s|^|'$ndbc/stdmet/$mon/|; s|\$|'|" || true)
+        archived="$archived $month"
+    done
+    files="$(echo $archived | tr ' ' ','),$files"
+fi
+
+cd "$lake"
+duckdb --init quack-init.sql \
+    -cmd "set variable site = '$site'; set variable files = [$files];" \
+    < "$here/stdmet.sql"
+duckdb --init quack-init.sql \
+    -cmd "set variable station = '$station'; set variable site = '$site';" \
+    < "$here/update.sql"
