@@ -107,9 +107,9 @@ function windCard({site, name, rows, live, run}) {
 }
 
 function buoyCard(b, lastTs) {
-  if (!b?.primary) return htl.html`<a class="card nav-card" href="buoy.html"><h2>Pauwela buoy <span class="nav-card-arrow">→</span></h2><div class="nav-muted">${
+  if (!b?.primary) return htl.html`<a class="card nav-card" href="buoy/pauwela.html"><h2>Pauwela buoy <span class="nav-card-arrow">→</span></h2><div class="nav-muted">${
     lastTs ? `No reports since ${fmt.minuteStamp(lastTs)} (${fmt.relativeTime(lastTs)})` : `No reports in the last ${BUOY_LOOKBACK_DAYS} days`}</div></a>`;
-  return htl.html`<a class="card nav-card buoy-card" href="buoy.html">
+  return htl.html`<a class="card nav-card buoy-card" href="buoy/pauwela.html">
     <div class="buoy-main">
       <h2>Pauwela buoy <span class="nav-age">${fmt.relativeTime(b.primaryTs)} <span class="nav-card-arrow">→</span></span></h2>
       <div class="nav-lead">${b.primary.height.toFixed(1)}′ @ ${b.primary.period.toFixed(0)}s ${compassPoint(b.primary.direction)}${

@@ -128,10 +128,10 @@ function buoyCard(readings, snap) {
   if (!last) return html`<div class="card"><h2>Pauwela buoy</h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
   // Old readings say nothing about now, so only say when the last one was.
   if (Date.now() - last.ts > BUOY_FRESH)
-    return html`<div class="card"><h2><a href="buoy.html">Pauwela buoy</a></h2><div class="muted">No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})</div></div>`;
+    return html`<div class="card"><h2><a href="buoy/pauwela.html">Pauwela buoy</a></h2><div class="muted">No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})</div></div>`;
   const recent = readings.filter(d => d.ts >= +last.ts - 48 * 3600e3);
   return html`<div class="card">
-    <h2><a href="buoy.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${fmt.relativeTime(last.ts)}</span></h2>
+    <h2><a href="buoy/pauwela.html">Pauwela buoy</a> <span class="muted" style="font-weight: normal">${fmt.relativeTime(last.ts)}</span></h2>
     <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
     ${resize(width => Plot.plot({
       width, height: 140, marginLeft: 28, marginRight: 28, marginBottom: 20,
