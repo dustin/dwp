@@ -5,7 +5,8 @@ toc: false
 ---
 
 <style>
-  .buoy-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+  .buoy-body { display: flex; align-items: center; gap: 0.75rem; }
+  .buoy-chart { flex: 1; min-width: 0; }
   .buoy-rose { flex: none; color: var(--theme-foreground); }
   .muted { color: var(--theme-foreground-muted); }
   .lead { font-size: 1.6rem; font-weight: 600; line-height: 1.2; }
@@ -131,7 +132,9 @@ const top = station.rows.at(-1);
 
 ```js
 // NDBC's height, period and direction over the last two days of reports.
-// The rose is the spectrum at the last report (snap), as on the hub's card.
+// The rose is the spectrum at the last report (snap), as on the hub's
+// card, as tall as the chart; the chart takes what width is left.
+const BUOY_CHART_HEIGHT = 140;
 function buoyCard(readings, {snap = null, site = "pauwela", name = "Pauwela buoy", note = ""} = {}) {
   const last = readings.at(-1);
   if (!last) return html`<div class="card"><h2><a href="buoy/${site}.html">${name}</a></h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
@@ -141,20 +144,20 @@ function buoyCard(readings, {snap = null, site = "pauwela", name = "Pauwela buoy
   const recent = readings.filter(d => d.ts >= +last.ts - 48 * 3600e3);
   return html`<div class="card">
     <h2><a href="buoy/${site}.html">${name}</a> <span class="muted" style="font-weight: normal">${fmt.relativeTime(last.ts)}</span></h2>
-    <div class="buoy-head">
-      <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
-      ${snap?.spectrum.length ? html`<div class="buoy-rose">${renderMiniRose(snap.spectrum)}</div>` : ""}
-    </div>
-    ${resize(width => Plot.plot({
-      width, height: 140, marginLeft: 28, marginRight: 28, marginBottom: 20,
-      x: {type: "time", ticks: 6, tickFormat: fmt.timeTick, label: null},
+    <div class="lead">${last.height.toFixed(1)}′ <span class="unit">@ ${last.period.toFixed(0)}s from ${Math.round(last.direction)}°</span></div>
+    <div class="buoy-body">
+    <div class="buoy-chart">${resize(width => Plot.plot({
+      width, height: BUOY_CHART_HEIGHT, marginLeft: 28, marginRight: 12, marginBottom: 20,
+      x: {type: "time", ticks: Math.max(2, Math.min(6, Math.floor(width / 70))), tickFormat: fmt.timeTick, label: null},
       y: {label: "ft", grid: true, domain: [0, Math.max(6, d3.max(recent, d => d.height))]},
       marks: [
         Plot.lineY(recent, {x: "ts", y: "height", stroke: "var(--theme-foreground-focus)", curve: "basis"}),
         Plot.dot(recent, {x: "ts", y: "height", r: d => d.period / 3, fill: d => directionColor(d.direction), fillOpacity: 0.7}),
         Plot.tip(recent, Plot.pointerX({x: "ts", y: "height", title: d => `${fmt.minuteStamp(d.ts)}  ${d.height.toFixed(1)}′ @ ${d.period.toFixed(0)}s from ${Math.round(d.direction)}°`})),
       ],
-    }))}
+    }))}</div>
+    ${snap?.spectrum.length ? html`<div class="buoy-rose">${renderMiniRose(snap.spectrum, {size: BUOY_CHART_HEIGHT})}</div>` : ""}
+    </div>
     <div class="muted" style="font-size: 0.85em">Last 48 hours: height, dots sized by period and colored by direction.${note}</div>
   </div>`;
 }
