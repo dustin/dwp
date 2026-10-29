@@ -1,13 +1,12 @@
 #!/bin/sh
 #
 # The half-hourly buoy job (launchd net.spy.buoyupdate on dsstudio):
-# Pauwela's readings into swell and its spectra, Waimea through
-# swell/collect, the latest Pauwela report to MQTT, then cam-ingest,
+# Pauwela's and Waimea's readings and spectra (swell/collect), the latest
+# Pauwela report to MQTT, then cam-ingest,
 # forecast-ingest, publish and the MagTag render.
 #
 # Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
-# elsewhere. merge-buoys.sql and recent-buoy-export.sql are still the lake
-# dir's scripts/.
+# elsewhere.
 set -eux
 set -o pipefail
 
@@ -18,22 +17,10 @@ cd "${LAKE:-$HOME/stuff/duck}"
 
 nc -vz -w 3 mqtt 1883 >&2
 
-pauwela=https://www.ndbc.noaa.gov/data/realtime2/51205.txt
-imp=$here/../importers/zig-out/bin/import
-tmpfile=$HOME/tmp/pauwela.csv
-
-rm -f $tmpfile
-
-curl $pauwela | $imp > $tmpfile
-
-duckdb --init quack-init.sql < scripts/merge-buoys.sql
-duckdb --init quack-init.sql < "$here/swell/update.sql"
-
-rm -f $tmpfile
-
+"$here/swell/collect" 51205 pauwela
 "$here/swell/collect" 51201 waimea
 
-duckdb --noheader --list --init quack-init.sql < scripts/recent-buoy-export.sql \
+duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql" \
     | /usr/bin/curl -sS --data-binary @- mqtt://mqtt/ocean/buoy-update
 
 #   | mosquitto_pub -V 5 -d -h mqtt -t ocean/buoy -r -D publish message-expiry-interval 3600 -s

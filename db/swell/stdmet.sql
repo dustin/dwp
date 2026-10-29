@@ -59,10 +59,12 @@ select
   CAST(ts AT TIME ZONE 'Pacific/Honolulu' AS DATE) as day,
   wave_height, wave_period, wave_direction, water_temp
 from cleaned
-where coalesce(wave_height, wave_period, wave_direction, water_temp) is not null
+-- Like the Pauwela merge before it, only readings with a wave height. The
+-- earliest archives have no direction, so that can be missing.
+where wave_height is not null
 -- The same report can be in more than one file (a monthly archive and
 -- realtime2); keep one.
-qualify row_number() over (partition by ts order by wave_height is null, wave_period is null) = 1;
+qualify row_number() over (partition by ts order by wave_period is null, wave_direction is null) = 1;
 
 insert into swell (site, ts, day, wave_height, wave_period, wave_direction, water_temp)
 select i.site, i.ts, i.day, i.wave_height, i.wave_period, i.wave_direction, i.water_temp
