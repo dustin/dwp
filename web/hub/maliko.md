@@ -113,9 +113,9 @@ const runBuoy = new Map((await Promise.all(RIDER_NAMES.map(([slug]) =>
 // The buoy counts as "now" only while it's reporting.
 const BUOY_FRESH = 3 * 3600e3;
 const buoyNow = buoyLast && Date.now() - buoyLast.ts < BUOY_FRESH ? buoyLast : null;
-// With Pauwela out, Waimea (off Oʻahu's North Shore) still says something
-// about what's coming, mostly NW swell, which reaches it a few hours before Maui.
-const waimeaReadings = buoyNow ? [] : (await fetchSwellPartitionWindow("waimea", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []))
+// Waimea (off Oʻahu's North Shore) says something about what's coming,
+// mostly NW swell, which reaches it a few hours before Maui.
+const waimeaReadings = (await fetchSwellPartitionWindow("waimea", new Date(Date.now() - BUOY_LOOKBACK_DAYS * 86400e3), new Date()).catch(() => []))
   .map(d => ({ts: d.ts, ...d.values.find(v => v.rank === 1)}))
   .filter(d => d.height != null);
 ```
@@ -130,7 +130,7 @@ const top = station.rows.at(-1);
 // NDBC's height, period and direction over the last two days of reports.
 function buoyCard(readings, {site = "pauwela", name = "Pauwela buoy", note = ""} = {}) {
   const last = readings.at(-1);
-  if (!last) return html`<div class="card"><h2>${name}</h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
+  if (!last) return html`<div class="card"><h2><a href="buoy/${site}.html">${name}</a></h2><div class="muted">No reports in the last ${BUOY_LOOKBACK_DAYS} days.</div></div>`;
   // Old readings say nothing about now, so only say when the last one was.
   if (Date.now() - last.ts > BUOY_FRESH)
     return html`<div class="card"><h2><a href="buoy/${site}.html">${name}</a></h2><div class="muted">No reports since ${fmt.minuteStamp(last.ts)} (${fmt.relativeTime(last.ts)})</div></div>`;
@@ -168,7 +168,7 @@ function buoyCard(readings, {site = "pauwela", name = "Pauwela buoy", note = ""}
 
 <div class="grid grid-cols-1 spot-col">${buoyCard(buoyReadings)}</div>
 
-<div class="grid grid-cols-1 spot-col">${buoyNow ? "" : buoyCard(waimeaReadings, {site: "waimea", name: "Waimea Bay buoy (Oʻahu)", note: " Shown while Pauwela is out: NW swell reaches Oʻahu a few hours before Maui."})}</div>
+<div class="grid grid-cols-1 spot-col">${buoyCard(waimeaReadings, {site: "waimea", name: "Waimea Bay buoy (Oʻahu)", note: " NW swell reaches Oʻahu a few hours before Maui."})}</div>
 
 <div class="grid grid-cols-1 spot-col">${buoyNow && buoySnap ? snapshotCard({...buoySnap, label: "Swells at the last report", color: "inherit"}, {resize}) : ""}</div>
 

@@ -14,7 +14,7 @@ toc: true
 
 # ${buoy.name} Buoy
 
-Conditions from the ${buoy.name} buoy (NDBC ${buoy.station}), ${buoy.where}: the latest readings, or any time back to ${fmt.date(buoy.start)}. ${Object.entries(BUOYS).filter(([k]) => k !== buoy.site).map(([k, b]) => html`<a href="${k}.html">${b.name} buoy</a>`)}
+Conditions from the ${buoy.name} buoy (<a href="https://www.ndbc.noaa.gov/station_page.php?station=${buoy.station}">NDBC ${buoy.station}</a>), ${buoy.where}: the latest readings, or any time back to ${fmt.date(buoy.start)}.
 
 ```js
 // The buoys with a page here (paths in hub.config.js), and how far back
@@ -244,3 +244,7 @@ const comparison = compareSnapshot?.spectrum.length > 0
     ? html`<p class="muted">${compareTime ? "No buoy spectra near that time." : ""}</p>`
     : buoyComparison(comparison, {resize})
 }</div>
+
+## Related buoys
+
+<ul>${Object.entries(BUOYS).filter(([k]) => k !== buoy.site).map(([k, b]) => html`<li><a href="${k}.html">${b.name} buoy</a>, ${b.where}</li>`)}</ul>
