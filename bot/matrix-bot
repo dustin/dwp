@@ -2099,6 +2099,8 @@ def main(argv=None):
                     help="the Ollama model !ask uses")
     ap.add_argument("--mqtt", default="mqtt", metavar="HOST[:PORT]",
                     help="broker with the weather/+ station feed (\"\" for none)")
+    ap.add_argument("--no-live", dest="live", action="store_false",
+                    help=f"don't write {LIVE_KEY} (bot/live-wind does, on aws1)")
     args = ap.parse_args(argv)
     args.users = {}
     for u in args.user:
@@ -2122,7 +2124,8 @@ def main(argv=None):
         except Exception as e:  # live wind without history beats none
             log(f"seeding live wind failed: {e!r}")
         WEATHER.start()
-        threading.Thread(target=write_live, args=(WEATHER,), name="live", daemon=True).start()
+        if args.live:
+            threading.Thread(target=write_live, args=(WEATHER,), name="live", daemon=True).start()
 
     me = mx.call("GET", "/_matrix/client/v3/account/whoami")["user_id"]
     log(f"{me} listening to {', '.join(args.users)} in {', '.join(args.room)}")

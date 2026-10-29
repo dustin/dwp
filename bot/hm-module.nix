@@ -28,10 +28,13 @@ let
     "--token-file" cfg.tokenFile
     "--mqtt" cfg.mqtt
   ]
+  ++ lib.optional (!cfg.live) "--no-live"
   ++ lib.concatMap (room: [ "--room" room ]) (lib.optional (cfg.room != null) cfg.room ++ cfg.rooms)
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
 in
 {
+  imports = [ ./live-wind.nix ];
+
   options.services.dwp-matrix-bot = with lib; {
     enable = mkEnableOption "the downwind.pro Matrix import bot";
     package = mkOption {
@@ -66,6 +69,11 @@ in
       default = "mqtt";
       example = "bee1:1883";
       description = "HOST[:PORT] of the broker with the weather/+ station feed (\"\" for none).";
+    };
+    live = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Whether the bot writes live/wind.json (off where services.dwp-live-wind does it).";
     };
     tokenFile = mkOption {
       type = types.str;

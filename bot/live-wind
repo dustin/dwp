@@ -1,0 +1,127 @@
+#!/usr/bin/env python3
+"""Keep live/wind.json in the bucket from the weather/+ MQTT feed.
+
+The hub's wind cards read live/wind.json (each station's last 24 hours,
+the latest run rating and cam reads) when it's under 15 minutes old. This
+used to be a thread in matrix-bot on the Mac at home; on its own it runs
+where the broker is (aws1), so the cards stay live while home is down.
+
+At start it seeds the readings from the live/wind.json already in the
+bucket, then optionally from --seed-cmd for anything older: a command
+printing a JSON array of {site, t (epoch), wavg, wdir, wgust, wlull} rows,
+e.g. duckq -json -c "select site, epoch(ts) as t, wavg, wdir, wgust, wlull
+from wind where ts > now() - interval 1 day and wavg is not null order by ts".
+Either can fail: live wind without history beats none.
+
+    live-wind [--mqtt HOST[:PORT]] [--seed-cmd CMD] [--dry-run]
+
+Uploads with rclone (RCLONE_CONFIG picks the config) to $DWP_DEST
+(default s3:db.downwind.pro).
+"""
+
+import argparse
+import gzip
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mqtt_weather import HST, Weather  # noqa: E402
+
+DEST = (os.environ.get("DWP_DEST") or "s3:db.downwind.pro").rstrip("/") + "/"
+LIVE_KEY = "live/wind.json"
+LIVE_EVERY = 30  # at most one write per this many seconds
+LIVE_HEADERS = ["Content-Encoding: gzip", "Content-Type: application/json",
+                "Cache-Control: public, max-age=30"]
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} live-wind: {msg}", file=sys.stderr, flush=True)
+
+
+def epoch(ts):
+    """A snapshot's stamp (HST, with or without its offset) as epoch seconds."""
+    t = datetime.fromisoformat(ts)
+    return (t if t.tzinfo else t.replace(tzinfo=HST)).timestamp()
+
+
+def seed_from_bucket(weather):
+    """The readings in the last live/wind.json written."""
+    r = subprocess.run(["rclone", "cat", DEST + LIVE_KEY], capture_output=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.decode(errors="replace").strip())
+    body = r.stdout
+    if body[:2] == b"\x1f\x8b":
+        body = gzip.decompress(body)
+    stations = json.loads(body).get("stations") or {}
+    for site, s in stations.items():
+        rows = [{"t": epoch(ts), "wavg": avg, "wgust": gust, "wlull": lull, "wdir": d}
+                for ts, avg, gust, lull, d in s.get("readings", [])]
+        weather.seed(site, rows)
+    return {site: len(s.get("readings", [])) for site, s in stations.items()}
+
+
+def seed_from_cmd(weather, cmd):
+    """Rows from cmd, under whatever's there already."""
+    r = subprocess.run(cmd, shell=True, capture_output=True, timeout=120)
+    if r.returncode != 0:
+        raise RuntimeError(r.stderr.decode(errors="replace").strip())
+    by = {}
+    for row in json.loads(r.stdout or b"[]"):
+        by.setdefault(row.pop("site"), []).append(row)
+    for site, rows in by.items():
+        weather.seed(site, rows)
+    return {site: len(rows) for site, rows in by.items()}
+
+
+def write_live(weather, dry_run=False):
+    """Replace LIVE_KEY with weather's last 24 hours within LIVE_EVERY
+    seconds of each new reading."""
+    while True:
+        weather.changed.wait()
+        weather.changed.clear()
+        body = gzip.compress(json.dumps(weather.snapshot(), separators=(",", ":")).encode(),
+                             mtime=0)
+        args = ["rclone", "rcat", DEST + LIVE_KEY]
+        for h in LIVE_HEADERS:
+            args += ["--header-upload", h]
+        if dry_run:
+            log(f"would write {LIVE_KEY}: {len(body)} bytes")
+        else:
+            r = subprocess.run(args, input=body, capture_output=True)
+            if r.returncode != 0:
+                log(f"writing {LIVE_KEY} failed: {r.stderr.decode(errors='replace').strip()}")
+        time.sleep(LIVE_EVERY)
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--mqtt", default="localhost", metavar="HOST[:PORT]")
+    ap.add_argument("--seed-cmd", help="command printing older wind rows as JSON")
+    ap.add_argument("--dry-run", action="store_true", help="log instead of uploading")
+    args = ap.parse_args(argv)
+
+    host, _, port = args.mqtt.partition(":")
+    weather = Weather(host, int(port or 1883))
+    for what, seed in [("bucket", lambda: seed_from_bucket(weather)),
+                       ("seed-cmd", args.seed_cmd and (lambda: seed_from_cmd(weather, args.seed_cmd)))]:
+        if not seed:
+            continue
+        try:
+            n = seed()
+            log(f"seeded from {what}: {', '.join(f'{s} {c}' for s, c in n.items()) or 'nothing'}")
+        except Exception as e:
+            log(f"seeding from {what} failed: {e!r}")
+    weather.start()
+    threading.Thread(target=write_live, args=(weather, args.dry_run), name="live", daemon=True).start()
+    log(f"writing {DEST}{LIVE_KEY} from weather/+ on {args.mqtt}")
+    while True:
+        time.sleep(3600)
+
+
+if __name__ == "__main__":
+    main()
