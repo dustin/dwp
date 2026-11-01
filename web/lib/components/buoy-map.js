@@ -1,6 +1,7 @@
 // Map of the buoys we collect, on a rough outline of the islands. The full
 // map draws each buoy as its energy rose (renderMiniRose) linking to its
 // page; the small one (roses: false) is a dot per buoy for page headers.
+// Buoys with nothing to show are a red X on either.
 import * as d3 from 'npm:d3';
 import { HAWAII_ISLANDS } from './hawaii-islands.js';
 import { renderMiniRose, compassPoint } from './spectrum.js';
@@ -47,7 +48,20 @@ export const BUOYS = {
     name: 'SE Hawaii', station: '51004', where: '205 nm southeast of Hilo',
     lat: 17.504, lon: -152.197, start: new Date('2026-09-17T00:00:00-10:00'), place: [0, 0],
   },
+  // Out with no recent reports, so not collected and without a page; the
+  // map marks them with a red X. `side` is where the label goes.
+  lanai: {
+    name: 'Lānaʻi', station: '51213', where: "off Lānaʻi's southwest side", offline: '2026-07-13',
+    lat: 20.750, lon: -157.002, side: 'left',
+  },
+  hanalei: {
+    name: 'Hanalei', station: '51208', where: "off Kauaʻi's North Shore", offline: '2026-09-09',
+    lat: 22.285, lon: -159.574, side: 'right',
+  },
 };
+
+// The buoys we collect and have pages for.
+export const LIVE_BUOYS = Object.fromEntries(Object.entries(BUOYS).filter(([, b]) => !b.offline));
 
 const islands = {
   type: 'MultiPolygon',
@@ -64,13 +78,16 @@ export function renderBuoyMap({
   roses = true,
   href = site => `${site}.html`,
 } = {}) {
+  // A buoy with nothing to show (out, or on the full map no recent data) is
+  // a small red X instead of a rose.
+  const dead = site => BUOYS[site].offline || (roses && !snapshots[site]?.spectrum?.length);
   const rose = roses ? Math.round(Math.max(48, Math.min(150, width / 7))) : 0;
   const label = roses ? Math.max(9, Math.min(14, rose / 10)) : 10;
   const margin = roses ? 4 : 6;
   // Fit the islands to the width, then shrink them until every rose (and
   // its label) fits inside too.
   const projection = d3.geoMercator().fitWidth(width - 2 * margin, islands);
-  const roseBox = () => Object.values(BUOYS).map(b => {
+  const roseBox = () => Object.entries(BUOYS).filter(([site]) => !dead(site)).map(([, b]) => {
     const [x, y] = projection([b.lon, b.lat]);
     const cx = x + b.place[0] * rose, cy = y + b.place[1] * rose;
     return [[cx - rose / 2, cy - rose / 2], [cx + rose / 2, cy + rose / 2 + label * 2.8]];
@@ -109,9 +126,26 @@ export function renderBuoyMap({
   for (const [site, b] of Object.entries(BUOYS)) {
     const [x, y] = projection([b.lon, b.lat]);
     const here = site === current;
-    const parent = here ? svg : svg.append('a').attr('href', href(site)).style('color', 'inherit');
+    const parent = here || b.offline ? svg : svg.append('a').attr('href', href(site)).style('color', 'inherit');
     const g = parent.append('g').attr('class', 'buoy-map-buoy');
-    g.append('title').text(`${b.name} buoy (NDBC ${b.station}), ${b.where}`);
+    g.append('title').text(`${b.name} buoy (NDBC ${b.station}), ${b.where}${
+      b.offline ? `: out since ${b.offline}, not collected` : dead(site) ? ': no recent data' : ''}`);
+
+    if (dead(site)) {
+      const k = roses ? 5 : 3.5;
+      g.append('path').attr('d', `M${x - k},${y - k}L${x + k},${y + k}M${x - k},${y + k}L${x + k},${y - k}`)
+        .attr('stroke', '#d62728').attr('stroke-width', roses ? 2.5 : 2).attr('stroke-linecap', 'round');
+      if (here) g.append('circle').attr('cx', x).attr('cy', y).attr('r', k + 4).attr('fill', 'none')
+        .attr('stroke', 'var(--theme-foreground-focus)').attr('stroke-width', 1.5);
+      if (roses) {
+        const left = b.side === 'left';
+        g.append('text').attr('x', x + (left ? -k - 4 : k + 4)).attr('y', y).attr('dy', '0.35em')
+          .attr('text-anchor', left ? 'end' : 'start')
+          .attr('fill', 'currentColor').attr('fill-opacity', 0.6).style('font-size', `${label * 0.85}px`)
+          .text(here ? `${b.name} (this buoy)` : b.name);
+      }
+      continue;
+    }
 
     if (!roses) {
       g.append('circle').attr('cx', x).attr('cy', y).attr('r', here ? 5 : 4)
@@ -139,16 +173,9 @@ export function renderBuoyMap({
       .attr('stroke', here ? 'var(--theme-foreground-focus)' : 'none').attr('stroke-width', 2);
 
     const snap = snapshots[site];
-    const node = snap?.spectrum?.length ? renderMiniRose(snap.spectrum, { size: rose }) : null;
-    if (node) {
-      d3.select(node).attr('x', cx - rose / 2).attr('y', cy - rose / 2);
-      g.append(() => node);
-    } else {
-      g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', r)
-        .attr('fill', 'none').attr('stroke', 'currentColor').attr('stroke-opacity', 0.3).attr('stroke-dasharray', '3,3');
-      g.append('text').attr('x', cx).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'middle')
-        .attr('fill', 'currentColor').attr('fill-opacity', 0.6).text('no recent data');
-    }
+    const node = renderMiniRose(snap.spectrum, { size: rose });
+    d3.select(node).attr('x', cx - rose / 2).attr('y', cy - rose / 2);
+    g.append(() => node);
 
     const t = g.append('text').attr('x', cx).attr('y', cy + rose / 2 + label * 0.4).attr('text-anchor', 'middle').attr('fill', 'currentColor');
     t.append('tspan').attr('x', cx).attr('dy', '0.7em').attr('font-weight', 600)

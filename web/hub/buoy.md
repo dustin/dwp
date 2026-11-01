@@ -16,9 +16,9 @@ sidebar: false
 # Buoys
 
 ```js
-import {BUOYS, renderBuoyMap} from "./components/buoy-map.js";
+import {BUOYS, LIVE_BUOYS, renderBuoyMap} from "./components/buoy-map.js";
 import {fetchBuoySnapshot} from "./components/data.js";
-const snapshots = Object.fromEntries(await Promise.all(Object.keys(BUOYS).map(async site =>
+const snapshots = Object.fromEntries(await Promise.all(Object.keys(LIVE_BUOYS).map(async site =>
   [site, await fetchBuoySnapshot(new Date(), site).catch(() => null)])));
 ```
 

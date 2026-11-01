@@ -29,7 +29,7 @@ Conditions from the ${buoy.name} buoy (<a href="https://www.ndbc.noaa.gov/statio
 
 ```js
 // The buoys and their details are in buoy-map.js.
-import {BUOYS, renderBuoyMap} from "../components/buoy-map.js";
+import {BUOYS, LIVE_BUOYS, renderBuoyMap} from "../components/buoy-map.js";
 const buoy = {site: observable.params.site, ...BUOYS[observable.params.site]};
 import * as fmt from "../components/formatters.js";
 import {fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "../components/data.js";
@@ -256,7 +256,7 @@ const comparison = compareSnapshot?.spectrum.length > 0
 
 ```js
 // Every buoy's latest rose, for the map of the others.
-const buoySnapshots = Object.fromEntries(await Promise.all(Object.keys(BUOYS).map(async site =>
+const buoySnapshots = Object.fromEntries(await Promise.all(Object.keys(LIVE_BUOYS).map(async site =>
   [site, await fetchBuoySnapshot(new Date(), site).catch(() => null)])));
 ```
 
