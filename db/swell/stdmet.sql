@@ -21,16 +21,21 @@ call lake.set_commit_message('dustin', 'adding ' || getvariable('site') || ' buo
 
 create or replace temp table incoming_stdmet as
 with lines as (
-  select regexp_split_to_array(trim(line), '\s+') as f
+  -- Some old archives end their header with \n and their data lines with
+  -- \r\n, so split on \n and drop any \r.
+  select regexp_split_to_array(trim(line, e' \t\r'), '\s+') as f
   from read_csv(getvariable('files'), columns = {'line': 'VARCHAR'},
                 header = false, delim = chr(1), quote = '', escape = '',
-                auto_detect = false)
+                new_line = '\n', strict_mode = false, auto_detect = false)
   where line not like '#%' and line not like 'YY%' and trim(line) <> ''
 ),
 fields as (
   -- Archives before 2005 have no minute column, so everything after the
-  -- hour sits one field earlier.
-  select f, case when len(f) = 17 then 0 else 1 end as m
+  -- hour sits one field earlier. Those have 16 or 17 fields (17 with
+  -- TIDE); files with minutes have 18 or more. Before 1999 the year has
+  -- two digits.
+  select case when len(f[1]) = 2 then list_concat(['19' || f[1]], f[2:]) else f end as f,
+         case when len(f) >= 18 then 1 else 0 end as m
   from lines
 ),
 readings as (
