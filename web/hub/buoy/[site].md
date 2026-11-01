@@ -21,7 +21,8 @@ Conditions from the ${buoy.name} buoy (<a href="https://www.ndbc.noaa.gov/statio
 // each one's spectra go.
 const BUOYS = {
   pauwela: {name: "Pauwela", station: "51205", where: "off Maui's North Shore", start: BUOY_DATA_START},
-  waimea: {name: "Waimea Bay", station: "51201", where: "off Oʻahu's North Shore", start: new Date("2026-09-14T00:00:00-10:00")}
+  waimea: {name: "Waimea Bay", station: "51201", where: "off Oʻahu's North Shore", start: new Date("2026-09-14T00:00:00-10:00")},
+  barbers_point: {name: "Barbers Point", station: "51212", where: "off Kalaeloa, Oʻahu's southwest corner", start: new Date("2026-09-17T00:00:00-10:00")}
 };
 const buoy = {site: observable.params.site, ...BUOYS[observable.params.site]};
 import * as fmt from "../components/formatters.js";
