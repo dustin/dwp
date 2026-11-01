@@ -1,0 +1,137 @@
+// Map of the buoys we collect, on a rough outline of the islands. The full
+// map draws each buoy as its energy rose (renderMiniRose) linking to its
+// page; the small one (roses: false) is a dot per buoy for page headers.
+import * as d3 from 'npm:d3';
+import { HAWAII_ISLANDS } from './hawaii-islands.js';
+import { renderMiniRose, compassPoint } from './spectrum.js';
+import { BUOY_DATA_START } from './data.js';
+
+// The buoys with a page (paths in hub.config.js), where they sit (NDBC's
+// station list) and how far back each one's spectra go. `place` is where
+// its rose goes relative to the buoy, in rose widths, so neighbors
+// (Waimea and Barbers Point) don't overlap.
+export const BUOYS = {
+  pauwela: {
+    name: 'Pauwela', station: '51205', where: "off Maui's North Shore",
+    lat: 21.018, lon: -156.421, start: BUOY_DATA_START, place: [0.3, -0.85],
+  },
+  waimea: {
+    name: 'Waimea Bay', station: '51201', where: "off Oʻahu's North Shore",
+    lat: 21.671, lon: -158.118, start: new Date('2026-09-14T00:00:00-10:00'), place: [-0.05, -0.85],
+  },
+  barbers_point: {
+    name: 'Barbers Point', station: '51212', where: "off Kalaeloa, Oʻahu's southwest corner",
+    lat: 21.323, lon: -158.149, start: new Date('2026-09-17T00:00:00-10:00'), place: [-0.5, 0.7],
+  },
+};
+
+const islands = {
+  type: 'MultiPolygon',
+  coordinates: HAWAII_ISLANDS.map(ring => [ring]),
+};
+
+// snapshots: site -> fetchBuoySnapshot result (or null) for the roses.
+// current: the site whose page this is, drawn highlighted and not linked.
+// href: link for a site.
+export function renderBuoyMap({
+  width = 640,
+  snapshots = {},
+  current = null,
+  roses = true,
+  href = site => `${site}.html`,
+} = {}) {
+  const rose = roses ? Math.round(Math.max(84, Math.min(170, width / 5.5))) : 0;
+  const label = roses ? Math.max(11, Math.min(14, rose / 10)) : 10;
+  const margin = roses ? 4 : 6;
+  // Fit the islands to the width, then shrink them until every rose (and
+  // its label) fits inside too.
+  const projection = d3.geoMercator().fitWidth(width - 2 * margin, islands);
+  const roseBox = () => Object.values(BUOYS).map(b => {
+    const [x, y] = projection([b.lon, b.lat]);
+    const cx = x + b.place[0] * rose, cy = y + b.place[1] * rose;
+    return [[cx - rose / 2, cy - rose / 2], [cx + rose / 2, cy + rose / 2 + label * 2.8]];
+  });
+  let height = 0;
+  for (let i = 0; i < 6; i++) {
+    const boxes = [d3.geoPath(projection).bounds(islands), ...(roses ? roseBox() : [])];
+    const x0 = d3.min(boxes, b => b[0][0]), x1 = d3.max(boxes, b => b[1][0]);
+    const y0 = d3.min(boxes, b => b[0][1]), y1 = d3.max(boxes, b => b[1][1]);
+    const [tx, ty] = projection.translate();
+    const k = Math.min(1, (width - 2 * margin) / (x1 - x0));
+    if (k > 0.995) {
+      projection.translate([tx + margin - x0, ty + margin - y0]);
+      height = Math.ceil(y1 - y0 + 2 * margin);
+      break;
+    }
+    // Shrink about the islands' center and try again.
+    const [[ix0, iy0], [ix1, iy1]] = d3.geoPath(projection).bounds(islands);
+    const c = projection.invert([(ix0 + ix1) / 2, (iy0 + iy1) / 2]);
+    projection.scale(projection.scale() * k);
+    const [nx, ny] = projection(c);
+    projection.translate([tx + (ix0 + ix1) / 2 - nx, ty + (iy0 + iy1) / 2 - ny]);
+  }
+  const path = d3.geoPath(projection);
+
+  const svg = d3.create('svg')
+    .attr('width', width).attr('height', height)
+    .attr('viewBox', [0, 0, width, height])
+    .attr('class', 'buoy-map')
+    .style('max-width', '100%').style('height', 'auto')
+    .style('font', `${label}px var(--sans-serif)`);
+  svg.append('path').attr('d', path(islands))
+    .attr('fill', 'currentColor').attr('fill-opacity', 0.16)
+    .attr('stroke', 'currentColor').attr('stroke-opacity', 0.35).attr('stroke-width', 0.75);
+
+  for (const [site, b] of Object.entries(BUOYS)) {
+    const [x, y] = projection([b.lon, b.lat]);
+    const here = site === current;
+    const parent = here ? svg : svg.append('a').attr('href', href(site)).style('color', 'inherit');
+    const g = parent.append('g').attr('class', 'buoy-map-buoy');
+    g.append('title').text(`${b.name} buoy (NDBC ${b.station}), ${b.where}`);
+
+    if (!roses) {
+      g.append('circle').attr('cx', x).attr('cy', y).attr('r', here ? 5 : 4)
+        .attr('fill', here ? 'var(--theme-foreground-focus)' : 'currentColor')
+        .attr('fill-opacity', here ? 1 : 0.55);
+      if (here) g.append('circle').attr('cx', x).attr('cy', y).attr('r', 8).attr('fill', 'none')
+        .attr('stroke', 'var(--theme-foreground-focus)').attr('stroke-width', 1.5);
+      continue;
+    }
+
+    const cx = x + b.place[0] * rose, cy = y + b.place[1] * rose;
+    const r = rose / 2 - 7;
+    // Leader from the buoy to the edge of its rose.
+    const a = Math.atan2(cy - y, cx - x), d = Math.hypot(cx - x, cy - y);
+    // A rose above its buoy has its label underneath, so stop short of that.
+    const end = cy < y ? Math.max(0, d - (rose / 2 + label * 3)) : d - r;
+    g.append('line').attr('x1', x).attr('y1', y)
+      .attr('x2', x + Math.cos(a) * end).attr('y2', y + Math.sin(a) * end)
+      .attr('stroke', 'currentColor').attr('stroke-opacity', 0.4);
+    g.append('circle').attr('cx', x).attr('cy', y).attr('r', 3.5)
+      .attr('fill', here ? 'var(--theme-foreground-focus)' : 'currentColor');
+    // A backdrop so the rose reads over the coastline and is easy to hit.
+    g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', r + 2)
+      .attr('fill', 'var(--theme-background)').attr('fill-opacity', 0.85)
+      .attr('stroke', here ? 'var(--theme-foreground-focus)' : 'none').attr('stroke-width', 2);
+
+    const snap = snapshots[site];
+    const node = snap?.spectrum?.length ? renderMiniRose(snap.spectrum, { size: rose }) : null;
+    if (node) {
+      d3.select(node).attr('x', cx - rose / 2).attr('y', cy - rose / 2);
+      g.append(() => node);
+    } else {
+      g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', r)
+        .attr('fill', 'none').attr('stroke', 'currentColor').attr('stroke-opacity', 0.3).attr('stroke-dasharray', '3,3');
+      g.append('text').attr('x', cx).attr('y', cy).attr('dy', '0.35em').attr('text-anchor', 'middle')
+        .attr('fill', 'currentColor').attr('fill-opacity', 0.6).text('no recent data');
+    }
+
+    const t = g.append('text').attr('x', cx).attr('y', cy + rose / 2 + label * 0.4).attr('text-anchor', 'middle').attr('fill', 'currentColor');
+    t.append('tspan').attr('x', cx).attr('dy', '0.7em').attr('font-weight', 600)
+      .text(here ? `${b.name} (this buoy)` : b.name);
+    const p = snap?.primary;
+    if (p) t.append('tspan').attr('x', cx).attr('dy', '1.25em').attr('fill-opacity', 0.7)
+      .text(`${p.height.toFixed(1)}′ @ ${p.period.toFixed(0)}s ${compassPoint(p.direction)}`);
+  }
+  return svg.node();
+}

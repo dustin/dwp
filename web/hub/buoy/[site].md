@@ -10,20 +10,26 @@ toc: true
   .muted { color: var(--theme-foreground-muted); }
   .time-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5em; }
   .time-controls form { width: auto; }
+  .buoy-head { display: flex; align-items: center; gap: 1em; }
+  .buoy-head > div:first-child { flex: 1; min-width: 0; }
+  .buoy-head-map { flex: none; width: 200px; }
+  @media (max-width: 560px) { .buoy-head-map { width: 120px; } }
 </style>
+
+<div class="buoy-head">
+<div>
 
 # ${buoy.name} Buoy
 
 Conditions from the ${buoy.name} buoy (<a href="https://www.ndbc.noaa.gov/station_page.php?station=${buoy.station}">NDBC ${buoy.station}</a>), ${buoy.where}: the latest readings, or any time back to ${fmt.date(buoy.start)}.
 
+</div>
+<div class="buoy-head-map">${renderBuoyMap({width: 200, roses: false, current: buoy.site})}</div>
+</div>
+
 ```js
-// The buoys with a page here (paths in hub.config.js), and how far back
-// each one's spectra go.
-const BUOYS = {
-  pauwela: {name: "Pauwela", station: "51205", where: "off Maui's North Shore", start: BUOY_DATA_START},
-  waimea: {name: "Waimea Bay", station: "51201", where: "off Oʻahu's North Shore", start: new Date("2026-09-14T00:00:00-10:00")},
-  barbers_point: {name: "Barbers Point", station: "51212", where: "off Kalaeloa, Oʻahu's southwest corner", start: new Date("2026-09-17T00:00:00-10:00")}
-};
+// The buoys and their details are in buoy-map.js.
+import {BUOYS, renderBuoyMap} from "../components/buoy-map.js";
 const buoy = {site: observable.params.site, ...BUOYS[observable.params.site]};
 import * as fmt from "../components/formatters.js";
 import {fetchSwellSpectrumWindow, fetchSwellPartitionWindow, fetchBuoySnapshot, BUOY_DATA_START, toHstParam, parseHstParam, spectrumSampleTime, reportTimes} from "../components/data.js";
@@ -246,6 +252,12 @@ const comparison = compareSnapshot?.spectrum.length > 0
     : buoyComparison(comparison, {resize})
 }</div>
 
-## Related buoys
+## All buoys
 
-<ul>${Object.entries(BUOYS).filter(([k]) => k !== buoy.site).map(([k, b]) => html`<li><a href="${k}.html">${b.name} buoy</a>, ${b.where}</li>`)}</ul>
+```js
+// Every buoy's latest rose, for the map of the others.
+const buoySnapshots = Object.fromEntries(await Promise.all(Object.keys(BUOYS).map(async site =>
+  [site, await fetchBuoySnapshot(new Date(), site).catch(() => null)])));
+```
+
+<div class="card">${resize(width => renderBuoyMap({width, snapshots: buoySnapshots, current: buoy.site}))}</div>

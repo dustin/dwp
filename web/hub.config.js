@@ -36,8 +36,8 @@ export default {
   // search: true, // activate search
   // linkify: true, // convert URLs in Markdown to links
   // typographer: false, // smart quotes and other typographic improvements
-  // One buoy page per site (buoy/[site].md); buoy.md sends the old
-  // buoy.html links to Pauwela's.
+  // One buoy page per site (buoy/[site].md); buoy.md is the map of them
+  // and sends old buoy.html?t= links to Pauwela's.
   dynamicPaths: ["/buoy/pauwela", "/buoy/waimea", "/buoy/barbers_point"],
 
   preserveExtension: true, // keep .html in URLs (server has no extensionless routing)

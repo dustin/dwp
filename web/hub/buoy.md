@@ -1,14 +1,25 @@
 ---
-title: buoy
+title: Buoys
 sidebar: false
 ---
 
-<meta http-equiv="refresh" content="0; url=buoy/pauwela.html">
-
 ```js
-// The buoy page moved to one per site; old links (with their ?t=, ?c= and
-// #compare) go to Pauwela's.
-location.replace(`buoy/pauwela.html${location.search}${location.hash}`);
+// Old links to buoy.html with a time (?t=, ?c=) or #compare were for
+// Pauwela's page; send those on to it.
+{
+  const q = new URLSearchParams(location.search);
+  if (q.has("t") || q.has("c") || location.hash === "#compare")
+    location.replace(`buoy/pauwela.html${location.search}${location.hash}`);
+}
 ```
 
-[Pauwela buoy](buoy/pauwela.html)
+# Buoys
+
+```js
+import {BUOYS, renderBuoyMap} from "./components/buoy-map.js";
+import {fetchBuoySnapshot} from "./components/data.js";
+const snapshots = Object.fromEntries(await Promise.all(Object.keys(BUOYS).map(async site =>
+  [site, await fetchBuoySnapshot(new Date(), site).catch(() => null)])));
+```
+
+<div class="card">${resize(width => renderBuoyMap({width, snapshots, href: site => `buoy/${site}.html`}))}</div>
