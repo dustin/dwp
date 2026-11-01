@@ -38,7 +38,8 @@ export default {
   // typographer: false, // smart quotes and other typographic improvements
   // One buoy page per site (buoy/[site].md); buoy.md is the map of them
   // and sends old buoy.html?t= links to Pauwela's.
-  dynamicPaths: ["/buoy/pauwela", "/buoy/waimea", "/buoy/barbers_point"],
+  dynamicPaths: ["/buoy/pauwela", "/buoy/waimea", "/buoy/barbers_point",
+    "/buoy/mokapu", "/buoy/hilo", "/buoy/nw_hawaii", "/buoy/n_hawaii", "/buoy/sw_hawaii", "/buoy/se_hawaii"],
 
   preserveExtension: true, // keep .html in URLs (server has no extensionless routing)
   // preserveIndex: false, // drop /index from URLs

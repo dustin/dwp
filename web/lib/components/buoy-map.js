@@ -13,7 +13,7 @@ import { BUOY_DATA_START } from './data.js';
 export const BUOYS = {
   pauwela: {
     name: 'Pauwela', station: '51205', where: "off Maui's North Shore",
-    lat: 21.018, lon: -156.421, start: BUOY_DATA_START, place: [0.3, -0.85],
+    lat: 21.018, lon: -156.421, start: BUOY_DATA_START, place: [1.2, -0.2],
   },
   waimea: {
     name: 'Waimea Bay', station: '51201', where: "off Oʻahu's North Shore",
@@ -22,6 +22,30 @@ export const BUOYS = {
   barbers_point: {
     name: 'Barbers Point', station: '51212', where: "off Kalaeloa, Oʻahu's southwest corner",
     lat: 21.323, lon: -158.149, start: new Date('2026-09-17T00:00:00-10:00'), place: [-0.5, 0.7],
+  },
+  mokapu: {
+    name: 'Mokapu Point', station: '51202', where: "off Oʻahu's windward side",
+    lat: 21.414, lon: -157.681, start: new Date('2026-09-17T00:00:00-10:00'), place: [0.8, -1.0],
+  },
+  hilo: {
+    name: 'Hilo', station: '51206', where: "off Hawaiʻi Island's east side",
+    lat: 19.779, lon: -154.970, start: new Date('2026-09-17T00:00:00-10:00'), place: [0.75, 0.35],
+  },
+  nw_hawaii: {
+    name: 'NW Hawaii', station: '51001', where: '188 nm northwest of Kauaʻi',
+    lat: 24.475, lon: -162.030, start: new Date('2026-09-17T00:00:00-10:00'), place: [0, 0],
+  },
+  n_hawaii: {
+    name: 'N Hawaii', station: '51000', where: '245 nm northeast of Honolulu',
+    lat: 23.534, lon: -153.752, start: new Date('2026-09-17T00:00:00-10:00'), place: [0, 0],
+  },
+  sw_hawaii: {
+    name: 'SW Hawaii', station: '51002', where: '215 nm south-southwest of Hilo',
+    lat: 17.070, lon: -157.755, start: new Date('2026-09-17T00:00:00-10:00'), place: [0, 0],
+  },
+  se_hawaii: {
+    name: 'SE Hawaii', station: '51004', where: '205 nm southeast of Hilo',
+    lat: 17.504, lon: -152.197, start: new Date('2026-09-17T00:00:00-10:00'), place: [0, 0],
   },
 };
 
@@ -40,8 +64,8 @@ export function renderBuoyMap({
   roses = true,
   href = site => `${site}.html`,
 } = {}) {
-  const rose = roses ? Math.round(Math.max(84, Math.min(170, width / 5.5))) : 0;
-  const label = roses ? Math.max(11, Math.min(14, rose / 10)) : 10;
+  const rose = roses ? Math.round(Math.max(48, Math.min(150, width / 7))) : 0;
+  const label = roses ? Math.max(9, Math.min(14, rose / 10)) : 10;
   const margin = roses ? 4 : 6;
   // Fit the islands to the width, then shrink them until every rose (and
   // its label) fits inside too.

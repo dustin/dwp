@@ -15,7 +15,8 @@
 # station (yearly files, then this year's monthly ones), then does a normal
 # run. Run it once when adding a buoy; running it again only adds what's
 # missing. NDBC doesn't archive these buoys' spectra, so swell_spectrum and
-# swell_partition start with the realtime window.
+# swell_partition start with the realtime window. A buoy that's out gets
+# just its archived readings.
 #
 # Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
 # elsewhere. Never creates tables: swell, swell_spectrum and swell_partition
@@ -37,7 +38,18 @@ here=`cd "$(dirname "$0")" && pwd`
 lake=${LAKE:-$HOME/stuff/duck}
 ndbc=https://www.ndbc.noaa.gov/data
 
-files="'$ndbc/realtime2/$station.txt'"
+# A buoy that's out (no recent reports) has no realtime files. Skip it
+# quietly so one dead buoy doesn't stop the buoy job; it starts collecting
+# again once it reports.
+live=1
+if ! curl -fsI -o /dev/null "$ndbc/realtime2/$station.txt"; then
+    echo "$0: NDBC $station ($site) has no recent reports, skipping its realtime data" >&2
+    live=
+    [ -n "$history" ] || exit 0
+fi
+
+files=
+[ -z "$live" ] || files="'$ndbc/realtime2/$station.txt'"
 if [ -n "$history" ]; then
     archived=$(curl -fsS "$ndbc/historical/stdmet/" |
         grep -o "\"${station}h[0-9]*\.txt\.gz\"" | tr -d '"' | sort -u |
@@ -50,13 +62,14 @@ if [ -n "$history" ]; then
             sed "s|^|'$ndbc/stdmet/$mon/|; s|\$|'|" || true)
         archived="$archived $month"
     done
-    files="$(echo $archived | tr ' ' ','),$files"
+    files="$(echo $archived $files | tr ' ' ',')"
 fi
 
 cd "$lake"
 duckdb --init quack-init.sql \
     -cmd "set variable site = '$site'; set variable files = [$files];" \
     < "$here/stdmet.sql"
+[ -n "$live" ] || exit 0
 duckdb --init quack-init.sql \
     -cmd "set variable station = '$station'; set variable site = '$site';" \
     < "$here/update.sql"

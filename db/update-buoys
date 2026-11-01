@@ -1,7 +1,7 @@
 #!/bin/sh
 #
 # The half-hourly buoy job (launchd net.spy.buoyupdate on dsstudio):
-# Pauwela's, Waimea's and Barbers Point's readings and spectra (swell/collect), the latest
+# Every Hawaiʻi buoy's readings and spectra (swell/collect), the latest
 # Pauwela report to MQTT, then cam-ingest,
 # forecast-ingest, publish and the MagTag render.
 #
@@ -20,6 +20,12 @@ nc -vz -w 3 mqtt 1883 >&2
 "$here/swell/collect" 51205 pauwela
 "$here/swell/collect" 51201 waimea
 "$here/swell/collect" 51212 barbers_point
+"$here/swell/collect" 51202 mokapu
+"$here/swell/collect" 51206 hilo
+"$here/swell/collect" 51001 nw_hawaii
+"$here/swell/collect" 51000 n_hawaii
+"$here/swell/collect" 51002 sw_hawaii
+"$here/swell/collect" 51004 se_hawaii
 
 duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql" \
     | /usr/bin/curl -sS --data-binary @- mqtt://mqtt/ocean/buoy-update
