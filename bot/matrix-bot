@@ -185,10 +185,11 @@ HELP_ALERTS = [
     ("!alerts ratings off", "stop run alerts (worth considering, good, really good, and the drop-off)"),
     ("!alerts pinned off", "stop the pinned conditions message (and unpin it)"),
     ("!alerts ratings on", "turn one back on"),
+    ("!alerts buoys pauwela barbers_point", "which buoys this room's conditions show (!alerts buoys default for Pauwela and Waimea)"),
 ]
 HELP_ROOMS = [
     ("!rooms", "list my rooms and what each one gets"),
-    ("!room 2 sources off", "!alerts for another room, by its !rooms number"),
+    ("!room 2 sources off", "!alerts for another room, by its !rooms number (!room 2 buoys waimea too)"),
     ("!room 2 leave", "leave a room (invite me back to rejoin)"),
 ]
 # Any unambiguous start of a command works, since long commands are a pain
@@ -1070,12 +1071,19 @@ def tide_line():
         for t, hl, ft in ts)
 
 
-# The buoys the bot reports (status line, !conditions); the lake has more.
+# The buoys a room's conditions (pinned message, !conditions) show unless
+# it picks its own with !alerts buoys; the lake has more.
 BOT_BUOYS = ("pauwela", "waimea")
 
 
-def swells_now():
-    """Per BOT_BUOYS buoy with a reading in the last day: (site, epoch, [(ft, s, °, kJ)])
+def buoy_sites():
+    """Every buoy in the lake with a reading in the last day, sorted."""
+    return [r["site"] for r in query("select distinct site from swell_partition "
+                                     "where ts > now() - interval 1 day order by site")]
+
+
+def swells_now(buoys=BOT_BUOYS):
+    """Per buoy in buoys with a reading in the last day, in buoys' order: (site, epoch, [(ft, s, °, kJ)])
     from swell_partition's latest full reading, rank 1 (NDBC's own) first.
     The spectral components (rank 2+) come with the :56 readings, so a
     newer reading with rank 1 alone loses to the one before it. kJ is the
@@ -1085,7 +1093,7 @@ def swells_now():
     rows = query("with latest as (select site, arg_max(ts, (n > 1)::int * 1e10 + epoch(ts)) as ts "
                  "from (select site, ts, count(*) as n from swell_partition "
                  "where ts > now() - interval 1 day "
-                 f"and site in ({', '.join(sql_str(b) for b in BOT_BUOYS)}) group by all) group by site) "
+                 f"and site in ({', '.join(sql_str(b) for b in buoys)}) group by all) group by site) "
                  "select p.site, epoch(p.ts) as t, p.rank, p.height, p.period, p.direction, "
                  "p.energy, p.surfline_kj "
                  "from swell_partition p join latest using (site, ts) order by p.site, p.rank")
@@ -1102,7 +1110,7 @@ def swells_now():
         kj = {id(r): k * scale if scale else None for r, k in zip(parts, raw)}
         out.append((site, t, [(r["height"] * 3.28084, r["period"], r["direction"],
                                total if r["rank"] == 1 else kj[id(r)]) for r in rs]))
-    return out
+    return sorted(out, key=lambda o: list(buoys).index(o[0]))
 
 
 def swell_text(swells, n=3):
@@ -1148,7 +1156,7 @@ def spectrum_png(site, epoch, swells):
     return spectrum_svg.to_png(spectrum_svg.spectrum_svg(rows, title, earlier, label))
 
 
-def status_line():
+def status_line(buoys=BOT_BUOYS):
     """One line of the latest conditions, for the bot's pinned message."""
     wind = wind_now()
     parts = [f"{site_name(s)} {r['wavg']:.0f}"
@@ -1156,7 +1164,7 @@ def status_line():
              + (f" {spectrum_svg.compass(r['wdir'])}" if r.get("wdir") is not None else "")
              for s, r, _ in wind]
     parts += [f"{site_name(s)} {swell_text(sw, 2)}"
-              + (f" {sw[0][3]:.0f} kJ" if sw[0][3] is not None else "") for s, _, sw in swells_now()]
+              + (f" {sw[0][3]:.0f} kJ" if sw[0][3] is not None else "") for s, _, sw in swells_now(buoys)]
     if wind:
         parts.append(f"as of {when(max(r['t'] for _, r, _ in wind))}")
     return " · ".join(parts)
@@ -1193,7 +1201,7 @@ def source_reading(key):
     """What a source (a sources.SOURCES key) just read, for its back-online
     message, or None."""
     if key == "pauwela":
-        sw = next((sw for s, _, sw in swells_now() if s == key), None)
+        sw = next((sw for s, _, sw in swells_now((key,))), None)
         return sw and swell_kj_text(sw)
     if key == "rating":
         r = WEATHER and WEATHER.rating
@@ -1253,7 +1261,7 @@ def rating_line():
     return f"Best bet: {lead}{scores} ({when(r['t'])})"
 
 
-def conditions(mx, room, event_id, images, frames, charts=False):
+def conditions(mx, room, event_id, images, frames, charts=False, buoys=BOT_BUOYS):
     """Reply with the run rating, wind and buoys, the cam frame and, with
     charts, each buoy's spectrum image. images caches (site, epoch) ->
     uploaded mxc, so asking again before the next reading doesn't upload
@@ -1273,7 +1281,7 @@ def conditions(mx, room, event_id, images, frames, charts=False):
     tide = tide_line()
     if tide:
         lines.append(("↕️ ", tide))
-    buoys = swells_now()
+    buoys = swells_now(buoys)
     lines += [("🌊 ", f"{site_name(s)} {when(t)}: {swell_kj_text(sw)}") for s, t, sw in buoys]
     if not lines:
         mx.notice(room, "No wind or buoy readings in the last day.", reply_to=event_id)
@@ -1342,7 +1350,8 @@ class Bot:
         self.tmp = tempfile.mkdtemp(prefix="dwp-matrix-")
         self.images = {}  # (buoy, reading epoch) -> (mxc, size): see conditions
         self.frames = {}  # cam reading time -> (mxc, size): see send_cam_frame
-        self.status, self.status_at, self.edited = None, 0, 0
+        self.status_at = 0
+        self.status, self.edited = {}, {}  # room -> its pinned line, when it was last edited
         self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
         # question event id -> invited room (see invited), kept across
         # restarts: a sync only mentions an invite once.
@@ -1356,6 +1365,34 @@ class Bot:
     def on(self, room, key):
         """Whether room gets key (see ROOM_SETTINGS); everything's on by default."""
         return self.settings.get(room, {}).get(key, True)
+
+    def buoys(self, room):
+        """The buoys room's conditions show (BOT_BUOYS unless it picked)."""
+        return tuple(self.settings.get(room, {}).get("buoys") or BOT_BUOYS)
+
+    def set_buoys(self, room, eid, target, words):
+        """!alerts buoys SITE... (or default) for target, answering in room."""
+        where = "this room" if target == room else self.room_name(target)
+        if not words:
+            self.mx.notice(room, f"Buoys in {where}: {', '.join(map(site_name, self.buoys(target)))}. "
+                                 f"Pick with !alerts buoys and any of: {', '.join(buoy_sites())} "
+                                 "(or default).", reply_to=eid)
+            return
+        if words == ["default"]:
+            self.settings.get(target, {}).pop("buoys", None)
+        else:
+            known = buoy_sites()
+            bad = [w for w in words if w.lower() not in known]
+            if bad:
+                self.mx.notice(room, f"No recent readings from {', '.join(bad)}. "
+                                     f"Buoys: {', '.join(known)}.", reply_to=eid)
+                return
+            self.settings.setdefault(target, {})["buoys"] = list(dict.fromkeys(w.lower() for w in words))
+        save_state(self.settings_file, json.dumps(self.settings))
+        self.status.pop(target, None)  # show the new set on the next refresh
+        self.edited.pop(target, None)
+        self.mx.notice(room, f"✅ buoys in {where}: {', '.join(map(site_name, self.buoys(target)))}",
+                       reply_to=eid)
 
     def room_name(self, room):
         """"name (#alias)", or whichever of them it has, or the room id."""
@@ -1373,6 +1410,7 @@ class Bot:
         for i, r in enumerate(self.rooms, 1):
             what = ", ".join(f"{v} {'on' if self.on(r, k) else 'off'}"
                              for k, v in ROOM_SETTINGS.items())
+            what += f", buoys {' '.join(self.buoys(r))}"
             lines.append(f"{i}. {self.room_name(r)}{' (this room)' if r == room else ''}: {what}")
         self.mx.notice(room, "\n".join(lines + ["Change one with !room N ratings off "
                                                 "(or sources, runs, pinned; on; leave)."]), reply_to=eid)
@@ -1383,7 +1421,14 @@ class Bot:
             lines = [f"{'✅' if self.on(room, k) else '⛔'} {v} "
                      f"(!alerts {SETTING_NAMES.get(k, k)} {'off' if self.on(room, k) else 'on'})"
                      for k, v in ROOM_SETTINGS.items()]
+            lines.append(f"🌊 buoys: {', '.join(map(site_name, self.buoys(room)))} (!alerts buoys to change)")
             self.mx.notice(room, "\n".join(["This room gets:"] + lines), reply_to=eid)
+        elif words[0] == "buoys" and len(words) == 1:
+            self.set_buoys(room, eid, room, [])
+        elif words[0] == "buoys" and not self.room_admin(room, sender):
+            self.mx.notice(room, "Only room admins can change what this room gets.", reply_to=eid)
+        elif words[0] == "buoys":
+            self.set_buoys(room, eid, room, words[1:])
         elif len(words) != 2 or words[0] not in SETTING_WORDS or words[1] not in ("on", "off"):
             self.mx.notice(room, "!alerts takes a setting and on or off, like !alerts sources off "
                                  "(settings: ratings, sources, runs, pinned)", reply_to=eid)
@@ -1425,6 +1470,9 @@ class Bot:
             name = self.room_name(target)
             self.left(target)
             self.mx.notice(room, f"✅ left {name}", reply_to=eid)
+            return
+        if words[1:2] == ["buoys"]:
+            self.set_buoys(room, eid, target, words[2:])
             return
         if len(words) != 3 or words[1] not in SETTING_WORDS or words[2] not in ("on", "off"):
             self.mx.notice(room, usage, reply_to=eid)
@@ -1512,21 +1560,25 @@ class Bot:
         if time.time() - self.status_at < STATUS_EVERY:
             return
         self.status_at = time.time()
-        line = status_line()
-        if not line:
-            return
-        now = time.time()
-        edit = (line.split(" · as of ")[0] != (self.status or "").split(" · as of ")[0]
-                and now - self.edited >= EDIT_EVERY)
+        now, lines = time.time(), {}  # each room's buoys -> its line
         for room in self.rooms:
             if not self.on(room, "pinned"):
                 continue
+            buoys = self.buoys(room)
+            if buoys not in lines:
+                lines[buoys] = status_line(buoys)
+            line = lines[buoys]
+            if not line:
+                continue
+            edit = (line.split(" · as of ")[0] != self.status.get(room, "").split(" · as of ")[0]
+                    and now - self.edited.get(room, 0) >= EDIT_EVERY)
             try:
                 self.pin_status(room, line, edit)
             except Exception as e:  # one room's trouble shouldn't stop the others
                 log(f"pinned conditions in {room} failed: {e!r}")
-        if edit:
-            self.status, self.edited = line, now
+                continue
+            if edit:
+                self.status[room], self.edited[room] = line, now
 
     def pin_status(self, room, line, edit):
         """Post, edit (if edit) and pin room's conditions message: a new one
@@ -1715,7 +1767,7 @@ class Bot:
             return
         if text.startswith("!conditions"):  # anyone in the room
             conditions(self.mx, room, eid, self.images, self.frames,
-                       charts="chart" in text[len("!conditions"):])
+                       charts="chart" in text[len("!conditions"):], buoys=self.buoys(room))
             return
         if text.startswith("!help") and not rider:
             body, html = help_text([("Anyone", HELP_ANYONE)])
