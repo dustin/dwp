@@ -1070,8 +1070,12 @@ def tide_line():
         for t, hl, ft in ts)
 
 
+# The buoys the bot reports (status line, !conditions); the lake has more.
+BOT_BUOYS = ("pauwela", "waimea")
+
+
 def swells_now():
-    """Per buoy with a reading in the last day: (site, epoch, [(ft, s, °, kJ)])
+    """Per BOT_BUOYS buoy with a reading in the last day: (site, epoch, [(ft, s, °, kJ)])
     from swell_partition's latest full reading, rank 1 (NDBC's own) first.
     The spectral components (rank 2+) come with the :56 readings, so a
     newer reading with rank 1 alone loses to the one before it. kJ is the
@@ -1080,7 +1084,8 @@ def swells_now():
     web/lib/components/spectral-partitions.js); None when there's no total."""
     rows = query("with latest as (select site, arg_max(ts, (n > 1)::int * 1e10 + epoch(ts)) as ts "
                  "from (select site, ts, count(*) as n from swell_partition "
-                 "where ts > now() - interval 1 day group by all) group by site) "
+                 "where ts > now() - interval 1 day "
+                 f"and site in ({', '.join(sql_str(b) for b in BOT_BUOYS)}) group by all) group by site) "
                  "select p.site, epoch(p.ts) as t, p.rank, p.height, p.period, p.direction, "
                  "p.energy, p.surfline_kj "
                  "from swell_partition p join latest using (site, ts) order by p.site, p.rank")
