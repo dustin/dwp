@@ -10,6 +10,7 @@ import {beachColorScale} from "./components/beaches.js";
 import {responsiveRunsTable} from "./components/runs-table.js";
 import {responsiveSplitsTable} from "./components/splits-table.js";
 import {lazy, lazyResize} from "./components/lazy.js";
+import {LIVE_BUOYS, REGION_BUOYS} from "./components/buoy-map.js";
 import {FOIL_THRESHOLD_KPH} from "./components/color.js";
 import {windRoseOrigin, windRoseScale, addWindRose, WIND_SPEED_COLORS} from "./components/wind-rose.js";
 import {summarizeSwellPartition, formatPrimaryLine, formatComponentLine, formatIndividualSwells as formatSwells, representativeSwellReading, primarySwell, PAUWELA_BUOY} from "./components/swell.js";
@@ -18,7 +19,7 @@ import {partitionReading, spectralPartitions} from "./components/spectral-partit
 import {renderPartitionBubbles, renderPartitionCompass} from "./components/partitions.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes, fetchCamReport, fetchPanoReport} from "./components/data.js";
+import {fetchMeta, riderFile, fetchTogether, fetchRun, fetchWind, fetchSwell, fetchSwellSpectrum, fetchSwellPartitionWindow, buoySite, runMidpoint, BUOY_DATA_START, toHstParam, spectrumSampleTime, reportTimes, fetchCamReport, fetchPanoReport} from "./components/data.js";
 
 const allRuns = await fetchMeta(() => riderFile('runs.csv'));
 
@@ -380,6 +381,31 @@ swellPrimary && swellPrimary.length > 0
     }))
   : html`<p>No swell data found for this run.</p>`
 }</div>`
+}</div>
+
+```js
+// Every buoy that reported during the run (or in the hour before it, since
+// some report hourly), linked to its page on the hub at the run's end.
+// The region's relevant buoys (REGION_BUOYS) come first.
+const runEnd = new Date(runMeta.ts.getTime() + runMeta.duration_sec * 1000);
+const buoyLinks = await (async () => {
+  const from = new Date(runMeta.ts.getTime() - 3600 * 1000);
+  const sites = Object.entries(LIVE_BUOYS).filter(([, b]) => runEnd >= b.start).map(([site]) => site);
+  const had = await Promise.all(sites.map(async site => (await fetchSwellPartitionWindow(site, from, runEnd)).length > 0));
+  const up = sites.filter((_, i) => had[i]);
+  const nearby = (REGION_BUOYS[runMeta.region] ?? []).filter(s => up.includes(s));
+  return {nearby, others: up.filter(s => !nearby.includes(s))};
+})();
+const buoyLink = site => html`<a href="https://downwind.pro/buoy/${site}.html?t=${toHstParam(runEnd)}">${LIVE_BUOYS[site].name}</a>`;
+const buoyList = sites => sites.flatMap((s, i) => i ? [" · ", buoyLink(s)] : [buoyLink(s)]);
+```
+
+<div>${
+  buoyLinks.nearby.length + buoyLinks.others.length === 0 ? "" : html`<p>Buoys during this run: ${
+    buoyLinks.nearby.length ? html`<strong>${buoyList(buoyLinks.nearby)}</strong>` : ""
+  }${buoyLinks.nearby.length && buoyLinks.others.length ? " · " : ""}${
+    buoyLinks.others.length ? html`<span style="color: var(--theme-foreground-muted)">${buoyList(buoyLinks.others)}</span>` : ""
+  }</p>`
 }</div>
 
 <div>${

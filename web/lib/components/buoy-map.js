@@ -63,6 +63,17 @@ export const BUOYS = {
 // The buoys we collect and have pages for.
 export const LIVE_BUOYS = Object.fromEntries(Object.entries(BUOYS).filter(([, b]) => !b.offline));
 
+// Which buoys matter for a run in each region, most relevant first. The
+// run page lists these first and the rest after. Unknown regions get the
+// default order.
+export const REGION_BUOYS = {
+  'Maui North Shore': ['pauwela', 'waimea', 'mokapu', 'n_hawaii', 'nw_hawaii', 'hilo'],
+  'Kihei': ['barbers_point', 'sw_hawaii', 'se_hawaii', 'hilo'],
+  'West Maui': ['barbers_point', 'waimea', 'nw_hawaii', 'sw_hawaii'],
+  'Molokai': ['pauwela', 'mokapu', 'waimea', 'n_hawaii'],
+  'Oahu': ['waimea', 'mokapu', 'barbers_point', 'nw_hawaii'],
+};
+
 const islands = {
   type: 'MultiPolygon',
   coordinates: HAWAII_ISLANDS.map(ring => [ring]),
