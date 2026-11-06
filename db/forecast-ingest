@@ -27,7 +27,6 @@ import json
 import math
 import os
 import sys
-import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -35,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+from dwp_publish import duckdb, temp_table, PublishError  # noqa: E402
 
 # site -> model -> (lat, lon) of the cell to read. Open-Meteo model names
 # are the API's; pacioos_wrf_mo is PacIOOS's 2 km WRF (ERDDAP wrf_mo).
@@ -193,30 +192,30 @@ def backfill(today):
     return rows
 
 
-def ingest(rows, tmp, backfilling):
+def ingest(rows, backfilling):
     if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
                   "and table_name = 'wind_forecast';", json_out=True):
         raise PublishError("no wind_forecast table in the lake (see schema.sql)")
     if not rows:
         log("nothing fetched")
         return
-    lst = os.path.join(tmp, "wind_forecast.csv")
-    with open(lst, "w") as f:
-        f.write("site,model,issued,lead_days,ts,wavg,wdir\n")
-        for site, model, x, ts, s, d in rows:
-            issued, lead = ("", x) if backfilling else (x.isoformat(), "")
-            f.write(f"{site},{model},{issued},{lead},{ts.isoformat()},{s:.2f},{d:.0f}\n")
-    src = f"""read_csv({sql_str(lst)}, header = true, nullstr = '',
-                       columns = {{'site': 'VARCHAR', 'model': 'VARCHAR', 'issued': 'TIMESTAMPTZ',
-                                   'lead_days': 'INTEGER', 'ts': 'TIMESTAMPTZ',
-                                   'wavg': 'DOUBLE', 'wdir': 'DOUBLE'}})"""
+    # The rows go in the SQL itself: through quack, a read_csv() of a
+    # local file would read the lake host's disk.
+    src = "new_forecast"
+    table = temp_table(src, [("site", "VARCHAR"), ("model", "VARCHAR"), ("issued", "TIMESTAMPTZ"),
+                             ("lead_days", "INTEGER"), ("ts", "TIMESTAMPTZ"),
+                             ("wavg", "DOUBLE"), ("wdir", "DOUBLE")],
+                       [(site, model, None if backfilling else x.isoformat(), x if backfilling else None,
+                         ts.isoformat(), round(s, 2), float(round(d)))
+                        for site, model, x, ts, s, d in rows])
     if backfilling:
         fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
                        and w.lead_days = n.lead_days and w.ts = n.ts)"""
     else:
         fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
                        and w.issued = n.issued)"""
-    duckdb(f"""begin;
+    duckdb(table + f"""
+        begin;
         call lake.set_commit_message('dustin', 'wind forecasts{" backfill" if backfilling else ""}');
         insert into wind_forecast by name
             select * from (
@@ -233,8 +232,7 @@ def main():
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     try:
         rows = backfill(now.date()) if backfilling else live(now)
-        with tempfile.TemporaryDirectory(prefix="dwp-forecast-") as tmp:
-            ingest(rows, tmp, backfilling)
+        ingest(rows, backfilling)
     except PublishError as e:
         log(str(e))
         return 1

@@ -189,8 +189,9 @@ CREATE TABLE cam_motion(
 );
 
 -- Cam images: the image manifest. key is the object in the CDN bucket,
--- cams/site=<site>/day=<day>/<stamp>-<kind>.jpg; file is the local copy
--- publish uploads it from (not published).
+-- cams/site=<site>/day=<day>/<stamp>-<kind>.jpg; file is null once
+-- cam-ingest has put it in S3 from the host that took it, and in older
+-- rows the local copy publish uploads it from (not published).
 CREATE TABLE cam_images(
   site VARCHAR,
   ts TIMESTAMP WITH TIME ZONE,

@@ -14,11 +14,13 @@ site and day under wind/, swell/, swell_partition/ and swell_spectrum/.
 
 Cam readings and images (cam_motion and cam_images, which cam-ingest
 fills) publish per site and day like the conditions, under cam_motion/ and
-cam_images/. Before them, every image cam_images lists that the manifest
-doesn't have goes to S3 at its key from the local file it names, once,
-cached a year (images never change). Once an image has been in S3 since an
-earlier publish and its local copy is over 14 days old (DWP_IMAGE_KEEP_DAYS),
-publish deletes the local copy. Wind forecasts (wind_forecast, from
+cam_images/. cam-ingest puts the images themselves in S3 from the host that
+took them and records them with file null, so publish never needs them. Rows
+from before that name a local file instead: each one the manifest doesn't
+have goes to S3 at its key from that file, once, cached a year (images never
+change). Once such an image has been in S3 since an earlier publish and its
+local copy is over 14 days old (DWP_IMAGE_KEEP_DAYS), publish deletes the
+local copy. Wind forecasts (wind_forecast, from
 forecast-ingest) publish the same way under wind_forecast/. publish only
 reads the lake.
 
@@ -80,6 +82,7 @@ import fcntl
 import gzip
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -218,6 +221,44 @@ def last_json(out):
 
 def sql_str(s):
     return "'" + s.replace("'", "''") + "'"
+
+
+def sql_lit(v, typ):
+    """v as a SQL literal of type typ."""
+    if v is None:
+        return "null"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)) and math.isfinite(v):
+        return repr(v)
+    return f"{sql_str(v if isinstance(v, str) else str(v))}::{typ}"
+
+
+def temp_table(name, cols, rows, chunk=1000):
+    """Statements making temp table name, columns cols ([(name, type)]),
+    holding rows (tuples in cols' order), all as literals in the SQL.
+
+    Through quack every statement runs on the lake's host, so a
+    read_csv() or read_json() of a local file reads that host's disk, not
+    this one's. Sending the rows themselves works from anywhere."""
+    out = [f"create or replace temp table {name} ("
+           + ", ".join(f'"{c}" {t}' for c, t in cols) + ");"]
+    for i in range(0, len(rows), chunk):
+        out.append(f"insert into {name} values\n" + ",\n".join(
+            "(" + ", ".join(sql_lit(v, t) for v, (_, t) in zip(r, cols)) + ")"
+            for r in rows[i:i + chunk]) + ";")
+    return "\n".join(out)
+
+
+def stage_file(stage_dir, key, src):
+    """Put src at stage_dir/key for upload(), as a hard link if it can."""
+    dst = os.path.join(stage_dir, key)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    try:
+        os.link(src, dst)  # rclone skips symlinks
+    except OSError:
+        shutil.copyfile(src, dst)
+    return dst
 
 
 def read_sql(name):
@@ -436,8 +477,10 @@ def publish(manifest, dry_run=False):
         log("no manifest yet: adopting what's already in the bucket")
     in_s3 = list_bucket() if seed else {}
     today = datetime.now(ZoneInfo("Pacific/Honolulu")).date()
+    # Images cam-ingest uploaded itself have no file; they're done.
     images = {r["key"]: r["file"] for r in duckdb(
-        "select key, file from cam_images;", json_out=True)} if has_table("cam_images") else {}
+        "select key, file from cam_images where file is not null;", json_out=True)} \
+        if has_table("cam_images") else {}
 
     # key -> (fingerprint, headers, adopt): what to export this time.
     todo = {}
@@ -482,12 +525,7 @@ def publish(manifest, dry_run=False):
             elif k in in_s3:
                 record.append((k, sha256(src), in_s3[k], json.dumps(IMAGE), None))
             else:
-                dst = os.path.join(stage_dir, k)
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                try:
-                    os.link(src, dst)  # rclone skips symlinks
-                except OSError:
-                    shutil.copyfile(src, dst)
+                dst = stage_file(stage_dir, k, src)
                 new.append(k)
                 record.append((k, sha256(dst), os.path.getsize(dst), json.dumps(IMAGE), None))
         log(f"{len(images)} cam images, {len(new)} to upload")

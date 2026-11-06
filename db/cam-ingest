@@ -1,109 +1,208 @@
 #!/usr/bin/env python3
-"""Add the cam watchers' new readings and images to the lake.
+"""Add the cam watchers' new readings and images to the lake, and put the
+images in S3.
 
-    ./cam-ingest
+    ./cam-ingest [--log DIR] [--dry-run]
 
-Each folder in CAMS is a cam watcher's --log dir (db/cams/cam_motion.py),
-~/.cache/<cam>-motion for each cam in db/cams/cams.py unless DWP_<CAM>_CAM says otherwise:
-a motion.jsonl, one reading per line, and images named <stamp>-<kind>.jpg
-(a bare <stamp>.jpg is an older arrow overlay, kind flow). Readings newer
-than the lake's newest for that site go into cam_motion; a field with no
-column there is left out (with a warning) until schema.sql gets one. Images
-the lake doesn't know go into cam_images (site, ts, day, kind, key, bytes,
-file): key is where publish puts it in S3,
-cams/site=<site>/day=<Hawaii day>/<stamp>-<kind>.jpg, and file is the local
-copy publish uploads it from. One lake commit; safe to rerun. It never
-creates or changes tables: both must already exist (schema.sql).
+Run it on the host that runs the cam watcher (db/cams/cam_motion.py), right
+after it: cams/hm-module.nix does. It works from any host that reaches the
+lake (LAKE's quack-init.sql), since it reads nothing but its own files and
+sends the lake the rows themselves: through quack, a read_json() of a local
+path would read the lake host's disk instead.
 
-Run it before ./publish (the conditions job), from db's nix dev shell.
+Each cam's folder is the watcher's --log dir, DIR with {cam} as the cam's
+name (default ~/.cache/{cam}-motion, or DWP_CAM_LOG; DWP_<CAM>_CAM still
+names one cam's folder outright): a motion.jsonl, one reading per line, and
+images named <stamp>-<kind>.jpg (a bare <stamp>.jpg is an older arrow
+overlay, kind flow).
+
+  * Readings newer than the lake's newest for that site go into cam_motion;
+    a field with no column there is left out (with a warning) until
+    schema.sql gets one.
+  * Images the lake doesn't know go to S3 (DWP_DEST, the rclone remote
+    publish uses) at cams/site=<site>/day=<Hawaii day>/<stamp>-<kind>.jpg,
+    cached a year, and then into cam_images with that key and file null,
+    meaning publish has nothing to upload for them.
+  * Local images the lake knows are deleted once over DWP_IMAGE_KEEP_DAYS
+    (14) days old.
+
+Uploads come first and the rows go in with one lake commit, so a failure
+anywhere means the next run redoes it (an image may be uploaded twice; it
+never changes). Safe to rerun. It never creates or changes tables:
+cam_motion and cam_images must already exist (schema.sql).
 """
 
+import argparse
+import json
 import os
 import re
+import socket
 import sys
 import tempfile
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "cams"))
-from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+import dwp_publish  # noqa: E402
+from dwp_publish import duckdb, sql_str, temp_table, PublishError  # noqa: E402
 import cams  # noqa: E402
 
-# site -> the folder its cam watcher logs to (--log).
-CAMS = {c: os.environ.get(f"DWP_{c.upper()}_CAM") or os.path.expanduser(f"~/.cache/{c}-motion") for c in cams.CAMS}
 CAM_IMAGE = re.compile(r"(\d{4}-\d\d-\d\dT\d{6}Z)(?:-([a-z]+))?\.jpg")
+HST = ZoneInfo("Pacific/Honolulu")
 
 
-def cam_images():
-    """key -> (site, stamp, kind, local path) for every image the cam folders hold."""
+def log(msg):
+    print(f"cam-ingest: {msg}", file=sys.stderr, flush=True)
+
+
+def cam_dirs(template):
+    """site -> the folder its cam watcher logs to (--log)."""
+    return {c: os.environ.get(f"DWP_{c.upper()}_CAM") or os.path.expanduser(template.replace("{cam}", c))
+            for c in cams.CAMS}
+
+
+def cam_images(dirs):
+    """key -> (site, ts, kind, local path) for every image the cam folders hold."""
     out = {}
-    for site, d in CAMS.items():
+    for site, d in dirs.items():
         for name in sorted(os.listdir(d)) if os.path.isdir(d) else []:
             m = CAM_IMAGE.fullmatch(name)
             if not m:
                 continue
             stamp, kind = m.group(1), m.group(2) or "flow"
-            ts = datetime.strptime(stamp, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=ZoneInfo("UTC"))
-            day = ts.astimezone(ZoneInfo("Pacific/Honolulu")).date().isoformat()
-            out[f"cams/site={site}/day={day}/{stamp}-{kind}.jpg"] = (site, stamp, kind, os.path.join(d, name))
+            ts = datetime.strptime(stamp, "%Y-%m-%dT%H%M%SZ").replace(tzinfo=timezone.utc)
+            day = ts.astimezone(HST).date().isoformat()
+            out[f"cams/site={site}/day={day}/{stamp}-{kind}.jpg"] = (site, ts, kind, os.path.join(d, name))
     return out
 
 
-def ingest(images, tmp):
-    """Add the cam folders' new readings to cam_motion and their images to
-    cam_images, in one lake commit. Both tables must exist (schema.sql)."""
-    have = [r["column_name"] for r in duckdb(
-        "select column_name from information_schema.columns "
-        "where table_catalog = 'lake' and table_name = 'cam_motion';", json_out=True)]
-    if not have:
+def readings(path, since):
+    """[(ts, reading)] from motion.jsonl newer than since, one per stamp."""
+    out, seen = [], set()
+    with open(path) as f:
+        for n, line in enumerate(f, 1):
+            try:
+                r = json.loads(line)
+                ts = datetime.strptime(r.pop("stamp"), "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+            except (ValueError, KeyError, AttributeError):
+                if line.strip():
+                    log(f"{path}:{n}: not a reading; skipped")
+                continue
+            if (since is None or ts > since) and ts not in seen:
+                seen.add(ts)
+                out.append((ts, r))
+    return out
+
+
+def lake_state(images):
+    """(cam_motion's columns {name: type}, newest reading per site, keys
+    cam_images has from the oldest local image on)."""
+    cols = {r["column_name"]: r["data_type"] for r in duckdb(
+        "select column_name, data_type from information_schema.columns "
+        "where table_catalog = 'lake' and table_name = 'cam_motion' order by ordinal_position;",
+        json_out=True)}
+    if not cols:
         raise PublishError("no cam_motion table in the lake (see schema.sql)")
-    stmts = ["set TimeZone = 'UTC';", "begin;", "call lake.set_commit_message('dustin', 'cam readings and images');"]
-    for site, d in CAMS.items():
+    newest = {r["site"]: datetime.fromtimestamp(r["ms"] / 1000, timezone.utc) for r in duckdb(
+        "select site, epoch_ms(max(ts)) as ms from cam_motion group by site;", json_out=True)}
+    known = set()
+    if images:
+        oldest = min(ts for _, ts, _, _ in images.values())
+        known = {r["key"] for r in duckdb(
+            f"select key from cam_images where ts >= {sql_str(oldest.isoformat())}::timestamptz;",
+            json_out=True)}
+    return cols, newest, known
+
+
+def ingest(dirs, dry_run):
+    images = cam_images(dirs)
+    have, newest, known = lake_state(images)
+
+    # cam_motion rows, every column in the table's types.
+    keep = [c for c in have if c not in ("site", "ts", "day")]
+    motion = []
+    for site, d in dirs.items():
         jsonl = os.path.join(d, "motion.jsonl")
         if not os.path.exists(jsonl):
             continue
-        # read_json types the stamps as naive TIMESTAMPs (the Z dropped) before
-        # DuckDB 2.0 and as TIMESTAMPTZs since; with the session in UTC (set
-        # above), ::timestamp gives the UTC wall time either way.
-        src = f"read_json({sql_str(jsonl)}, format = 'newline_delimited', sample_size = -1)"
-        fields = [r["column_name"] for r in duckdb(f"describe select * from {src};", json_out=True)]
-        extra = sorted(set(fields) - set(have) - {"stamp"})
+        new = readings(jsonl, newest.get(site))
+        extra = sorted({k for _, r in new for k in r} - set(have))
         if extra:
-            print(f"cam-ingest: {site}: no column for {', '.join(extra)}; not kept", file=sys.stderr)
-        cols = ", ".join(f'"{c}"' for c in fields if c in have and c not in ("site", "ts", "day"))
-        stmts.append(f"""insert into cam_motion by name
-            select * from (
-                select {sql_str(site)} as site, (stamp::timestamp at time zone 'UTC') as ts,
-                       ((stamp::timestamp at time zone 'UTC') at time zone 'Pacific/Honolulu')::date as day{", " + cols if cols else ""}
-                from {src}
-            ) where ts > coalesce(
-                (select max(ts) from cam_motion where site = {sql_str(site)}), '-infinity'::timestamptz)
-            qualify row_number() over (partition by ts) = 1;""")
-    if images:
-        lst = os.path.join(tmp, "cam_images.csv")
-        with open(lst, "w") as f:
-            f.write("site,stamp,kind,key,bytes,file\n")
-            for k, (site, stamp, kind, path) in sorted(images.items()):
-                f.write(f"{site},{stamp},{kind},{k},{os.path.getsize(path)},{path}\n")
-        stmts.append(f"""insert into cam_images
-            select site, ts, (ts at time zone 'Pacific/Honolulu')::date, kind, key, bytes, file from (
-                select *, strptime(stamp, '%Y-%m-%dT%H%M%SZ') at time zone 'UTC' as ts
-                from read_csv({sql_str(lst)}, header = true,
-                              columns = {{'site': 'VARCHAR', 'stamp': 'VARCHAR', 'kind': 'VARCHAR',
-                                          'key': 'VARCHAR', 'bytes': 'BIGINT', 'file': 'VARCHAR'}})
-            ) where key not in (select key from cam_images);""")
+            log(f"{site}: no column for {', '.join(extra)}; not kept")
+        motion += [(site, ts.isoformat(), ts.astimezone(HST).date().isoformat(), *(r.get(c) for c in keep))
+                   for ts, r in new]
+
+    new_images = sorted(k for k in images if k not in known)
+    log(f"{len(motion)} new readings, {len(new_images)} of {len(images)} images to upload")
+    if dry_run:
+        for k in new_images:
+            log(f"would upload {k}")
+        return
+    if not motion and not new_images:
+        prune(images, known)
+        return
+
+    with tempfile.TemporaryDirectory(prefix="dwp-cams-") as tmp:
+        for k in new_images:
+            dwp_publish.stage_file(tmp, k, images[k][3])
+        dwp_publish.upload(tmp, new_images, dwp_publish.IMAGE, False)
+
+    # The temp tables go in before the transaction, which writes only the lake.
+    temps, stmts = ["set TimeZone = 'UTC';"], [
+        "begin;",
+        f"call lake.set_commit_message('dustin', {sql_str('cam readings and images from ' + socket.gethostname())});"]
+    if motion:
+        temps.append(temp_table("new_motion",
+                                [("site", "VARCHAR"), ("ts", "TIMESTAMPTZ"), ("day", "DATE")]
+                                + [(c, have[c]) for c in keep], motion))
+        # Re-checked here in case another ingest got in first.
+        stmts.append("""insert into cam_motion by name
+            select * from new_motion n where n.ts > coalesce(
+                (select max(ts) from cam_motion m where m.site = n.site), '-infinity'::timestamptz);""")
+    if new_images:
+        rows = []
+        for k in new_images:
+            site, ts, kind, path = images[k]
+            rows.append((site, ts.isoformat(), ts.astimezone(HST).date().isoformat(), kind, k,
+                         os.path.getsize(path), None))
+        temps.append(temp_table("new_images", [("site", "VARCHAR"), ("ts", "TIMESTAMPTZ"), ("day", "DATE"),
+                                               ("kind", "VARCHAR"), ("key", "VARCHAR"), ("bytes", "BIGINT"),
+                                               ("file", "VARCHAR")], rows))
+        stmts.append("insert into cam_images by name select * from new_images "
+                     "where key not in (select key from cam_images);")
     stmts.append("commit;")
-    duckdb("\n".join(stmts))
+    duckdb("\n".join(temps + stmts))
+    prune(images, known | set(new_images))
+
+
+def prune(images, in_lake):
+    """Delete local images the lake (and so S3) has, once they're old."""
+    cutoff = time.time() - dwp_publish.IMAGE_KEEP_DAYS * 86400
+    gone = 0
+    for k, (_, _, _, path) in images.items():
+        try:
+            if k in in_lake and os.path.getmtime(path) < cutoff:
+                os.unlink(path)
+                gone += 1
+        except FileNotFoundError:
+            pass
+    if gone:
+        log(f"pruned {gone} uploaded images over {dwp_publish.IMAGE_KEEP_DAYS:g} days old")
 
 
 def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--log", default=os.environ.get("DWP_CAM_LOG") or "~/.cache/{cam}-motion",
+                    help="the watcher's --log dir; {cam} is the cam's name")
+    ap.add_argument("--dry-run", action="store_true", help="upload nothing, change nothing")
+    args = ap.parse_args()
     try:
-        with tempfile.TemporaryDirectory(prefix="dwp-cams-") as tmp:
-            ingest(cam_images(), tmp)
+        ingest(cam_dirs(args.log), args.dry_run)
     except PublishError as e:
-        print(f"cam-ingest: {e}", file=sys.stderr)
+        log(str(e))
         return 1
     return 0
 

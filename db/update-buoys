@@ -2,8 +2,9 @@
 #
 # The half-hourly buoy job (launchd net.spy.buoyupdate on dsstudio):
 # Every Hawaiʻi buoy's readings and spectra (swell/collect), the latest
-# Pauwela report to MQTT, then cam-ingest,
-# forecast-ingest, publish and the MagTag render.
+# Pauwela report to MQTT, then forecast-ingest, publish and the MagTag
+# render. (cam-ingest runs with the cam watcher, wherever that is: see
+# cams/hm-module.nix.)
 #
 # Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
 # elsewhere.
@@ -33,7 +34,6 @@ duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql"
 #   | mosquitto_pub -V 5 -d -h mqtt -t ocean/buoy -r -D publish message-expiry-interval 3600 -s
 
 cd "$here"
-./cam-ingest
 ./forecast-ingest
 ./publish
 

@@ -6,12 +6,33 @@
 #   services.dwp-cam-motion = { enable = true; mqtt = "bee1"; };
 #
 # (services.dwp-wailea-motion was its name when it only watched Wailea.)
+#
+# With ingest.enable, each round then runs cam-ingest (../cam-ingest) on
+# the same host: the round's readings go into the lake and its images to
+# S3 from here, so any host can be the one watching the cams. It needs the
+# lake (ingest.lake holding quack-init.sql) and an rclone config with the
+# s3 remote (ingest.rcloneConfig).
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-cam-motion;
-  command = [ (lib.getExe cfg.package) "--mqtt" cfg.mqtt ]
+  motion = [ (lib.getExe cfg.package) "--mqtt" cfg.mqtt ]
     ++ lib.concatMap (c: [ "--cam" c ]) cfg.cams
     ++ lib.optionals (cfg.logDir != null) [ "--log" cfg.logDir ];
+  # The lake is on DuckDB 2.0; use ../../nix/duckdb.nix's until pkgs has it.
+  duckdb = if lib.versionAtLeast pkgs.duckdb.version "2" then pkgs.duckdb
+    else pkgs.callPackage ../../nix/duckdb.nix { inherit (pkgs) duckdb; };
+  round = pkgs.writeShellScript "dwp-cam-round" (''
+    status=0
+    ${lib.escapeShellArgs motion} || status=$?
+  '' + lib.optionalString cfg.ingest.enable ''
+    export LAKE=${lib.escapeShellArg cfg.ingest.lake}
+    ${lib.optionalString (cfg.ingest.rcloneConfig != null)
+      "export RCLONE_CONFIG=${lib.escapeShellArg cfg.ingest.rcloneConfig}"}
+    ${lib.getExe' cfg.ingest.package "dwp-cam-ingest"} --log ${lib.escapeShellArg cfg.logDir} || status=$?
+  '' + ''
+    exit $status
+  '');
+  command = [ "${round}" ];
   old = [ "services" "dwp-wailea-motion" ];
   new = [ "services" "dwp-cam-motion" ];
 in
@@ -45,9 +66,32 @@ in
       default = "${config.xdg.cacheHome}/{cam}-motion";
       description = "Where to keep motion.jsonl and an arrow overlay per reading, {cam} being the cam's name (null for none).";
     };
+    ingest = {
+      enable = mkEnableOption "cam-ingest after each round: readings to the lake, images to S3, from this host";
+      package = mkOption {
+        type = types.package;
+        default = pkgs.callPackage ../tools.nix { inherit duckdb; };
+      };
+      lake = mkOption {
+        type = types.str;
+        default = "${config.home.homeDirectory}/stuff/duck";
+        description = "LAKE for cam-ingest: a directory whose quack-init.sql connects to the lake.";
+      };
+      rcloneConfig = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "RCLONE_CONFIG for the upload: a config with the s3 remote (null for rclone's default).";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
+    {
+      assertions = [{
+        assertion = cfg.ingest.enable -> cfg.logDir != null;
+        message = "services.dwp-cam-motion.ingest needs logDir: cam-ingest reads it.";
+      }];
+    }
     (lib.mkIf pkgs.stdenv.hostPlatform.isDarwin {
       launchd.agents.dwp-cam-motion = {
         enable = true;
@@ -63,7 +107,7 @@ in
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       systemd.user.services.dwp-cam-motion = {
         Unit.Description = "Cam water motion";
-        Service = { Type = "oneshot"; ExecStart = lib.escapeShellArgs command; };
+        Service = { Type = "oneshot"; ExecStart = "${round}"; };
       };
       systemd.user.timers.dwp-cam-motion = {
         Unit.Description = "Cam water motion";
