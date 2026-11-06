@@ -31,6 +31,9 @@ let
   ++ lib.optional (!cfg.live) "--no-live"
   ++ lib.concatMap (room: [ "--room" room ]) (lib.optional (cfg.room != null) cfg.room ++ cfg.rooms)
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
+  # The bot's publishes ask publishd on the same broker it reads weather
+  # from (on macOS a launchd agent may only reach it by a Tailscale name).
+  publishEnv = lib.optionalAttrs (cfg.mqtt != "") { DWP_MQTT = cfg.mqtt; };
 in
 {
   imports = [ ./live-wind.nix ];
@@ -97,7 +100,7 @@ in
           EnvironmentVariables = {
             HOME = config.home.homeDirectory;
             LANG = "en_US.UTF-8";
-          };
+          } // publishEnv;
         };
       };
     })
@@ -109,6 +112,7 @@ in
         };
         Service = {
           ExecStart = lib.escapeShellArgs command;
+          Environment = lib.mapAttrsToList (k: v: "${k}=${v}") publishEnv;
           Restart = "always";
           RestartSec = 30;
         };
