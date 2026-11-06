@@ -1,6 +1,6 @@
 # Home-manager module for publishd (./publishd), the publish service: the
-# one place ./publish runs. Callers set DWP_PUBLISHD to the broker and ask
-# it instead (run() in dwp_publish.py, `./publish --request`).
+# one place ./publish runs. Every ./publish and dwp_publish.run() elsewhere
+# asks it over MQTT (the broker DWP_MQTT, default mqtt).
 #
 #   services.dwp-publishd = {
 #     enable = true;
@@ -18,7 +18,7 @@ let
     else pkgs.callPackage ../nix/duckdb.nix { inherit (pkgs) duckdb; };
   command = [ (lib.getExe' cfg.package "dwp-publishd") "--mqtt" cfg.mqtt
               "--settle" (toString cfg.settle) "--every" (toString cfg.every) ];
-  env = { LAKE = cfg.lake; DWP_PUBLISHD = ""; }
+  env = { LAKE = cfg.lake; }
     // lib.optionalAttrs (cfg.rcloneConfig != null) { RCLONE_CONFIG = cfg.rcloneConfig; };
 in
 {

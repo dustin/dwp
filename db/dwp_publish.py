@@ -7,7 +7,11 @@
     ./publish orphans     list objects the lake no longer makes (from the S3
                           inventory in the lake, so about a day behind)
     ./publish orphans --delete   ...and delete them from S3
-    ./publish --request   ask publishd to publish (DWP_PUBLISHD) and wait
+
+Each of these asks the publish service (./publishd, wherever it runs) to
+do it, over MQTT (DWP_MQTT, default mqtt), and prints what it printed;
+so does run(), which add-run, the bot and drive-sync call. Add --local to
+run it here instead, for when publishd is down.
 
 Everything under s3:db.downwind.pro/ that comes from the lake goes through
 here: each run's track and each rider's lists under runs/, and one file per
@@ -98,9 +102,11 @@ from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
-# The publish service (publishd): when DWP_PUBLISHD names its broker,
-# run() and `./publish --request` ask it to publish instead of publishing.
-PUBLISHD = os.environ.get("DWP_PUBLISHD") or ""
+# Every publish goes through the publish service (publishd), over the
+# broker DWP_MQTT (default mqtt); publishd sets DWP_PUBLISH_LOCAL for the
+# ./publish it runs, and ./publish --local runs here when it's down.
+MQTT = os.environ.get("DWP_MQTT") or "mqtt"
+LOCAL = bool(os.environ.get("DWP_PUBLISH_LOCAL"))
 REQUEST_TOPIC = "dwp/publish/req"
 REPLY_TOPIC = "dwp/publish/reply"
 STATUS_TOPIC = "dwp/publish/status"
@@ -690,40 +696,41 @@ def locked():
     return lock
 
 
-def request(host=None, wait=True):
-    """Ask publishd (on broker host, default DWP_PUBLISHD) to publish, and
-    with wait, wait for its answer; raises PublishError if it failed."""
+def request(argv=(), host=None):
+    """Have publishd run ./publish with argv (on broker host, default
+    DWP_MQTT or mqtt) and wait for it: (exit code, its output)."""
     import dwp_mqtt
-    host = host or PUBLISHD
+    host = host or MQTT
     rid = f"{socket.gethostname()}-{time.time_ns()}"
     reply = f"{REPLY_TOPIC}/{rid}"
     try:
-        with dwp_mqtt.Client(host, [reply] if wait else [], name="dwp-publish") as c:
-            c.send(REQUEST_TOPIC, json.dumps({"id": rid, "from": socket.gethostname()}))
-            if not wait:
-                return
-            log(f"asked publishd on {host} ({rid})")
+        with dwp_mqtt.Client(host, [reply], name="dwp-publish") as c:
+            c.send(REQUEST_TOPIC, json.dumps({"id": rid, "from": socket.gethostname(), "args": list(argv)}))
+            log(f"asked publishd on {host} ({rid}); waiting")
             for _, payload in c.messages(REQUEST_WAIT):
                 r = json.loads(payload)
-                if not r.get("ok"):
-                    die(f"publishd: {r.get('error')}\n" + "\n".join(r.get("log") or []))
-                log(f"publishd published in {r.get('seconds')}s")
-                return
+                return int(r.get("code", 0 if r.get("ok") else 1)), r.get("output") or ""
     except (OSError, ConnectionError, ValueError) as e:
-        die(f"couldn't reach publishd on {host}: {e}")
+        die(f"couldn't reach publishd on {host}: {e} (./publish --local runs it here)")
     die(f"no answer from publishd on {host} in {REQUEST_WAIT // 60} minutes")
 
 
 def run(dry_run=False):
-    """Publish whatever changed (through publishd when DWP_PUBLISHD is
-    set, except a dry run); raises PublishError if anything fails."""
-    if PUBLISHD and not dry_run:
-        return request()
-    with locked():
-        publish(Manifest(), dry_run=dry_run)
+    """Publish whatever changed, through publishd; raises PublishError if
+    it fails."""
+    if LOCAL:
+        with locked():
+            publish(Manifest(), dry_run=dry_run)
+        return
+    code, out = request(["--dry-run"] if dry_run else [])
+    sys.stderr.write(out)
+    if code != 0:
+        lines = [l for l in out.splitlines() if l.startswith("publish:")]
+        die(lines[-1].removeprefix("publish: ") if lines else f"publishd: exit {code}")
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", nargs="?", default="publish", choices=["publish", "verify", "orphans"])
@@ -731,23 +738,20 @@ def main(argv=None):
     ap.add_argument("--fix", action="store_true", help="verify: re-upload what's wrong")
     ap.add_argument("--delete", action="store_true", help="orphans: delete them from S3")
     ap.add_argument("--force", action="store_true", help="orphans --delete: even over 5%% of the bucket")
-    ap.add_argument("--request", action="store_true",
-                    help="ask publishd (DWP_PUBLISHD's broker) to publish, and wait for it")
+    ap.add_argument("--local", action="store_true",
+                    help="run here instead of asking publishd (for when it's down)")
     args = ap.parse_args(argv)
 
     try:
-        if args.request:
-            if not PUBLISHD:
-                die("--request needs DWP_PUBLISHD (the broker publishd listens on)")
-            request()
-            return 0
-        if args.command == "publish":
-            # Run here, even with DWP_PUBLISHD set: publishd runs this.
-            with locked():
-                publish(Manifest(), dry_run=args.dry_run)
-            return 0
+        if not (LOCAL or args.local):
+            code, out = request([a for a in argv if a != "--local"])
+            sys.stdout.write(out)
+            return code
         with locked():
             m = Manifest()
+            if args.command == "publish":
+                publish(m, dry_run=args.dry_run)
+                return 0
             if args.command == "verify":
                 return verify(m, args.fix)
             return orphans(m, args.delete, args.force, args.dry_run)
