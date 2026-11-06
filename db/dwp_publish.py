@@ -24,8 +24,9 @@ local copy. Wind forecasts (wind_forecast, from
 forecast-ingest) publish the same way under wind_forecast/. publish only
 reads the lake.
 
-A local manifest (--manifest, default ~/stuff/dwp-manifest.sqlite) records,
-for every object it has put in S3, the sha256 of its uncompressed CSV, its
+The manifest, the lake's publish_manifest table (schema.sql; it was
+~/stuff/dwp-manifest.sqlite on dsstudio until migrate-manifest.sql), records,
+for every object publish has put in S3, the sha256 of its uncompressed CSV, its
 gzipped size, the headers it was uploaded with, and a fingerprint of the lake
 rows it was made from (row count and the sum of the rows' hashes). A publish:
 
@@ -86,7 +87,6 @@ import math
 import os
 import re
 import shutil
-import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -96,12 +96,13 @@ from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
-MANIFEST = os.environ.get("DWP_MANIFEST") or os.path.expanduser("~/stuff/dwp-manifest.sqlite")
+LOCK = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "dwp-publish.lock")
 DEST = (os.environ.get("DWP_DEST") or "s3:db.downwind.pro").rstrip("/") + "/"
 RIDER = re.compile(r"[a-z][a-z0-9-]*")
 LISTS = ["runs", "crashes", "run_buoy", "together"]
-# export-lists.sql writes here; publish points it at its temp dir instead.
-LISTS_DIR = "/Users/dustin/stuff/dwlists/"
+# export-lists.sql's .output lines write here; publish points them at its
+# temp dir instead.
+LISTS_DIR = "dwlists/"
 
 GZ_CSV = ["Content-Encoding: gzip", "Content-Type: text/csv; charset=utf-8"]
 SHORT = GZ_CSV + ["Cache-Control: public, max-age=300"]
@@ -285,32 +286,42 @@ def run_stats_sql(dwids):
 
 
 class Manifest:
-    def __init__(self, path):
-        self.db = sqlite3.connect(path)
-        self.db.execute("""create table if not exists objects (
-            key text primary key,      -- path under the bucket
-            sha256 text not null,      -- of the uncompressed CSV
-            size integer not null,     -- of the object in S3
-            headers text not null,     -- JSON list it was uploaded with
-            fingerprint text,          -- of the lake rows; null for lists
-            uploaded_at real not null)""")
-        self.db.commit()
+    """What publish has put in S3: the lake's publish_manifest table
+    (schema.sql), so publish can run from any host."""
+
+    def __init__(self):
+        if not has_table("publish_manifest"):
+            die("no publish_manifest table in the lake: run migrate-manifest.sql "
+                "(it brings over the old ~/stuff/dwp-manifest.sqlite)")
 
     def all(self):
-        return {k: {"sha": s, "size": z, "headers": h, "fp": f, "uploaded_at": u}
-                for k, s, z, h, f, u in self.db.execute(
-                    "select key, sha256, size, headers, fingerprint, uploaded_at from objects")}
+        return {r["key"]: {"sha": r["sha256"], "size": r["size"], "headers": r["headers"],
+                           "fp": r["fingerprint"], "uploaded_at": r["t"]}
+                for r in duckdb("select key, sha256, size, headers, fingerprint, "
+                                "epoch(uploaded_at) as t from publish_manifest;", json_out=True)}
 
     def record(self, rows):
-        """rows: (key, sha256, size, headers, fingerprint), in one transaction."""
-        now = time.time()
-        with self.db:
-            self.db.executemany("insert or replace into objects values (?, ?, ?, ?, ?, ?)",
-                                [r + (now,) for r in rows])
+        """rows: (key, sha256, size, headers, fingerprint), in one lake commit."""
+        if not rows:
+            return
+        now = datetime.now(ZoneInfo("UTC")).isoformat()
+        cols = [("key", "VARCHAR"), ("sha256", "VARCHAR"), ("size", "BIGINT"), ("headers", "VARCHAR"),
+                ("fingerprint", "VARCHAR"), ("uploaded_at", "TIMESTAMPTZ")]
+        duckdb(temp_table("recorded", cols, [r + (now,) for r in rows]) + f"""
+            begin;
+            call lake.set_commit_message('dustin', {sql_str(f'publish manifest: {len(rows)} recorded')});
+            delete from publish_manifest where key in (select key from recorded);
+            insert into publish_manifest by name select * from recorded;
+            commit;""")
 
     def forget(self, keys):
-        with self.db:
-            self.db.executemany("delete from objects where key = ?", [(k,) for k in keys])
+        if not keys:
+            return
+        duckdb(temp_table("forgotten", [("key", "VARCHAR")], [(k,) for k in keys]) + f"""
+            begin;
+            call lake.set_commit_message('dustin', {sql_str(f'publish manifest: {len(keys)} forgotten')});
+            delete from publish_manifest where key in (select key from forgotten);
+            commit;""")
 
 
 def has_table(name):
@@ -338,26 +349,32 @@ def fingerprints(t):
     return out
 
 
+def to_csv(path):
+    """CLI commands sending the next query's result to the local file path
+    as CSV (header, NULL as empty), like COPY ... TO (format csv) would.
+    Through quack, COPY writes on the lake's host; the CLI's .output is
+    this one. End the query with CSV_END."""
+    if '"' in path or "\n" in path:
+        die(f"odd export path {path!r}")
+    return f'.mode csv\n.separator "," "\\n"\n.headers on\n.nullvalue ""\n.output "{path}"\n'
+
+
+CSV_END = "\n.output\n.mode duckbox\n"
+
+
 def export(t, keys, tmp):
     """Write tmp/<key> (uncompressed) for each of keys, in one pass over t."""
     if not keys:
         return
-    dirty, big = os.path.join(tmp, t.name + ".keys"), os.path.join(tmp, t.name + ".csv")
-    with open(dirty, "w") as f:
-        f.write("k\n" + "".join(k + "\n" for k in keys))
+    big = os.path.join(tmp, t.name + ".csv")
     # One sorted file for all of them, then split by its first column: a
     # partitioned COPY doesn't keep the order within each file.
-    duckdb(f"""
-        create temp table dirty as
-            select * from read_csv({sql_str(dirty)}, header = true, columns = {{'k': 'VARCHAR'}});
-        copy (
+    duckdb(temp_table("dirty", [("k", "VARCHAR")], [(k,) for k in keys]) + "\n" + to_csv(big) + f"""
             select * exclude (__h) from (
                 select {t.key} as __k, {t.cols}, hash(x) as __h
                 from {t.frm}
             ) where __k in (select k from dirty)
-            order by __k, {t.order}, __h
-        ) to {sql_str(big)} (format csv, header true);
-    """)
+            order by __k, {t.order}, __h;""" + CSV_END)
     split(big, tmp)
 
 
@@ -386,10 +403,11 @@ def split(big, tmp):
 def export_lists(rider, outdir):
     with open(os.path.join(DB_DIR, "export-lists.sql")) as f:
         sql = f.read()
-    if LISTS_DIR not in sql:
+    out = f'.output "{LISTS_DIR}'
+    if out not in sql:
         die(f"export-lists.sql no longer writes to {LISTS_DIR}")
     os.makedirs(outdir, exist_ok=True)
-    duckdb(sql.replace(LISTS_DIR, outdir.rstrip("/") + "/"),
+    duckdb(sql.replace(out, f'.output "{outdir.rstrip("/")}/'),
            cmd=f"set variable rider = {sql_str(rider)};")
 
 
@@ -456,12 +474,11 @@ def export_riders(path):
     """runs/riders.csv: every rider with runs, oldest first, with their
     riders row (blank where they have none)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    duckdb(f"""copy (
+    duckdb(to_csv(path) + """
   select d.rider, r.name, r.hub, r.versus, r.compare, r.together
   from (select rider, min(ts) as first_ts from dwlist where rider is not null group by rider) d
   left join riders r using (rider)
-  order by d.first_ts
-) to {sql_str(path)};""")
+  order by d.first_ts;""" + CSV_END)
 
 
 def riders():
@@ -653,18 +670,21 @@ def prune_images(images, have):
         log(f"pruned {gone} uploaded cam images over {IMAGE_KEEP_DAYS:g} days old")
 
 
-def locked(path):
-    """Hold the publish lock, so add-run, the bot, drive-sync and the
-    conditions job don't race on the manifest."""
-    lock = open(path + ".lock", "w")
+def locked():
+    """Hold this host's publish lock, so add-run, the bot, drive-sync and
+    the conditions job don't run two publishes here at once. Publishes on
+    different hosts can overlap; that only costs a duplicate upload or a
+    file a cycle stale, which the next publish's fingerprints catch."""
+    os.makedirs(os.path.dirname(LOCK), exist_ok=True)
+    lock = open(LOCK, "w")
     fcntl.flock(lock, fcntl.LOCK_EX)
     return lock
 
 
-def run(dry_run=False, manifest=MANIFEST):
+def run(dry_run=False):
     """Publish whatever changed; raises PublishError if anything fails."""
-    with locked(manifest):
-        publish(Manifest(manifest), dry_run=dry_run)
+    with locked():
+        publish(Manifest(), dry_run=dry_run)
 
 
 def main(argv=None):
@@ -675,15 +695,14 @@ def main(argv=None):
     ap.add_argument("--fix", action="store_true", help="verify: re-upload what's wrong")
     ap.add_argument("--delete", action="store_true", help="orphans: delete them from S3")
     ap.add_argument("--force", action="store_true", help="orphans --delete: even over 5%% of the bucket")
-    ap.add_argument("--manifest", default=MANIFEST)
     args = ap.parse_args(argv)
 
     try:
         if args.command == "publish":
-            run(args.dry_run, args.manifest)
+            run(args.dry_run)
             return 0
-        with locked(args.manifest):
-            m = Manifest(args.manifest)
+        with locked():
+            m = Manifest()
             if args.command == "verify":
                 return verify(m, args.fix)
             return orphans(m, args.delete, args.force, args.dry_run)

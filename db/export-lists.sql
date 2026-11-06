@@ -3,18 +3,26 @@
 --
 -- publish runs this once per rider with the rider variable set:
 --
---   duckdb --init init.sql -cmd "set variable rider = 'dustin';" < export-lists.sql
+--   mkdir -p dwlists
+--   duckdb --init quack-init.sql -cmd "set variable rider = 'dustin';" < export-lists.sql
 --
--- It writes to /Users/dustin/stuff/dwlists/ (publish swaps in a temp dir)
--- and publish uploads the files to runs/rider=<rider>/ on the CDN.
+-- It writes CSVs to dwlists/ (publish swaps in a temp dir) with the CLI's
+-- .output, so on whichever host runs it, not the lake's (where COPY ... TO
+-- would write through quack), and publish uploads the files to
+-- runs/rider=<rider>/ on the CDN.
 
 use lake;
+.mode csv
+.separator "," "\n"
+.headers on
+.nullvalue ""
 
 SELECT CASE WHEN getvariable('rider') IS NULL
   THEN error('set variable rider first') END AS rider_check;
 -- Crash export
 
-copy (SELECT
+.output "dwlists/crashes.csv"
+SELECT
     dwid,
     ts,
     date,
@@ -55,7 +63,8 @@ WHERE
     AND ts > (min_ts + INTERVAL '5' MINUTE)
     AND ts < (max_ts - INTERVAL '5' MINUTE)
 ORDER BY
-    ts) to '/Users/dustin/stuff/dwlists/crashes.csv';
+    ts;
+.output
 
 -- Run buoy snapshots
 --
@@ -69,7 +78,7 @@ ORDER BY
 -- neither still gets one row of nulls, so the page can tell "no buoy data"
 -- from "not exported yet". Mirrors fetchBuoySnapshot in web/lib/components/data.js.
 
-copy (
+.output "dwlists/run_buoy.csv"
   with runs as (
     select id as dwid, to_timestamp(ts + duration_sec / 2) as mid
     from dwlist_resolved
@@ -116,8 +125,8 @@ copy (
   left join nearest_spectrum ns using (dwid)
   left join swell_spectrum s on s.site = 'pauwela' and s.ts = ns.spectrum_ts
   left join nearest_report nr using (dwid)
-  order by r.dwid, s.freq
-) to '/Users/dustin/stuff/dwlists/run_buoy.csv';
+  order by r.dwid, s.freq;
+.output
 
 -- Rode together
 --
@@ -126,7 +135,7 @@ copy (
 -- link a run to the cross-rider comparison (compare.html?r2=...), instead of
 -- fetching every rider's list to look for overlaps.
 
-copy (
+.output "dwlists/together.csv"
   select
     a.id,
     b.rider as other_rider,
@@ -142,12 +151,12 @@ copy (
   where a.rider = getvariable('rider')
     and r.together is not false
     and least(a.ts + a.duration_sec, b.ts + b.duration_sec) - greatest(a.ts, b.ts) >= 600
-  order by a.ts, overlap_sec desc
-) to '/Users/dustin/stuff/dwlists/together.csv';
+  order by a.ts, overlap_sec desc;
+.output
 
 -- The List
 
-COPY (
+.output "dwlists/runs.csv"
   SELECT
     dr.*,
     -- Lifetime distance *before* this run (0 for the first one), not
@@ -203,5 +212,5 @@ COPY (
     WHERE dr2.region IN ('Kihei', 'Maui North Shore')
     GROUP BY dr2.id
   ) AS wind_stats ON dr.id = wind_stats.dwlist_id
-  WHERE dr.rider = getvariable('rider')
-) TO '/Users/dustin/stuff/dwlists/runs.csv';
+  WHERE dr.rider = getvariable('rider');
+.output

@@ -1,10 +1,8 @@
-# The lake tools that work from any host (cam-ingest, forecast-ingest),
+# The lake tools that work from any host (cam-ingest, forecast-ingest,
+# publish),
 # with what they need on PATH (python3, DuckDB 2.0, rclone), so a service on
 # any host can run them without a checkout. They still find the lake the
 # usual way: LAKE (default ~/stuff/duck) holding quack-init.sql.
-#
-# publish isn't here yet: its exports COPY to a local temp dir, which
-# through quack is the lake host's disk, so it still runs there.
 #
 # duckdb must be 2.0 (the lake is on 2.0 / DuckLake 1.1); cams/hm-module.nix
 # passes ../nix/duckdb.nix's when pkgs' is older.
@@ -16,7 +14,8 @@ stdenvNoCC.mkDerivation {
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
-      ./cam-ingest ./forecast-ingest ./dwp_publish.py ./cams/cams.py
+      ./cam-ingest ./forecast-ingest ./publish ./dwp_publish.py ./export-lists.sql
+      ./cams/cams.py
     ];
   };
   nativeBuildInputs = [ makeWrapper ];
@@ -24,7 +23,7 @@ stdenvNoCC.mkDerivation {
     share=$out/share/dwp-db
     mkdir -p $share $out/bin
     cp -r . $share/
-    for t in cam-ingest forecast-ingest; do
+    for t in cam-ingest forecast-ingest publish; do
       makeWrapper ${python3}/bin/python3 $out/bin/dwp-$t \
         --add-flags $share/$t \
         --prefix PATH : ${lib.makeBinPath [ duckdb rclone ]} \

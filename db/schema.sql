@@ -220,4 +220,18 @@ CREATE TABLE wind_forecast(
   wdir DOUBLE  -- degrees, from
 );
 
+-- What publish (dwp_publish.py) has put in S3, one row per object: key
+-- under the bucket, sha256 of the uncompressed CSV, size in S3, the JSON
+-- list of headers it went up with, the fingerprint of the lake rows it was
+-- made from (null for lists and images), and when. Was
+-- ~/stuff/dwp-manifest.sqlite on dsstudio (migrate-manifest.sql).
+CREATE TABLE publish_manifest(
+  key VARCHAR,
+  sha256 VARCHAR,
+  size BIGINT,
+  headers VARCHAR,
+  fingerprint VARCHAR,
+  uploaded_at TIMESTAMP WITH TIME ZONE
+);
+
 commit;
