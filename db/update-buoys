@@ -35,6 +35,11 @@ duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql"
 
 cd "$here"
 ./forecast-ingest
-./publish
+# Through publishd when DWP_PUBLISHD names its broker (it may be elsewhere).
+if [ -n "${DWP_PUBLISHD:-}" ]; then
+    ./publish --request
+else
+    ./publish
+fi
 
 /nix/var/nix/profiles/default/bin/nix develop "$HOME/prog/snippets/circuitpython/trmnl/gen" --command magtag-render https://downwind.pro/magtag.html

@@ -6,5 +6,6 @@
 #   imports = [ "${inputs.dwp}/db/hm-module.nix" ];
 {
   # services.dwp-cam-motion: the cams' water motion, see cams/hm-module.nix.
-  imports = [ ./cams/hm-module.nix ];
+  # services.dwp-publishd: the publish service, see publishd.nix.
+  imports = [ ./cams/hm-module.nix ./publishd.nix ];
 }

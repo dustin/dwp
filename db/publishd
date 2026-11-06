@@ -1,0 +1,125 @@
+#!/usr/bin/env python3
+"""The publish service: the one place ./publish runs, on whichever host
+runs this.
+
+    ./publishd --mqtt HOST[:PORT] [--settle SECONDS] [--every SECONDS]
+
+It listens on dwp/publish/req for {"id": ..., "from": ...} (dwp_publish's
+request(), which run() and `./publish --request` use when DWP_PUBLISHD
+names the broker). Requests that arrive within --settle seconds (15) of
+each other, or while a publish is running, are served by one publish, so
+publishes never overlap. Each request's answer goes to
+dwp/publish/reply/<id>: {"ok", "error", "stamp", "seconds", "log"} (the
+last lines publish printed). After every run, dwp/publish/status
+(retained) holds {"ok", "error", "stamp", "seconds", "host"}, and after
+every run that worked dwp/publish/status/ok holds the same, for an alert
+when publishes fail or stop (bee1's babysitter watches it).
+
+With --every, it also publishes after that many seconds without a request.
+
+It needs what publish needs: the lake (LAKE's quack-init.sql), rclone with
+the s3 remote (RCLONE_CONFIG), python3 and duckdb.
+"""
+
+import argparse
+import json
+import os
+import queue
+import socket
+import subprocess
+import sys
+import threading
+import time
+from datetime import datetime, timezone
+
+sys.dont_write_bytecode = True
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+import dwp_mqtt  # noqa: E402
+from dwp_publish import REQUEST_TOPIC, REPLY_TOPIC, STATUS_TOPIC  # noqa: E402
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} publishd: {msg}", file=sys.stderr, flush=True)
+
+
+def listen(host, requests):
+    """Put each request's id on requests, reconnecting forever."""
+    backoff = 5
+    while True:
+        began = time.time()
+        try:
+            with dwp_mqtt.Client(host, [REQUEST_TOPIC], name="dwp-publishd") as c:
+                log(f"listening on {host} {REQUEST_TOPIC}")
+                for _, payload in c.messages():
+                    try:
+                        r = json.loads(payload)
+                        requests.put(str(r["id"]))
+                        log(f"request {r['id']} from {r.get('from', '?')}")
+                    except (ValueError, KeyError, TypeError):
+                        log(f"ignoring {payload[:200]!r}")
+        except (OSError, ConnectionError) as e:
+            if time.time() - began > 300:
+                backoff = 5
+            log(f"{host}: {e}; retrying in {backoff}s")
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 300)
+
+
+def publish():
+    """Run ./publish once; (ok, error, last lines of its output)."""
+    env = dict(os.environ, DWP_PUBLISHD="")  # it publishes, not asks
+    began = time.time()
+    r = subprocess.run([sys.executable, os.path.join(HERE, "publish")], env=env,
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    sys.stderr.write(r.stdout)
+    lines = r.stdout.strip().splitlines()
+    err = None if r.returncode == 0 else (
+        next((l for l in reversed(lines) if l.startswith("publish:")), f"exit {r.returncode}"))
+    return r.returncode == 0, err, lines[-40:], time.time() - began
+
+
+def answer(host, topic, msg, retain=False):
+    try:
+        dwp_mqtt.send(host, topic, json.dumps(msg), retain=retain)
+    except (OSError, ConnectionError) as e:
+        log(f"couldn't send {topic}: {e}")
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--mqtt", required=True, help="HOST[:PORT] of the broker")
+    ap.add_argument("--settle", type=float, default=15, help="seconds to gather requests before a publish")
+    ap.add_argument("--every", type=float, default=0, help="also publish after this many idle seconds (0: never)")
+    args = ap.parse_args()
+
+    requests = queue.Queue()
+    threading.Thread(target=listen, args=(args.mqtt, requests), daemon=True).start()
+    while True:
+        ids = []
+        try:
+            ids.append(requests.get(timeout=args.every or None))
+        except queue.Empty:
+            log(f"nothing asked for {args.every:g}s; publishing anyway")
+        # Gather whatever else arrives while things settle.
+        end = time.time() + args.settle
+        while (left := end - time.time()) > 0:
+            try:
+                ids.append(requests.get(timeout=left))
+            except queue.Empty:
+                break
+        ok, err, lines, secs = publish()
+        # Requests that came in during the run get the next one.
+        stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        log(f"publish {'done' if ok else 'failed: ' + str(err)} in {secs:.0f}s for {len(ids)} request(s)")
+        for i in ids:
+            answer(args.mqtt, f"{REPLY_TOPIC}/{i}",
+                   {"ok": ok, "error": err, "stamp": stamp, "seconds": round(secs), "log": lines})
+        status = {"ok": ok, "error": err, "stamp": stamp, "seconds": round(secs), "host": socket.gethostname()}
+        answer(args.mqtt, STATUS_TOPIC, status, retain=True)
+        if ok:  # what a staleness alert watches
+            answer(args.mqtt, STATUS_TOPIC + "/ok", status, retain=True)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
