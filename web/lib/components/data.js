@@ -49,7 +49,7 @@ const landDist = m => m != null && m <= MAX_LAND_DIST ? m : null;
 // What a run that didn't start or end near a known beach (null in
 // runs.csv, see db/run-stats.sql) shows for its beach and region.
 export const UNKNOWN_BEACH = 'Unknown';
-export const UNKNOWN_REGION = 'Unknown';
+export const UNKNOWN_REGION = 'Elsewhere';
 
 export async function fetchMeta(f) {
   var normalizeFoil = function (fn) {
