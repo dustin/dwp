@@ -39,6 +39,18 @@ function addExperience(runs) {
   return runs;
 }
 
+// Further from land than this (m) and we're not looking at the right
+// coastline (a run off Hood River, say): the distance is unknown. About
+// half the widest channel between the main islands. max_distance in
+// db/run-stats.sql uses the same cap.
+export const MAX_LAND_DIST = 60000;
+const landDist = m => m != null && m <= MAX_LAND_DIST ? m : null;
+
+// What a run that didn't start or end near a known beach (null in
+// runs.csv, see db/run-stats.sql) shows for its beach and region.
+export const UNKNOWN_BEACH = 'Unknown beach';
+export const UNKNOWN_REGION = 'Elsewhere';
+
 export async function fetchMeta(f) {
   var normalizeFoil = function (fn) {
     return fn.replace(/\s+\d+\.\d+ cm2/, '');
@@ -53,6 +65,11 @@ export async function fetchMeta(f) {
           ts: ts,
           date: ts,
           time: ts,
+          start_beach: d.start_beach || UNKNOWN_BEACH,
+          end_beach: d.end_beach || UNKNOWN_BEACH,
+          region: d.region || UNKNOWN_REGION,
+          beaches_known: !!(d.start_beach && d.end_beach),
+          max_distance: landDist(d.max_distance),
           longest_segment_start: new Date(d.longest_segment_start),
           longest_segment_end: new Date(d.longest_segment_end),
           foil: normalizeFoil(d.foil || 'unknown foil'),
@@ -161,6 +178,7 @@ export async function fetchRun(meta) {
     d3.sort(
       data.map(d => ({
         ...d,
+        distance_to_land: landDist(d.distance_to_land),
         odometer: d.distance + 1000 * meta.odometer_km,
         lifetime_sec: lifetimeSec(meta, d.tsi),
         ts: new Date(d.tsi * 1000),

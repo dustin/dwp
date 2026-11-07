@@ -180,8 +180,9 @@ ORDER BY
     wind_stats.max_wgust,
     wind_stats.avg_wdir
   FROM dwlist_resolved dr
-  JOIN beaches bs ON bs.id = dr.start_pos
-  JOIN beaches be ON be.id = dr.end_pos
+  -- Left joins: a run away from any known beach has none (run-stats.sql).
+  LEFT JOIN beaches bs ON bs.id = dr.start_pos
+  LEFT JOIN beaches be ON be.id = dr.end_pos
   LEFT JOIN (
     SELECT
       dr2.id AS dwlist_id,

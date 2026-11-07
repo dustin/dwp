@@ -34,7 +34,10 @@ SET    max_speed_kmh = t.max_speed_kmh
 FROM   run_top_speed t
 WHERE  l.id = t.dwid AND l.id IN (SELECT dwid FROM restat);
 
--- Name the start and end beaches
+-- Name the start and end beaches: the nearest beach to the first and last
+-- trackpoints, or none (null, an unknown beach) when even that one is
+-- over 1 km away, e.g. a run off Hood River. migrate-far-runs.sql
+-- backfills this; keep its 1000 in step.
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
        end_pos   = x.end_loc
@@ -52,7 +55,11 @@ FROM   (
                              THEN 'first'
                         ELSE 'last'
                     END                                               AS which_row,
-                    ( SELECT b.id
+                    ( SELECT CASE WHEN ST_Distance_Sphere(
+                                 ST_Point(d.lat, d.lon),
+                                 ST_PointN(ST_ShortestLine(
+                                     ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)), 2)) <= 1000
+                                 THEN b.id END
                       FROM   beaches b
                       ORDER BY ST_Length(
                                  ST_ShortestLine(
@@ -76,9 +83,13 @@ SET    min_foiling_hr = x.min_hr,
 FROM   run_foiling_hr x
 WHERE  l.id = x.dwid AND l.id IN (SELECT dwid FROM restat);
 
--- max distance
+-- max distance, or null (unknown) past 60 km: about half the widest channel
+-- between the main islands (Kaʻieʻiewaho, ~116 km), so the most any
+-- Hawaiian crossing could be from land. Further than that, the run is
+-- somewhere the coastline doesn't cover (e.g. Hood River).
+-- dwp_publish.py's tracks and migrate-far-runs.sql use the same 60000.
 UPDATE dwlist AS l
-SET    max_distance = x.dist
+SET    max_distance = CASE WHEN x.dist <= 60000 THEN x.dist END
 FROM   (select dwid, max(ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon))) as dist
           from restat_points
           group by dwid

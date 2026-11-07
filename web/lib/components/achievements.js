@@ -76,7 +76,9 @@ export const categories = [
   {key: "foil_dry", label: "First dry run", color: "#59a14f", ties: false, event: true,
    group: d => d.foil, eligible: d => d.dry, value: () => 1, score: v => v, fmt: () => "",
    note: r => `First dry run on the ${r.group}`},
+  // Not for a run away from any known beach: those aren't a route.
   {key: "route", label: "New route", color: "#76b7b2", ties: false, event: true,
+   eligible: d => d.beaches_known !== false,
    group: d => d.start_beach === d.end_beach ? d.start_beach : `${d.start_beach} → ${d.end_beach}`,
    value: () => 1, score: v => v, fmt: () => "", note: r => `First run ${r.group.includes("→") ? "" : "at "}${r.group}`},
 ];

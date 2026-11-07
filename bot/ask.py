@@ -83,7 +83,8 @@ heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
 dayname(date) for days of the week (isodow(date) to order them, Monday
 first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
 "went to X" means either one, and a loose place name means the closest
-beach in the list below ("the harbor" is Kahului Harbor). foil is null or 'unknown' when not known.
+beach in the list below ("the harbor" is Kahului Harbor); a beach (and region) is null for a run away
+from any known beach. foil is null or 'unknown' when not known.
 Today is {today} (Hawaii). Beaches: {beaches}.
 Their foils: {foils}. Boards: {boards}.
 
@@ -372,7 +373,8 @@ def main():
     with tempfile.TemporaryDirectory() as tmp:
         snapshot(lake, riders, tmp)
         beaches = [r["v"] for r in sandboxed(
-            tmp, "select distinct start_beach as v from runs union select end_beach from runs")]
+            tmp, "select distinct start_beach as v from runs union select end_beach from runs")
+            if r["v"] is not None]
         p, rows = plan(a.ollama, a.model, question, context(tmp, riders[0], riders, beaches), tmp)
         print(json.dumps(p, indent=2))
         if rows is not None:

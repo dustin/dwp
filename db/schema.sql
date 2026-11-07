@@ -68,7 +68,7 @@ CREATE TABLE dwlist(
   start_pos UUID,
   end_pos UUID,
   max_speed_1k double,
-  max_distance double, -- max distance to land
+  max_distance double, -- max distance to land; null past 60 km (run-stats.sql)
   min_foiling_hr double,
   avg_foiling_hr double,
   longest_segment_distance double,
@@ -83,11 +83,13 @@ CREATE TABLE dwlist(
   max_hr double -- only for runs entered by hand (import-manual.sql)
 );
 
+-- start_pos/end_pos are null for a run that didn't start or end near a
+-- known beach (run-stats.sql), so its beach names and region are null.
 create or replace view dwlist_resolved as
 select d.*, bs.name as start_beach, be.name as end_beach, bs.region as region
 from dwlist d
-join beaches bs on bs.id = start_pos
-join beaches be on be.id = end_pos
+left join beaches bs on bs.id = start_pos
+left join beaches be on be.id = end_pos
 order by date, time;
 
 -- A run's trim: only its trackpoints from start_ts to end_ts count toward

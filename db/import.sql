@@ -195,8 +195,10 @@ SET    foil = coalesce(
           WHERE p.rider = l.rider AND p.start_pos = l.start_pos
             AND p.foil IS NOT NULL AND p.id <> l.id
           ORDER BY p.ts DESC LIMIT 1),
-         error('no earlier run from beach ' || coalesce(l.start_pos::VARCHAR, '(none)')
-               || ' to take a foil from; set DWP_FOIL'))
+         error(CASE WHEN l.start_pos IS NULL
+                 THEN 'the run doesn''t start near a known beach, so there''s no foil to take from an earlier run there; set DWP_FOIL'
+                 ELSE 'no earlier run from beach ' || l.start_pos::VARCHAR
+                      || ' to take a foil from; set DWP_FOIL' END))
 WHERE  l.id = (SELECT dwid FROM new_run) AND l.foil IS NULL;
 
 SELECT foil FROM dwlist WHERE id = (SELECT dwid FROM new_run);
