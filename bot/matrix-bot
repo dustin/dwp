@@ -48,8 +48,8 @@ from the room each time) can act for any rider and publish:
     on, and both are recomputed and re-exported. "!unsplit <run link>" (the
     first half) joins it back up with the run starting where it ends. A run
     link or (room admins) a rider works as with !glitch.
-  * "!delete <run link>" shows the run and asks for "!delete <run link>
-    yes", which deletes it from the lake for good (its record, trackpoints,
+  * "!delete <run link>" shows the run and asks for a 👍 (or "!delete <run
+    link> yes") from its rider or a room admin, which deletes it from the lake for good (its record, trackpoints,
     trims and speed exclusions, in one commit) and re-publishes, so it
     leaves the run lists. Its track file stays in S3, unlinked, until
     "!publish orphans --delete". Riders delete their own runs; room admins
@@ -168,7 +168,7 @@ HELP_RIDER = [
     ("!trim end 12:05", "the same for its end (or end 5m); undo puts the whole track back"),
     ("!split 12:45", "split your latest run in two at 12:45 (or 40m: 40 minutes in)"),
     ("!unsplit <run link>", "join a split run (the first half) back up"),
-    ("!delete <run link>", "delete that run for good (asks you to confirm with yes)"),
+    ("!delete <run link>", "delete that run for good (asks you to confirm with a 👍)"),
     ("!sync", "import your new runs from your Drive folder"),
     ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
@@ -1387,6 +1387,7 @@ class Bot:
         self.status_at = 0
         self.status, self.edited = {}, {}  # room -> its pinned line, when it was last edited
         self.asks = {}  # preview event id -> a change waiting for ✅: see ask_runs
+        self.deletes = {}  # !delete question event id -> the run a 👍 deletes
         # question event id -> invited room (see invited), kept across
         # restarts: a sync only mentions an invite once.
         self.invites_file = os.path.join(args.state_dir, "invites.json")
@@ -1782,7 +1783,7 @@ class Bot:
                                  "unencrypted rooms.")
             return
         if ev.get("type") == "m.reaction":
-            if not self.accept(room, ev):
+            if not self.accept(room, ev) and not self.approve_delete(room, ev):
                 self.approve(room, ev)
             return
         if ev.get("type") != "m.room.message" or "m.relates_to" in c and \
@@ -1971,9 +1972,12 @@ class Bot:
                 delete_run(self.mx, room, eid, dwid, target, sender)
             else:
                 body, html = summary(latest(target, dwid), target)
-                ask = f"Delete this run of {target}'s for good? Send !delete {dwid} yes"
-                self.mx.notice(room, f"{ask}\n{body}", reply_to=eid,
-                               html=f"{escape(ask)}<br>{html}")
+                ask = f"Delete this run of {target}'s for good? React 👍 (or send !delete {dwid} yes)"
+                qid = self.mx.notice(room, f"{ask}\n{body}", reply_to=eid,
+                                     html=f"{escape(ask)}<br>{html}")
+                if qid:
+                    self.deletes[qid] = {"room": room, "dwid": dwid, "rider": target,
+                                         "at": time.time()}
         elif text.startswith("!ask"):
             words = text.split()[1:]
             # Whose runs: the sender's plus any rider named anywhere ("walter's
@@ -2112,6 +2116,22 @@ class Bot:
                                     f"<pre><code>{escape(sql)}</code></pre></details>")
         if pid:  # the SQL shown is the SQL run
             self.asks[pid] = {"room": room, "rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
+
+    def approve_delete(self, room, ev):
+        """Delete the run a !delete question asks about when its rider or a
+        room admin reacts 👍 (or ✅) to it; whether ev was such a reaction."""
+        rel = ev.get("content", {}).get("m.relates_to", {})
+        d = self.deletes.get(rel.get("event_id"))
+        if not d or d["room"] != room or rel.get("key") not in APPROVE:
+            return False
+        qid, sender = rel["event_id"], ev["sender"]
+        if time.time() - d["at"] > ASK_TTL:
+            del self.deletes[qid]
+            self.mx.notice(room, "That's too old now; !delete it again.", reply_to=qid)
+        elif self.args.users.get(sender) == d["rider"] or self.room_admin(room, sender):
+            del self.deletes[qid]
+            delete_run(self.mx, room, qid, d["dwid"], d["rider"], sender)
+        return True
 
     def approve(self, room, ev):
         """Apply the change a room admin's ✅ reacts to (see propose)."""
