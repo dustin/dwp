@@ -18,8 +18,11 @@ function toMonth(ts) {
 
 export const dryLimit = 0.97;
 
+// A run with no paddle ups never really foiled (a few metres of speed noise
+// can still form a "segment"), so it can't be dry.
 function isDry(d) {
-  return d.longest_segment_distance / d.distance_on_foil > dryLimit;
+  return d.paddle_up_count > 0 &&
+    d.longest_segment_distance / d.distance_on_foil > dryLimit;
 }
 
 // Experience going into each run: how many runs, and how much time (in
