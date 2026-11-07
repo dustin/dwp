@@ -48,6 +48,12 @@ from the room each time) can act for any rider and publish:
     on, and both are recomputed and re-exported. "!unsplit <run link>" (the
     first half) joins it back up with the run starting where it ends. A run
     link or (room admins) a rider works as with !glitch.
+  * "!delete <run link>" shows the run and asks for "!delete <run link>
+    yes", which deletes it from the lake for good (its record, trackpoints,
+    trims and speed exclusions, in one commit) and re-publishes, so it
+    leaves the run lists. Its track file stays in S3, unlinked, until
+    "!publish orphans --delete". Riders delete their own runs; room admins
+    anyone's.
   * "!publish" runs ./publish for a room admin, with
     the same words and flags: "!publish --dry-run", "!publish verify
     --fix", "!publish orphans --delete". Long lists in the output are cut
@@ -162,6 +168,7 @@ HELP_RIDER = [
     ("!trim end 12:05", "the same for its end (or end 5m); undo puts the whole track back"),
     ("!split 12:45", "split your latest run in two at 12:45 (or 40m: 40 minutes in)"),
     ("!unsplit <run link>", "join a split run (the first half) back up"),
+    ("!delete <run link>", "delete that run for good (asks you to confirm with yes)"),
     ("!sync", "import your new runs from your Drive folder"),
     ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
@@ -178,7 +185,7 @@ HELP_ADMIN = [
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!delete", "!ask", "!publish"}
 HELP_ALERTS = [
     ("!alerts runs off", "stop new-run posts from the 16:00, 18:00 and 23:00 syncs in this room"),
     ("!alerts sources off", "stop data source alerts (a feed going offline and coming back)"),
@@ -194,7 +201,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "alerts", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "sync", "ask", "publish", "room", "rooms", "retry"]
+COMMANDS = ["conditions", "forecast", "alerts", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "delete", "sync", "ask", "publish", "room", "rooms", "retry"]
 ROOM_SETTINGS = {"alerts": "run alerts", "sources": "data source alerts",
                  "runs": "new runs from scheduled syncs", "pinned": "pinned conditions"}
 # What !alerts and !room call each setting: "ratings" for run alerts, since
@@ -841,6 +848,33 @@ def unsplit(mx, room, event_id, dwid, rider, sender):
     text, html = summary(latest(rider, dwid), rider)
     mx.notice(room, f"✅ joined back up\n{text}", reply_to=event_id,
               html=f"✅ joined back up<br>{html}")
+
+
+def delete_run(mx, room, event_id, dwid, rider, sender):
+    """Delete run dwid from the lake: its dwlist row, trackpoints, trims and
+    speed exclusions in one commit, then re-publish (the lists drop it; its
+    track file in S3 is left for !publish orphans --delete)."""
+    r = latest(rider, dwid)
+    mx.react(room, event_id, "👀")
+    sql = ("use lake; begin; "
+           f"call lake.set_commit_message('dustin', {sql_str(f'matrix-bot: delete {dwid} (!delete by {sender})')}); "
+           f"delete from speed_exclusions where dwid = '{dwid}'; "
+           f"delete from run_trims where dwid = '{dwid}'; "
+           f"delete from dws where dwid = '{dwid}'; "
+           f"delete from dwlist where id = '{dwid}'; commit;")
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    if ok:
+        try:
+            dwp_publish.run()
+        except dwp_publish.PublishError as err:
+            ok, out = False, f"deleted, but publishing failed: {err}"
+    if not ok:
+        mx.notice(room, f"❌ couldn't delete the run:\n{tail(out)}", reply_to=event_id,
+                  html=f"❌ couldn't delete the run:<pre><code>{escape(tail(out))}</code></pre>")
+        return
+    text, html = summary(r, rider) if r else (dwid, escape(dwid))
+    mx.notice(room, f"🗑️ deleted {rider}'s run\n{text}", reply_to=event_id,
+              html=f"🗑️ deleted {escape(rider)}'s run<br>{html}")
 
 
 PUBLISH_WORDS = {"publish","verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
@@ -1920,6 +1954,26 @@ class Bot:
                 unsplit(self.mx, room, eid, dwid or latest(target)["id"], target, sender)
             else:
                 split(self.mx, room, eid, dwid or latest(target)["id"], target, sender, at[0])
+        elif text.startswith("!delete"):
+            words = text.split()[1:]
+            yes = words[1:] == ["yes"]
+            dwid = RUN_ID.search(words[0]).group(0) if words and RUN_ID.search(words[0]) else None
+            rows = query(f"select rider from dwlist where id = '{dwid}'") if dwid else []
+            target = rows[0]["rider"] if rows else None
+            if not dwid or not (len(words) == 1 or yes):
+                self.mx.notice(room, "!delete takes a run's link (then the same with yes "
+                                     "after it, to be sure)", reply_to=eid)
+            elif target is None:
+                self.mx.notice(room, "No such run.", reply_to=eid)
+            elif target != rider and not self.room_admin(room, sender):
+                self.mx.notice(room, "You can only delete your own runs.", reply_to=eid)
+            elif yes:
+                delete_run(self.mx, room, eid, dwid, target, sender)
+            else:
+                body, html = summary(latest(target, dwid), target)
+                ask = f"Delete this run of {target}'s for good? Send !delete {dwid} yes"
+                self.mx.notice(room, f"{ask}\n{body}", reply_to=eid,
+                               html=f"{escape(ask)}<br>{html}")
         elif text.startswith("!ask"):
             words = text.split()[1:]
             # Whose runs: the sender's plus any rider named anywhere ("walter's
