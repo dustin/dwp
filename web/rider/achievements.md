@@ -32,6 +32,10 @@ toc: false
   .ach-summary .ach-sub { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .ach-summary .row.sub { padding: 0.05rem 0; font-size: 0.8rem; }
   .ach-summary .row.sub .name { padding-left: 0.8rem; }
+  .ach-summary .row.l2 .name { padding-left: 1.6rem; }
+  .ach-summary .row.sub .ach-swatch { display: inline-block; margin-right: 0.4rem; }
+  .ach-summary .group { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--theme-foreground-muted); margin: 0.7rem 0 0.1rem; }
+  .ach-summary .group:first-child { margin-top: 0.1rem; }
   .ach-summary .row.quiet { color: var(--theme-foreground-muted); }
   .ach-swatch { width: 0.6rem; height: 0.6rem; border-radius: 50%; align-self: center; }
   a.ach-run { scroll-margin-top: 1rem; }
@@ -126,90 +130,114 @@ const snapshots = (() => {
   return out;
 })();
 const bestAsOf = ts => [...snapshots].reverse().find(s => s.ts <= ts)?.best ?? new Map();
-const ordered = best => categories.filter(c => !c.event).flatMap(c => d3.sort([...best.values()].filter(r => r.category === c), r => r.group));
 const shortDate = d3.timeFormat("%b %-d, %Y");
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const regionOrder = new Map(regionList(allRuns).map((r, i) => [r, i]));
 
-// One line per category: the best, and when (linking to that run's card).
-// `since` marks lines that didn't move since then as quiet and shows the
-// earlier value, for the yearly summaries.
-const summary = (best, since, sinceTs, untilTs) => htl.html`<div class="card ach-summary">${ordered(best).map(r => {
-  const before = since?.get(`${r.category.key}:${r.group ?? ""}`);
-  const moved = !since || r.run.ts >= sinceTs;
-  // One <a> either way (no href when quiet): htl wraps multi-node fragments
-  // in a <span>, which would break the row's grid.
-  return htl.html`<a class=${`row${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
-    <span class="ach-swatch" style=${`background: ${r.category.color}`}></span>
-    <span class="name">${r.category.label}${r.group ? ` (${r.group})` : ""}</span>
-    <b>${r.category.fmt(r.value)}</b>
-    <span class="ach-sub">${!since ? shortDate(r.run.ts) : !moved ? "no change" : before ? `from ${r.category.fmt(before.value)}` : "new"}</span>
+// One summary line. Sub-lines (level 1 and 2) are indented and carry their
+// swatch next to the name. Always one <a> (no href when quiet): htl wraps
+// multi-node fragments in a <span>, which would break the row's grid.
+const line = ({level = 0, color, name, value = "", note = "", moved = true, href = null}) => {
+  const swatch = color ? htl.html`<span class="ach-swatch" style=${`background: ${color}`}></span>` : "";
+  return htl.html`<a class=${`row${level ? ` sub l${level}` : ""}${moved ? "" : " quiet"}`} href=${moved ? href : null}>
+    ${level ? htl.html`<span></span>` : swatch || htl.html`<span></span>`}
+    <span class="name">${level ? swatch : ""}${name}</span>
+    <b>${value}</b>
+    <span class="ach-sub">${note}</span>
   </a>`;
-})}${foilDryRows(best, since, sinceTs)}${routesRow(best, since)}${regionDryRows(best, since, sinceTs, untilTs)}</div>`;
-
-// First dry run on each foil: one line with the count, then a sub-line per
-// foil (oldest first), quiet for foils that already had one before `since`.
-const foilDryRows = (best, since, sinceTs) => {
-  const firsts = d3.sort([...best.values()].filter(r => r.category.key === "foil_dry"), r => r.run.ts);
-  if (!firsts.length) return "";
-  const c = firsts[0].category;
-  const added = firsts.filter(r => !since || r.run.ts >= sinceTs);
-  const latest = firsts.at(-1);
-  return htl.html`<div class=${`row${added.length ? "" : " quiet"}`}>
-    <span class="ach-swatch" style=${`background: ${c.color}`}></span>
-    <span class="name">${c.label}</span>
-    <b>${firsts.length} foil${firsts.length === 1 ? "" : "s"}</b>
-    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : added.length ? `${added.length} new` : "no change"}</span>
-  </div>${firsts.map(r => {
-    const moved = !since || r.run.ts >= sinceTs;
-    return htl.html`<a class=${`row sub${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
-      <span></span><span class="name">${r.group}</span><b></b><span class="ach-sub">${shortDate(r.run.ts)}</span>
-    </a>`;
-  })}`;
 };
 
-// First dry run in each region: "N of M regions", then a sub-line per
-// region in its color with its dry runs so far and the first one's date.
-const regionDryRows = (best, since, sinceTs, untilTs) => {
-  const runs = untilTs ? allRuns.filter(d => d.ts <= untilTs) : allRuns;
-  const firsts = new Map([...best.values()].filter(r => r.category.key === "region_dry").map(r => [r.group, r]));
-  if (!firsts.size) return "";
-  const c = firsts.values().next().value.category;
-  const regions = regionList(runs);
+// A best: its value and when, or (yearly) what it moved from.
+const recordLine = (r, ctx, opts = {}) => {
+  const before = ctx.since?.get(`${r.category.key}:${r.group ?? ""}`);
+  const moved = !ctx.since || r.run.ts >= ctx.sinceTs;
+  return line({color: r.category.color, name: r.category.label, value: r.category.fmt(r.value),
+    note: !ctx.since ? shortDate(r.run.ts) : !moved ? "no change" : before ? `from ${r.category.fmt(before.value)}` : "new",
+    moved, href: `#run-${r.run.id}`, ...opts});
+};
+const of = (best, key) => [...best.values()].filter(r => r.category.key === key);
+const rec = key => ctx => {
+  const r = ctx.best.get(`${key}:`);
+  return r ? recordLine(r, ctx) : "";
+};
+
+// Furthest from land: the furthest anywhere, then each region's.
+const furthestRows = ctx => {
+  const rs = d3.sort(of(ctx.best, "max_dist"), r => regionOrder.get(r.group) ?? 99);
+  if (!rs.length) return "";
+  const top = d3.greatest(rs, r => r.value);
+  const was = ctx.since && d3.max(of(ctx.since, "max_dist"), r => r.value);
+  const moved = !ctx.since || top.run.ts >= ctx.sinceTs;
+  return [
+    line({color: top.category.color, name: top.category.label, value: top.category.fmt(top.value),
+      note: !ctx.since ? shortDate(top.run.ts) : !moved ? "no change" : was ? `from ${top.category.fmt(was)}` : "new",
+      moved, href: `#run-${top.run.id}`}),
+    ...rs.map(r => recordLine(r, ctx, {level: 1, color: regionColorOf(r.group), name: r.group})),
+  ];
+};
+
+// First dry runs: the very first, then one in each region (with dry runs
+// so far there) and on each foil.
+const firstDryRows = ctx => {
+  const foils = d3.sort(of(ctx.best, "foil_dry"), r => r.run.ts);
+  if (!foils.length) return "";
+  const regions = d3.sort(of(ctx.best, "region_dry"), r => regionOrder.get(r.group) ?? 99);
+  const runs = ctx.untilTs ? allRuns.filter(d => d.ts <= ctx.untilTs) : allRuns;
   const dry = d3.rollup(runs.filter(d => d.dry), v => v.length, d => d.region);
-  const added = [...firsts.values()].filter(r => !since || r.run.ts >= sinceTs);
-  const latest = d3.greatest([...firsts.values()], r => r.run.ts);
-  return htl.html`<div class=${`row${added.length ? "" : " quiet"}`}>
-    <span class="ach-swatch" style=${`background: ${c.color}`}></span>
-    <span class="name">First dry run by region</span>
-    <b>${firsts.size} region${firsts.size === 1 ? "" : "s"}</b>
-    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : added.length ? `${added.length} new` : "no change"}</span>
-  </div>${regions.filter(region => firsts.has(region)).map(region => {
-    const r = firsts.get(region);
-    const moved = (!since || r.run.ts >= sinceTs);
-    const n = dry.get(region) ?? 0;
-    return htl.html`<a class=${`row sub${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
-      <span class="ach-swatch" style=${`background: ${regionColorOf(region)}`}></span>
-      <span class="name">${region}</span>
-      <b title="dry runs so far">${n} dry</b>
-      <span class="ach-sub">${shortDate(r.run.ts)}</span>
-    </a>`;
-  })}`;
+  const isNew = r => !ctx.since || r.run.ts >= ctx.sinceTs;
+  const first = foils[0];
+  const subset = (label, rs, unit) => {
+    const added = rs.filter(isNew);
+    return line({level: 1, name: label, value: plural(rs.length, unit), moved: added.length > 0,
+      note: !ctx.since ? shortDate(d3.greatest(rs, r => r.run.ts).run.ts) : added.length ? `${added.length} new` : "no change"});
+  };
+  const firstLine = r => ({moved: isNew(r), href: `#run-${r.run.id}`, note: shortDate(r.run.ts)});
+  return [
+    line({color: first.category.color, name: "First dry run", moved: isNew(first), href: `#run-${first.run.id}`,
+      note: shortDate(first.run.ts)}),
+    subset("By region", regions, "region"),
+    ...regions.map(r => line({level: 2, color: regionColorOf(r.group), name: r.group,
+      value: `${dry.get(r.group) ?? 0} dry`, ...firstLine(r)})),
+    subset("By foil", foils, "foil"),
+    ...foils.map(r => line({level: 2, name: r.group, ...firstLine(r)})),
+  ];
 };
 
 // New routes don't get a line each; this counts them instead, linking to
 // the newest.
-const routesRow = (best, since) => {
-  const routes = b => [...b.values()].filter(r => r.category.key === "route");
-  const all = routes(best);
+const routesRow = ctx => {
+  const all = of(ctx.best, "route");
   if (!all.length) return "";
   const latest = d3.greatest(all, r => r.run.ts);
-  const added = since ? all.length - routes(since).length : null;
-  const moved = !since || added > 0;
-  return htl.html`<a class=${`row${moved ? "" : " quiet"}`} href=${moved ? `#run-${latest.run.id}` : null}>
-    <span class="ach-swatch" style=${`background: ${latest.category.color}`}></span>
-    <span class="name">Distinct routes</span>
-    <b>${all.length}</b>
-    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : moved ? `${added} new` : "no change"}</span>
-  </a>`;
+  const added = ctx.since ? all.length - of(ctx.since, "route").length : null;
+  const moved = !ctx.since || added > 0;
+  return line({color: latest.category.color, name: "Distinct routes", value: all.length, moved,
+    href: `#run-${latest.run.id}`, note: !ctx.since ? shortDate(latest.run.ts) : moved ? `${added} new` : "no change"});
+};
+
+// What the summary shows, in order. A best category not listed here lands
+// under "Other" so a new one is never lost.
+const GROUPS = [
+  ["Foiling", ["seg_dist", "seg_time", "foil_dist"]],
+  ["Speed", ["max_speed", "best_1k", "foil_speed"]],
+  ["Heart rate", ["avg_hr", "min_hr"]],
+  ["Conditions", ["light_wind", furthestRows]],
+  ["Dry runs", ["dry", "dry_streak", "dry_month", firstDryRows]],
+  ["Streaks and totals", ["streak", "odometer", "hours", routesRow]],
+];
+const listed = new Set(GROUPS.flatMap(([, items]) => items.filter(i => typeof i === "string")).concat(["max_dist"]));
+const OTHER = categories.filter(c => !c.event && !listed.has(c.key)).map(c => c.key);
+const groups = OTHER.length ? [...GROUPS, ["Other", OTHER]] : GROUPS;
+
+// The bests, grouped, each with when it was set (linking to that run's
+// card). `since` marks lines that didn't move since then as quiet and shows
+// the earlier value, for the yearly summaries; `untilTs` ends their span.
+const summary = (best, since, sinceTs, untilTs) => {
+  const ctx = {best, since, sinceTs, untilTs};
+  return htl.html`<div class="card ach-summary">${groups.flatMap(([title, items]) => {
+    const rows = items.flatMap(i => (typeof i === "string" ? rec(i) : i)(ctx)).filter(r => r);
+    return rows.length ? [htl.html`<div class="group">${title}</div>`, ...rows] : [];
+  })}</div>`;
 };
 
 // Where each best stood at the end of the year, against the start of it.
