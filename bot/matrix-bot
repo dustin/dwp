@@ -860,7 +860,6 @@ def delete_run(mx, room, event_id, dwid, rider, sender):
     """Delete run dwid from the lake: its dwlist row, trackpoints, trims and
     speed exclusions in one commit, then re-publish (the lists drop it; its
     track file in S3 is left for !publish orphans --delete)."""
-    r = latest(rider, dwid)
     mx.react(room, event_id, "👀")
     sql = ("use lake; begin; "
            f"call lake.set_commit_message('dustin', {sql_str(f'matrix-bot: delete {dwid} (!delete by {sender})')}); "
@@ -878,10 +877,7 @@ def delete_run(mx, room, event_id, dwid, rider, sender):
         mx.notice(room, f"❌ couldn't delete the run:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't delete the run:<pre><code>{escape(tail(out))}</code></pre>")
         return
-    text, html = summary(r, rider) if r else (dwid, escape(dwid))
-    mx.react(room, event_id, "🗑️")
-    mx.notice(room, f"🗑️ deleted {rider}'s run\n{text}", reply_to=event_id,
-              html=f"🗑️ deleted {escape(rider)}'s run<br>{html}")
+    mx.react(room, event_id, "🗑️")  # no reply: the question already shows the run
 
 
 PUBLISH_WORDS = {"publish","verify", "orphans", "--dry-run", "--fix", "--delete", "--force"}
