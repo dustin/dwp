@@ -7,7 +7,7 @@
 
 Filters the GPX with gpxconvert/gpx_filter.py, runs import.sql against
 the lake with DWP_FOIL set to the second argument and DWP_CSV to the
-filtered CSV, then runs publish.  Leave the foil out to reuse the
+filtered CSV, then runs publish (unless --no-publish).  Leave the foil out to reuse the
 one from the rider's latest run that started at the same beach.
 
 import.sql resolves DWP_FOIL to the one known foil it names (688 means
@@ -64,6 +64,9 @@ def main(argv=None):
     ap.add_argument("--rider", default="dustin",
                     help="whose run this is (default: dustin)")
     ap.add_argument("--board", help="board to record (default: the rider's latest)")
+    ap.add_argument("--no-publish", action="store_true",
+                    help="only import; run ./publish yourself afterwards "
+                         "(for importing many files)")
     args = ap.parse_args(argv)
     if args.new_foil and not args.foil:
         die("--new-foil needs the foil's name")
@@ -81,6 +84,8 @@ def main(argv=None):
         run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env,
             input=dwp_publish.import_sql(env))
 
+    if args.no_publish:
+        return
     try:
         dwp_publish.run()
     except dwp_publish.PublishError as e:
