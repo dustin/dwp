@@ -31,7 +31,7 @@ region varchar, board varchar, foil varchar, foil_confidence varchar,
 name varchar, description varchar, distance_km double,
 distance_on_foil double, duration_sec double, duration_on_foil double,
 avg_speed_kmh double, max_speed_1k double, avg_foiling_hr double,
-max_hr double, paddle_up_count int"""
+max_hr double, paddle_up_count int, with_riders varchar[]"""
 
 SNAPSHOT_SQL = """\
 select rider, id::varchar as id, date, time, start_beach, end_beach, region, board,
@@ -61,9 +61,18 @@ rider asking is {me} ("I", "me", "my" mean {me}). The bot runs your SQL in
 DuckDB over these tables, which hold only the runs of {riders}:
 
   runs({columns})
-  together(rider, id, other_rider, other_id, overlap_sec): two riders' runs
-    that went together (same start beach, overlapping in time), listed
-    both ways round; join id to runs.id for the run's details.
+  together(rider, id, other_rider, other_id, overlap_sec): one row per
+    PAIR of runs that went together (same start beach, overlapping in
+    time), listed both ways round; join (rider, id) to runs for details.
+    Never COUNT(*) over together to count runs: each outing is in it once
+    per pair of riders, both ways.
+
+runs.with_riders is the sorted list of other riders who went on that run
+(empty if none). To count or find runs done together, count one rider's
+runs, never pairs: "how many runs did A, B and I do together" is
+  select count(*) from runs where rider = '{me}'
+    and list_has_all(with_riders, ['a', 'b'])
+and "runs with anyone" is len(with_riders) > 0.
 
 Filter runs by rider for a question about one rider ("my longest run":
 where rider = '{me}').
@@ -204,8 +213,10 @@ FIELD_MACRO = ("create macro field(x, " + ", ".join(f"v{i} := null" for i in ran
 def sandboxed(path, sql, duckdb="duckdb"):
     """Rows of sql over tables runs and together (from snapshot's path), in
     a fresh in-memory duckdb that can read no other file once they're loaded."""
-    script = (f"create table runs as from read_parquet({sql_str(os.path.join(path, 'runs.parquet'))});\n"
-              f"create table together as from read_parquet({sql_str(os.path.join(path, 'together.parquet'))});\n"
+    script = (f"create table together as from read_parquet({sql_str(os.path.join(path, 'together.parquet'))});\n"
+              f"create table runs as select r.*, coalesce((select list(distinct t.other_rider order by t.other_rider)"
+              f" from together t where t.rider = r.rider and t.id = r.id), []::varchar[]) as with_riders"
+              f" from read_parquet({sql_str(os.path.join(path, 'runs.parquet'))}) r;\n"
               f"{FIELD_MACRO}\n"
               "set enable_external_access = false;\n"
               "set lock_configuration = true;\n"
