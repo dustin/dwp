@@ -47,6 +47,7 @@ import * as d3 from "npm:d3";
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile} from "./components/data.js";
 import {beachColorScale} from "./components/beaches.js";
+import {regionList, regionColorOf} from "./components/regions.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
 const allRuns = await fetchMeta(() => riderFile('runs.csv'));
@@ -131,7 +132,7 @@ const shortDate = d3.timeFormat("%b %-d, %Y");
 // One line per category: the best, and when (linking to that run's card).
 // `since` marks lines that didn't move since then as quiet and shows the
 // earlier value, for the yearly summaries.
-const summary = (best, since, sinceTs) => htl.html`<div class="card ach-summary">${ordered(best).map(r => {
+const summary = (best, since, sinceTs, untilTs) => htl.html`<div class="card ach-summary">${ordered(best).map(r => {
   const before = since?.get(`${r.category.key}:${r.group ?? ""}`);
   const moved = !since || r.run.ts >= sinceTs;
   // One <a> either way (no href when quiet): htl wraps multi-node fragments
@@ -142,7 +143,7 @@ const summary = (best, since, sinceTs) => htl.html`<div class="card ach-summary"
     <b>${r.category.fmt(r.value)}</b>
     <span class="ach-sub">${!since ? shortDate(r.run.ts) : !moved ? "no change" : before ? `from ${r.category.fmt(before.value)}` : "new"}</span>
   </a>`;
-})}${foilDryRows(best, since, sinceTs)}${routesRow(best, since)}</div>`;
+})}${foilDryRows(best, since, sinceTs)}${routesRow(best, since)}${regionDryRows(best, since, sinceTs, untilTs)}</div>`;
 
 // First dry run on each foil: one line with the count, then a sub-line per
 // foil (oldest first), quiet for foils that already had one before `since`.
@@ -161,6 +162,35 @@ const foilDryRows = (best, since, sinceTs) => {
     const moved = !since || r.run.ts >= sinceTs;
     return htl.html`<a class=${`row sub${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
       <span></span><span class="name">${r.group}</span><b></b><span class="ach-sub">${shortDate(r.run.ts)}</span>
+    </a>`;
+  })}`;
+};
+
+// First dry run in each region: "N of M regions", then a sub-line per
+// region in its color with its dry runs so far and the first one's date.
+const regionDryRows = (best, since, sinceTs, untilTs) => {
+  const runs = untilTs ? allRuns.filter(d => d.ts <= untilTs) : allRuns;
+  const firsts = new Map([...best.values()].filter(r => r.category.key === "region_dry").map(r => [r.group, r]));
+  if (!firsts.size) return "";
+  const c = firsts.values().next().value.category;
+  const regions = regionList(runs);
+  const dry = d3.rollup(runs.filter(d => d.dry), v => v.length, d => d.region);
+  const added = [...firsts.values()].filter(r => !since || r.run.ts >= sinceTs);
+  const latest = d3.greatest([...firsts.values()], r => r.run.ts);
+  return htl.html`<div class=${`row${added.length ? "" : " quiet"}`}>
+    <span class="ach-swatch" style=${`background: ${c.color}`}></span>
+    <span class="name">First dry run by region</span>
+    <b>${firsts.size} region${firsts.size === 1 ? "" : "s"}</b>
+    <span class="ach-sub">${!since ? shortDate(latest.run.ts) : added.length ? `${added.length} new` : "no change"}</span>
+  </div>${regions.filter(region => firsts.has(region)).map(region => {
+    const r = firsts.get(region);
+    const moved = (!since || r.run.ts >= sinceTs);
+    const n = dry.get(region) ?? 0;
+    return htl.html`<a class=${`row sub${moved ? "" : " quiet"}`} href=${moved ? `#run-${r.run.id}` : null}>
+      <span class="ach-swatch" style=${`background: ${regionColorOf(region)}`}></span>
+      <span class="name">${region}</span>
+      <b title="dry runs so far">${n} dry</b>
+      <span class="ach-sub">${shortDate(r.run.ts)}</span>
     </a>`;
   })}`;
 };
@@ -185,7 +215,8 @@ const routesRow = (best, since) => {
 // Where each best stood at the end of the year, against the start of it.
 const yearSummary = year => {
   const start = new Date(year, 0, 1);
-  return summary(bestAsOf(new Date(year + 1, 0, 1, 0, 0, -1)), bestAsOf(new Date(start - 1)), start);
+  const end = new Date(year + 1, 0, 1, 0, 0, -1);
+  return summary(bestAsOf(end), bestAsOf(new Date(start - 1)), start, end);
 };
 
 const runsPerYear = d3.rollup(allRuns, v => v.length, d => d.ts.getFullYear());
