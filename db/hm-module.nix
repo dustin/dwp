@@ -7,5 +7,6 @@
 {
   # services.dwp-cam-motion: the cams' water motion, see cams/hm-module.nix.
   # services.dwp-publishd: the publish service, see publishd.nix.
-  imports = [ ./cams/hm-module.nix ./publishd.nix ];
+  # services.dwp-display: the e-paper display renders, see display/hm-module.nix.
+  imports = [ ./cams/hm-module.nix ./publishd.nix ./display/hm-module.nix ];
 }

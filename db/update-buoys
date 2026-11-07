@@ -2,9 +2,10 @@
 #
 # The half-hourly buoy job (launchd net.spy.buoyupdate on dsstudio):
 # Every Hawaiʻi buoy's readings and spectra (swell/collect), the latest
-# Pauwela report to MQTT, then forecast-ingest, publish and the MagTag
-# render. (cam-ingest runs with the cam watcher, wherever that is: see
-# cams/hm-module.nix.)
+# Pauwela report to MQTT, then forecast-ingest and publish. (cam-ingest
+# runs with the cam watcher, wherever that is: see cams/hm-module.nix. The
+# e-paper displays render from the published data on their own timer:
+# display/hm-module.nix.)
 #
 # Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
 # elsewhere.
@@ -36,5 +37,3 @@ duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql"
 cd "$here"
 ./forecast-ingest
 ./publish  # through publishd, wherever that runs
-
-/nix/var/nix/profiles/default/bin/nix develop "$HOME/prog/snippets/circuitpython/trmnl/gen" --command magtag-render https://downwind.pro/magtag.html
