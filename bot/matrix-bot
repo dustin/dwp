@@ -433,7 +433,7 @@ def summary(r, rider):
     """(text, html) describing run r."""
     when = datetime.fromtimestamp(r["ts"], HST)
     # No beach name: the run was nowhere near a known beach (db/run-stats.sql).
-    head = (f"{r['start_beach'] or 'Unknown beach'} → {r['end_beach'] or 'Unknown beach'} · "
+    head = (f"{r['start_beach'] or 'Unknown'} → {r['end_beach'] or 'Unknown'} · "
             f"{when:%a %b} {when.day} {when:%H:%M}")
     lines = []
     foil_m, foil_s = r.get("distance_on_foil"), r.get("duration_on_foil")
