@@ -36,8 +36,8 @@ WHERE  l.id = t.dwid AND l.id IN (SELECT dwid FROM restat);
 
 -- Name the start and end beaches: the nearest beach to the first and last
 -- trackpoints, or none (null, an unknown beach) when even that one is
--- over 1 km away, e.g. a run off Hood River. migrate-far-runs.sql
--- backfills this; keep its 1000 in step.
+-- over 10 km away, e.g. a run off Hood River. migrate-far-runs.sql
+-- backfills this; keep its 10000 in step.
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
        end_pos   = x.end_loc
@@ -58,7 +58,7 @@ FROM   (
                     ( SELECT CASE WHEN ST_Distance_Sphere(
                                  ST_Point(d.lat, d.lon),
                                  ST_PointN(ST_ShortestLine(
-                                     ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)), 2)) <= 1000
+                                     ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)), 2)) <= 10000
                                  THEN b.id END
                       FROM   beaches b
                       ORDER BY ST_Length(

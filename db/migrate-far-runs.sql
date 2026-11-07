@@ -1,7 +1,7 @@
 -- One-time backfill for runs far from Maui (e.g. Hood River), matching
 -- run-stats.sql:
 --   * start_pos/end_pos become null (an unknown beach) when the run's first
---     or last trackpoint is over 1 km from every known beach;
+--     or last trackpoint is over 10 km from every known beach;
 --   * max_distance becomes null (unknown) when it's over 60 km.
 --
 -- First replace dwlist_resolved from schema.sql (it now left-joins the
@@ -42,7 +42,7 @@ near AS (
           FROM beaches b) AS end_m
   FROM ends e
 )
-SELECT * FROM near WHERE start_m > 1000 OR end_m > 1000;
+SELECT * FROM near WHERE start_m > 10000 OR end_m > 10000;
 
 SELECT l.rider, l.date, l.id, r.start_beach, round(f.start_m / 1000, 1) AS start_km,
        r.end_beach, round(f.end_m / 1000, 1) AS end_km
@@ -53,8 +53,8 @@ SELECT rider, date, id, round(max_distance / 1000, 1) AS max_distance_km
 FROM dwlist WHERE max_distance > 60000 ORDER BY date;
 
 UPDATE dwlist AS l
-SET    start_pos = CASE WHEN f.start_m > 1000 THEN NULL ELSE l.start_pos END,
-       end_pos   = CASE WHEN f.end_m > 1000 THEN NULL ELSE l.end_pos END
+SET    start_pos = CASE WHEN f.start_m > 10000 THEN NULL ELSE l.start_pos END,
+       end_pos   = CASE WHEN f.end_m > 10000 THEN NULL ELSE l.end_pos END
 FROM   far_ends f
 WHERE  l.id = f.dwid;
 
