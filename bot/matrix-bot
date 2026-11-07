@@ -142,7 +142,12 @@ G = 9.80665  # for the kJ shares, as in web/lib/components/spectral-partitions.j
 PENDING_TTL = 30 * 60  # how long an uncaptioned GPX waits for its foil
 RETRY_TTL = 24 * 3600  # how long a GPX that failed to import waits for !retry
 ASK_TTL = 24 * 3600  # how long an !ask change waits for a room admin's ✅
-APPROVE = {"✅", "✔️", "✔", "👍"}
+# Keys compared without variation selectors: Element's 👍 is "👍\ufe0f".
+APPROVE = {"✅", "✔", "👍"}
+
+
+def approves(key):
+    return (key or "").replace("\ufe0f", "") in APPROVE
 # (command, what it does) for each permission level; !help shows the
 # sender the ones they may use.
 HELP_ANYONE = [
@@ -873,6 +878,7 @@ def delete_run(mx, room, event_id, dwid, rider, sender):
                   html=f"❌ couldn't delete the run:<pre><code>{escape(tail(out))}</code></pre>")
         return
     text, html = summary(r, rider) if r else (dwid, escape(dwid))
+    mx.react(room, event_id, "🗑️")
     mx.notice(room, f"🗑️ deleted {rider}'s run\n{text}", reply_to=event_id,
               html=f"🗑️ deleted {escape(rider)}'s run<br>{html}")
 
@@ -2122,7 +2128,7 @@ class Bot:
         room admin reacts 👍 (or ✅) to it; whether ev was such a reaction."""
         rel = ev.get("content", {}).get("m.relates_to", {})
         d = self.deletes.get(rel.get("event_id"))
-        if not d or d["room"] != room or rel.get("key") not in APPROVE:
+        if not d or d["room"] != room or not approves(rel.get("key")):
             return False
         qid, sender = rel["event_id"], ev["sender"]
         if time.time() - d["at"] > ASK_TTL:
@@ -2137,7 +2143,7 @@ class Bot:
         """Apply the change a room admin's ✅ reacts to (see propose)."""
         rel = ev.get("content", {}).get("m.relates_to", {})
         change = self.asks.get(rel.get("event_id"))
-        if not change or change["room"] != room or rel.get("key") not in APPROVE:
+        if not change or change["room"] != room or not approves(rel.get("key")):
             return
         pid = rel["event_id"]
         if time.time() - change["at"] > ASK_TTL:
