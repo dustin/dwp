@@ -109,6 +109,7 @@ WHERE l.id = x.dwid;
 -- raw_islands: alternating fast/slow runs from speed > 11.
 -- fast_islands_merged: slow gaps under 15s are bridged (reclassified
 -- fast) and re-merged, since a brief drop does not mean coming off foil.
+-- fast_sec is the time actually over 11 km/h, without the bridged gaps.
 CREATE TEMP TABLE raw_islands AS
 WITH flagged AS (
   SELECT dwid, ts, distance, (speed > 11) AS fast
@@ -136,7 +137,7 @@ GROUP BY dwid, grp, fast;
 
 CREATE TEMP TABLE fast_islands_merged AS
 WITH reclassified AS (
-  SELECT *,
+  SELECT *, fast AS raw_fast, duration_sec AS raw_sec,
     CASE
       WHEN fast THEN TRUE
       WHEN NOT fast AND duration_sec < 15 THEN TRUE   -- bridge brief drops
@@ -162,7 +163,8 @@ SELECT
   MIN(start_distance)                              AS start_distance,
   MAX(end_distance)                                AS end_distance,
   MAX(end_distance) - MIN(start_distance)         AS total_distance,
-  EXTRACT(EPOCH FROM (MAX(end_ts) - MIN(start_ts))) AS duration_sec
+  EXTRACT(EPOCH FROM (MAX(end_ts) - MIN(start_ts))) AS duration_sec,
+  SUM(CASE WHEN raw_fast THEN raw_sec ELSE 0 END) AS fast_sec
 FROM grouped2
 GROUP BY dwid, merge_grp, effective_fast;
 
@@ -191,25 +193,27 @@ FROM (
 ) AS bi
 WHERE bi.rn = 1 AND dl.id = bi.dwid;
 
--- paddle up counts: only merged fast islands sustained >= 30s count
+-- paddle up counts: only merged fast islands with >= 30s actually on foil
+-- count. A string of failed attempts (short flights a few seconds apart,
+-- bridged into one island) doesn't.
 UPDATE dwlist AS dl
 SET paddle_up_count = pc.paddle_up_count
 FROM (
     SELECT dwid, COUNT(*) AS paddle_up_count
     FROM fast_islands_merged
-    WHERE fast AND duration_sec >= 30
+    WHERE fast AND fast_sec >= 30
     GROUP BY dwid
 ) pc
 WHERE dl.id = pc.dwid;
 
--- distance to first paddle up (first qualifying island, same >= 30s bar)
+-- distance to first paddle up (first qualifying island, same bar)
 UPDATE dwlist AS dl
 SET distance_to_first_paddle_up = fu.start_distance
 FROM (
     SELECT dwid, start_distance,
            ROW_NUMBER() OVER (PARTITION BY dwid ORDER BY start_ts) AS rn
     FROM fast_islands_merged
-    WHERE fast AND duration_sec >= 30
+    WHERE fast AND fast_sec >= 30
 ) fu
 WHERE fu.rn = 1 AND dl.id = fu.dwid;
 

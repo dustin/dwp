@@ -18,11 +18,16 @@ function toMonth(ts) {
 
 export const dryLimit = 0.97;
 
+// With a single paddle up, failed attempts before it can't make up more
+// than this share of the foiling distance.
+export const onePaddleUpLimit = 0.9;
+
 // A run with no paddle ups never really foiled (a few metres of speed noise
 // can still form a "segment"), so it can't be dry.
 function isDry(d) {
-  return d.paddle_up_count > 0 &&
-    d.longest_segment_distance / d.distance_on_foil > dryLimit;
+  if (!(d.paddle_up_count > 0)) return false;
+  const share = d.longest_segment_distance / d.distance_on_foil;
+  return share > dryLimit || (d.paddle_up_count === 1 && share > onePaddleUpLimit);
 }
 
 // Experience going into each run: how many runs, and how much time (in

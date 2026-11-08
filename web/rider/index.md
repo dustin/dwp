@@ -11,7 +11,7 @@ import {renderChord} from "./components/chord.js";
 import {renderCrashes} from "./components/crash-map.js";
 import * as fmt from "./components/formatters.js";
 import * as tl from "./components/timeline.js";
-import {fetchMeta, riderFile, dryLimit, runDataURL} from "./components/data.js";
+import {fetchMeta, riderFile, dryLimit, onePaddleUpLimit, runDataURL} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
 import {foilColorScale} from "./components/foils.js";
@@ -444,7 +444,9 @@ I tend to play around early on some of my Kihei runs and it looks like I paddle 
 
 Instead, I calculate a dry run by verifying that the longest segment is
 ${(dryLimit * 100).toFixed(1)}% of the total foiling distance.  Basically, are the times
-where once I paddled up for real, I stayed up until I was done.
+where once I paddled up for real, I stayed up until I was done.  A run with a single paddle up
+(at least 30 seconds on foil) only needs ${(onePaddleUpLimit * 100).toFixed(0)}%, so a few failed
+attempts before it don't count against it.
 
 So the following ${runCsv.filter(d => d.dry).length} runs are considered "dry":
 
