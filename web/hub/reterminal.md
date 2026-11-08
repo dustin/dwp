@@ -15,19 +15,19 @@ pager: false
   #observablehq-main > .observablehq { margin: 0; }
   .rt { width: 800px; height: 480px; box-sizing: border-box; padding: 14px 18px 12px; color: #000; background: #fff;
     font-family: "DejaVu Sans", "Liberation Sans", Arial, Helvetica, sans-serif; display: grid;
-    grid-template-columns: 250px 1fr; grid-template-rows: auto 1fr auto; gap: 8px 18px; -webkit-font-smoothing: none; }
+    grid-template-columns: 250px 1fr; grid-template-rows: auto minmax(0, 1fr) auto; gap: 8px 18px; -webkit-font-smoothing: none; }
   .rt-head { grid-column: 1 / 3; display: flex; align-items: baseline; gap: 14px; border-bottom: 3px solid #000; padding-bottom: 6px; }
   .rt-head h1 { margin: 0; font-size: 30px; font-weight: 800; color: #000; letter-spacing: 0.5px; max-width: none; }
   .rt-head .rt-meta { margin-left: auto; font-size: 17px; font-weight: 600; }
-  .rt-now { display: flex; flex-direction: column; gap: 6px; }
+  .rt-now { display: flex; flex-direction: column; gap: 5px; min-height: 0; overflow: hidden; }
   .rt-label { font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #555; }
-  .rt-big { font-size: 64px; font-weight: 800; line-height: 0.95; }
+  .rt-big { font-size: 58px; font-weight: 800; line-height: 0.95; }
   .rt-big small { font-size: 24px; font-weight: 700; }
   .rt-dir { font-size: 22px; font-weight: 700; }
   .rt-badge { display: inline-block; font-size: 18px; font-weight: 800; padding: 2px 10px; border: 3px solid #000; border-radius: 6px; }
   .rt-badge.solid { background: #000; color: #fff; }
   .rt-line { font-size: 17px; font-weight: 600; line-height: 1.3; }
-  .rt-rule { border-top: 2px solid #000; margin: 4px 0; }
+  .rt-rule { border-top: 2px solid #000; margin: 2px 0; }
   .rt-chart { display: flex; flex-direction: column; gap: 4px; }
   .rt-summary { font-size: 19px; font-weight: 700; line-height: 1.25; }
   .rt-days { grid-column: 1 / 3; display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; border-top: 3px solid #000; padding-top: 8px; }
@@ -98,7 +98,8 @@ const dayName = day === today ? "Today" : day === hstDay(+now + 86400e3) ? "Tomo
 function ratingLine() {
   if (!rating || now - rating.ts > 30 * 60e3) return html`<span class="rt-muted">No current rating</span>`;
   if (rating.dark) return html`<span class="rt-muted">Dark, no rating</span>`;
-  return html`Run <b>${Math.round(rating.kihei * 2.5)}/10</b> · north shore ${Math.round(rating.ns * 2.5)}/10<br>Best bet: <b>${rating.rec}</b>`;
+  // Two short lines, so a long best bet can't push the afternoons off the panel.
+  return html`Run <b>${Math.round(rating.kihei * 2.5)}/10</b>, north shore ${Math.round(rating.ns * 2.5)}/10<br>Best bet: <b>${rating.rec}</b>`;
 }
 
 const ok = ahead.filter(h => RIDEABLE.has(h.cls));
@@ -142,8 +143,7 @@ const liveLeft = html`<div class="rt-now">
     <span class="rt-label">Finish · Wailea</span>
     <div class="rt-line">${wailea ? html`<b>${Math.round(wailea.wavg)} kn</b>${wailea.wgust != null ? ` g${Math.round(wailea.wgust)}` : ""} ${compassPoint(wailea.wdir)} ${Math.round(wailea.wdir)}°${wailea.wdir >= 120 && wailea.wdir < 270 ? html` <span class="rt-badge" style="font-size: 14px; padding: 0 6px; border-width: 2px">against the run</span>` : ""}` : html`<span class="rt-muted">No recent reading</span>`}</div>
     <div class="rt-rule"></div>
-    <span class="rt-label">Rating</span>
-    <div class="rt-line">${ratingLine()}</div>
+    <div class="rt-line" style="font-size: 16px">${ratingLine()}</div>
   </div>`;
 
 // Outside the go window: the next day's forecast peak instead of readings.
