@@ -19,7 +19,7 @@ pager: false
 ```js
 // Cards for an Adafruit MagTag: 296×128 in the panel's four greys.
 // Screenshot at 296×128 (device scale 1) once <html data-ready> is set.
-//   (default)               the Pauwela buoy
+//   (default)               the Pauwela buoy (?site=waimea etc. for another)
 //   ?card=tide&spot=kaa     one spot's tide (slugs as in tides.js SPOTS)
 // ?t=2026-10-02T18:56 (HST) shows that time instead of now.
 import { fetchSwellPartitionWindow, fetchSwellSpectrumWindow, parseHstParam, reportTimes, spectrumSampleTime } from "./components/data.js";
@@ -41,8 +41,8 @@ if (params.get("card") === "tide") {
 } else {
   const start = new Date(+end - 6 * 3600 * 1000);
   const [swell, spectra] = await Promise.all([
-    fetchSwellPartitionWindow("pauwela", start, end),
-    fetchSwellSpectrumWindow("pauwela", start, end),
+    fetchSwellPartitionWindow(params.get("site") ?? "pauwela", start, end),
+    fetchSwellSpectrumWindow(params.get("site") ?? "pauwela", start, end),
   ]);
   const spectrum = readingNear(spectra);
   // NDBC's overall reading closest to the spectrum shown (the latest, if

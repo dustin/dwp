@@ -1,15 +1,27 @@
-# Home-manager module for the e-paper displays' renders (Linux only): a
-# systemd user timer that runs dwp-display-render (./default.nix) for each
-# page and PUTs the images to the display server.
+# Home-manager modules for the e-paper displays (Linux only).
+#
+# services.dwp-display, where there's a browser (pitrick): renders pages
+# with dwp-display-render (./default.nix) and PUTs the images.
+#   api: the display server (./server.py) to render for. Every minute it
+#     asks the server what its devices want and renders what's due.
+#   pages + server: the old fixed list, PUT to Node-RED's /magtrmnl.
 #
 #   services.dwp-display = {
 #     enable = true;
-#     server = "http://bee1.lan:1880/magtrmnl";
+#     api = "http://aws1:8893";
+#     pages = [ ];
 #   };
+#
+# services.dwp-display-server, where the devices are served from (aws1):
+# ./server.py, TRMNL's API with the page in the URL, behind nginx.
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-display;
+  scfg = config.services.dwp-display-server;
   render = lib.getExe cfg.package;
+  sync = pkgs.writeShellScript "dwp-display-sync" ''
+    exec ${lib.getExe pkgs.python3} ${./sync.py} ${lib.escapeShellArgs [ cfg.api render ]}
+  '';
   run = pkgs.writeShellScript "dwp-display-round" (''
     status=0
   '' + lib.concatMapStrings (p: ''
@@ -28,6 +40,12 @@ in
 {
   options.services.dwp-display = with lib; {
     enable = mkEnableOption "the e-paper display renders";
+    api = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "http://aws1:8893";
+      description = "The display server (server.py) whose wanted list to render, reached privately.";
+    };
     package = mkOption {
       type = types.package;
       default = pkgs.callPackage ./default.nix { };
@@ -56,7 +74,56 @@ in
     };
   };
 
-  config = lib.mkIf (cfg.enable && pkgs.stdenv.hostPlatform.isLinux) {
+  options.services.dwp-display-server = with lib; {
+    enable = mkEnableOption "the e-paper display server";
+    port = mkOption { type = types.port; default = 8893; };
+    public = mkOption {
+      type = types.str;
+      default = "https://api.downwind.pro";
+      description = "Where devices reach it; image URLs start with this.";
+    };
+  };
+
+  config = lib.mkMerge [
+  (lib.mkIf (cfg.enable && cfg.api != null && pkgs.stdenv.hostPlatform.isLinux) {
+    systemd.user.services.dwp-display-sync = {
+      Unit.Description = "Render what the e-paper display server's devices want";
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${sync}";
+        # The pages draw times in the browser's zone.
+        Environment = [ "TZ=Pacific/Honolulu" ];
+      };
+    };
+    systemd.user.timers.dwp-display-sync = {
+      Unit.Description = "Render what the e-paper display server's devices want";
+      Timer = {
+        OnCalendar = "minutely";
+        Persistent = false;
+      };
+      Install.WantedBy = [ "timers.target" ];
+    };
+  })
+
+  (lib.mkIf (scfg.enable && pkgs.stdenv.hostPlatform.isLinux) {
+    systemd.user.services.dwp-display-server = {
+      Unit = {
+        Description = "downwind.pro e-paper display server";
+        After = [ "network-online.target" ];
+      };
+      Service = {
+        ExecStart = lib.escapeShellArgs [
+          (lib.getExe pkgs.python3) "${./server.py}" "%S/dwp-display"
+          "--port" (toString scfg.port) "--public" scfg.public
+        ];
+        Restart = "always";
+        RestartSec = 10;
+      };
+      Install.WantedBy = [ "default.target" ];
+    };
+  })
+
+  (lib.mkIf (cfg.enable && cfg.pages != [ ] && pkgs.stdenv.hostPlatform.isLinux) {
     systemd.user.services.dwp-display = {
       Unit.Description = "Render downwind.pro's e-paper display pages";
       Service = {
@@ -74,5 +141,6 @@ in
       };
       Install.WantedBy = [ "timers.target" ];
     };
-  };
+  })
+  ];
 }

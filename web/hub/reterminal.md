@@ -37,16 +37,18 @@ pager: false
 </style>
 
 ```js
-// Kīhei for a Seeed reTerminal Sticky (3.97", 800×480, four greys) running
-// TRMNL firmware, landscape. db/display renders it once <html data-ready> is
-// set and the display server hands it to the device.
+// Kīhei (or ?site=maliko, the north shore) for a Seeed reTerminal Sticky
+// (3.97", 800×480, four greys) running TRMNL firmware, landscape. db/display
+// renders it once <html data-ready> is set and the display server hands it
+// to the device.
 //
 // Two modes. From GO_START until an hour before sunset (GO_END) it's live:
 // the station now, the finish, the rating, today so far and the forecast.
 // Outside that it's the outlook for the next go window (today's before
 // GO_START, tomorrow's after GO_END); the display server shows it once and
 // sleeps the device until the next GO_START, so the screen isn't redrawn
-// overnight. Keep GO_START/GO_END in step with Build Display in Node-RED.
+// overnight. Keep GO_START/GO_END in step with db/display/server.py.
+// ?view=outlook always shows the outlook (the display's "-forecast" pages).
 // ?t=2026-11-08T07:00 (HST) pretends it's then (data is still now's).
 import * as Plot from "npm:@observablehq/plot";
 import * as fmt from "./components/formatters.js";
@@ -58,28 +60,38 @@ import {CLASSES, windClass} from "./components/wind-quality.js";
 const HOUR = 3600e3;
 const GO_START = 9;        // HST hour
 const GO_END_BEFORE_SUNSET = HOUR;
-const KIHEI = [20.785, -156.466];
-const now = parseHstParam(new URLSearchParams(location.search).get("t")) ?? new Date();
+// Per site: the title, the station (forecast and wind classes use the same
+// name), where it is, the finish station and which of its directions are
+// against the run.
+const SITES = {
+  kihei: {title: "Kīhei", station: "kihei", where: "Sugar Beach", spot: [20.785, -156.466],
+    finish: "wailea", finishName: "Wailea", against: d => d >= 120 && d < 270},
+  maliko: {title: "Maliko", station: "hookipa", where: "Hoʻokipa", spot: [20.933, -156.357],
+    finish: "kanaha", finishName: "Kanaha", against: () => false},
+};
+const params = new URLSearchParams(location.search);
+const site = SITES[params.get("site")] ?? SITES.kihei;
+const now = parseHstParam(params.get("t")) ?? new Date();
 const today = hstDay(now);
-const {rise, set} = sunTimes(today, KIHEI);
+const {rise, set} = sunTimes(today, site.spot);
 const goStart = new Date(Date.parse(`${today}T00:00:00Z`) + (GO_START + 10) * HOUR);
 const goEnd = new Date(+set - GO_END_BEFORE_SUNSET);
-const isLive = now >= goStart && now < goEnd;
+const isLive = params.get("view") !== "outlook" && now >= goStart && now < goEnd;
 // The day the outlook is for, and its daylight.
 const day = isLive || now < goStart ? today : hstDay(+now + 86400e3);
-const sun = sunTimes(day, KIHEI);
+const sun = sunTimes(day, site.spot);
 
 const live = await fetchLiveWind();
 const fresh = rows => rows?.length && now - rows.at(-1).ts < 20 * 60e3 ? rows : null;
-const kiheiLive = fresh(live?.stations.kihei);
-const fileRows = await fetchRecentWind("kihei", 14).catch(() => []);
-const obs = [...fileRows.filter(d => !kiheiLive || d.ts < kiheiLive[0].ts), ...(kiheiLive ?? [])];
-const wailea = fresh(live?.stations.wailea)?.at(-1) ?? null;
-const forecastRows = await fetchWindForecast("kihei", d3.range(7).map(k => hstDay(+now + k * 86400e3)));
-const {hours} = hourlyForecast("kihei", forecastRows, obs, now);
+const stationLive = fresh(live?.stations[site.station]);
+const fileRows = await fetchRecentWind(site.station, 14).catch(() => []);
+const obs = [...fileRows.filter(d => !stationLive || d.ts < stationLive[0].ts), ...(stationLive ?? [])];
+const finish = fresh(live?.stations[site.finish])?.at(-1) ?? null;
+const forecastRows = await fetchWindForecast(site.station, d3.range(7).map(k => hstDay(+now + k * 86400e3)));
+const {hours} = hourlyForecast(site.station, forecastRows, obs, now);
 const daylight = hours.filter(h => h.ts >= +sun.rise - HOUR / 2 && h.ts <= sun.set);
 const ahead = isLive ? daylight.filter(h => h.ts >= +now - HOUR / 2) : daylight;
-const days = outlook("kihei", forecastRows, now).filter(d => d.day > day).slice(0, 5);
+const days = outlook(site.station, forecastRows, now).filter(d => d.day > day).slice(0, 5);
 const last = obs.at(-1);
 const rating = live?.rating;
 ```
@@ -99,7 +111,9 @@ function ratingLine() {
   if (!rating || now - rating.ts > 30 * 60e3) return html`<span class="rt-muted">No current rating</span>`;
   if (rating.dark) return html`<span class="rt-muted">Dark, no rating</span>`;
   // Two short lines, so a long best bet can't push the afternoons off the panel.
-  return html`Run <b>${Math.round(rating.kihei * 2.5)}/10</b>, north shore ${Math.round(rating.ns * 2.5)}/10<br>Best bet: <b>${rating.rec}</b>`;
+  const kihei = Math.round(rating.kihei * 2.5), ns = Math.round(rating.ns * 2.5);
+  const runs = site.station === "kihei" ? html`Run <b>${kihei}/10</b>, north shore ${ns}/10` : html`Run <b>${ns}/10</b>, Kīhei ${kihei}/10`;
+  return html`${runs}<br>Best bet: <b>${rating.rec}</b>`;
 }
 
 const ok = ahead.filter(h => RIDEABLE.has(h.cls));
@@ -134,14 +148,14 @@ for (const el of chart.querySelectorAll("[stroke-opacity]")) el.setAttribute("st
 for (const el of chart.querySelectorAll("g[aria-label='y-grid'] line")) el.setAttribute("stroke", "#aaa");
 
 const liveLeft = html`<div class="rt-now">
-    <span class="rt-label">Now · Sugar Beach</span>
+    <span class="rt-label">Now · ${site.where}</span>
     ${last ? html`<div class="rt-big">${Math.round(last.wavg)}<small> kn</small>${last.wgust != null ? html` <small>g${Math.round(last.wgust)}</small>` : ""}</div>
-      <div class="rt-dir">${compassPoint(last.wdir)} ${Math.round(last.wdir)}° ${badge(windClass("kihei", last))}</div>
+      <div class="rt-dir">${compassPoint(last.wdir)} ${Math.round(last.wdir)}° ${badge(windClass(site.station, last))}</div>
       <div class="rt-line rt-muted">${ago(last.ts) <= 1 ? "just now" : `${ago(last.ts)} min ago`}${last.wlull != null ? ` · lull ${Math.round(last.wlull)}` : ""}</div>`
     : html`<div class="rt-line">No recent reading</div>`}
     <div class="rt-rule"></div>
-    <span class="rt-label">Finish · Wailea</span>
-    <div class="rt-line">${wailea ? html`<b>${Math.round(wailea.wavg)} kn</b>${wailea.wgust != null ? ` g${Math.round(wailea.wgust)}` : ""} ${compassPoint(wailea.wdir)} ${Math.round(wailea.wdir)}°${wailea.wdir >= 120 && wailea.wdir < 270 ? html` <span class="rt-badge" style="font-size: 14px; padding: 0 6px; border-width: 2px">against the run</span>` : ""}` : html`<span class="rt-muted">No recent reading</span>`}</div>
+    <span class="rt-label">Finish · ${site.finishName}</span>
+    <div class="rt-line">${finish ? html`<b>${Math.round(finish.wavg)} kn</b>${finish.wgust != null ? ` g${Math.round(finish.wgust)}` : ""} ${compassPoint(finish.wdir)} ${Math.round(finish.wdir)}°${site.against(finish.wdir) ? html` <span class="rt-badge" style="font-size: 14px; padding: 0 6px; border-width: 2px">against the run</span>` : ""}` : html`<span class="rt-muted">No recent reading</span>`}</div>
     <div class="rt-rule"></div>
     <div class="rt-line" style="font-size: 16px">${ratingLine()}</div>
   </div>`;
@@ -165,7 +179,7 @@ const outlookLeft = html`<div class="rt-now">
 
 const panel = html`<div class="rt">
   <div class="rt-head">
-    <h1>Kīhei</h1>
+    <h1>${site.title}</h1>
     <span class="rt-meta">${isLive ? html`${today} · ${hh(now)} · sunset ${hh(set)}` : html`${day} · sunrise ${hh(sun.rise)} · sunset ${hh(sun.set)}`}</span>
   </div>
   ${isLive ? liveLeft : outlookLeft}
