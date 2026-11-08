@@ -82,6 +82,17 @@ in
       default = "https://api.downwind.pro";
       description = "Where devices reach it; image URLs start with this.";
     };
+    devices = mkOption {
+      type = types.attrsOf (types.submodule {
+        options = {
+          name = mkOption { type = types.str; default = ""; };
+          page = mkOption { type = types.str; description = "Page name, as in server.py (kihei, maliko, buoy-pauwela, ...)."; };
+        };
+      });
+      default = { };
+      example = { "C4:9E:7E:18:EF:A4" = { name = "sticky"; page = "kihei"; }; };
+      description = "Devices by their ID header (MAC); each shows its page whatever its URL says.";
+    };
   };
 
   config = lib.mkMerge [
@@ -115,6 +126,7 @@ in
         ExecStart = lib.escapeShellArgs [
           (lib.getExe pkgs.python3) "${./server.py}" "%S/dwp-display"
           "--port" (toString scfg.port) "--public" scfg.public
+          "--devices" (pkgs.writeText "dwp-display-devices.json" (builtins.toJSON scfg.devices))
         ];
         Restart = "always";
         RestartSec = 10;

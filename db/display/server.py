@@ -6,6 +6,10 @@ API paths to it:
 
     https://api.downwind.pro/trmnl/kihei          -> .../kihei/api/display
 
+A device listed in --devices (by its ID header, the MAC) shows the page
+given there whatever its URL names, so it can be pointed at plain
+https://api.downwind.pro/trmnl and changed from the server's config.
+
 Pages (PAGES below): kihei, maliko (live in the go window, the outlook
 outside it), kihei-forecast, maliko-forecast (always the outlook),
 buoy-<site>, tide-<spot>. The image's size is the device's Width and Height
@@ -214,7 +218,7 @@ class State:
 SIZE = re.compile(r"[1-9][0-9]{1,3}x[1-9][0-9]{1,3}")
 
 
-def make_handler(state, public):
+def make_handler(state, public, devices):
     class Handler(BaseHTTPRequestHandler):
         def send(self, code, body=b"", ctype="application/json", headers=()):
             if isinstance(body, (dict, list)):
@@ -232,9 +236,19 @@ def make_handler(state, public):
             parts = [p for p in path.split("/") if p]
             if parts == ["internal", "wanted"]:
                 return self.send(200, state.list())
-            if len(parts) < 3 or parts[0] != "trmnl":
+            if len(parts) < 2 or parts[0] != "trmnl":
                 return self.send(404, {"error": "not found"})
-            page, rest = parts[1], parts[2:]
+            # /trmnl/<page>/... or /trmnl/api/...; a device in the table
+            # gets its page from there whatever the URL says.
+            page, rest = (None, parts[1:]) if parts[1] == "api" else (parts[1], parts[2:])
+            if rest and rest[0] == "api":
+                dev = devices.get((self.headers.get("ID") or "").upper())
+                if dev:
+                    page = dev["page"]
+            if page is None:
+                ident = self.headers.get("ID") or "?"
+                return self.send(200, {"status": 0, "refresh_rate": 3600,
+                                       "message": f"Not set up: add {ident} to the display server's devices"})
             info = page_info(page)
             if info is None:
                 return self.send(404, {"status": 404, "error": f"no page {page!r}"})
@@ -312,9 +326,17 @@ def main():
     ap.add_argument("--port", type=int, default=8893)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--public", default="https://api.downwind.pro")
+    ap.add_argument("--devices", help='JSON {"<ID header>": {"name": ..., "page": ...}}')
     a = ap.parse_args()
     os.makedirs(a.state_dir, exist_ok=True)
-    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(State(a.state_dir), a.public.rstrip("/")))
+    devices = {}
+    if a.devices:
+        with open(a.devices) as f:
+            devices = {k.upper(): v for k, v in json.load(f).items()}
+    for k, v in devices.items():
+        if page_info(v["page"]) is None:
+            print(f"device {k} ({v.get('name')}): unknown page {v['page']!r}", flush=True)
+    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(State(a.state_dir), a.public.rstrip("/"), devices))
     srv.serve_forever()
 
 
