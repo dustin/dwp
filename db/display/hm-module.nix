@@ -2,14 +2,12 @@
 #
 # services.dwp-display, where there's a browser (pitrick): renders pages
 # with dwp-display-render (./default.nix) and PUTs the images.
-#   api: the display server (./server.py) to render for. Every minute it
-#     asks the server what its devices want and renders what's due.
-#   pages + server: the old fixed list, PUT to Node-RED's /magtrmnl.
+# Every minute it asks the display server (./server.py, at `api`) what
+# its devices want and renders what's due.
 #
 #   services.dwp-display = {
 #     enable = true;
 #     api = "http://aws1:8893";
-#     pages = [ ];
 #   };
 #
 # services.dwp-display-server, where the devices are served from (aws1):
@@ -22,55 +20,18 @@ let
   sync = pkgs.writeShellScript "dwp-display-sync" ''
     exec ${lib.getExe pkgs.python3} ${./sync.py} ${lib.escapeShellArgs [ cfg.api render ]}
   '';
-  run = pkgs.writeShellScript "dwp-display-round" (''
-    status=0
-  '' + lib.concatMapStrings (p: ''
-    ${render} ${lib.escapeShellArgs [ p.size p.url "${cfg.server}/${p.name}" ]} || status=$?
-  '') cfg.pages + ''
-    exit $status
-  '');
-  page = lib.types.submodule {
-    options = with lib; {
-      name = mkOption { type = types.str; description = "Image name on the server, with .bmp or .png."; };
-      url = mkOption { type = types.str; };
-      size = mkOption { type = types.str; default = "296x128"; description = "WxH."; };
-    };
-  };
 in
 {
   options.services.dwp-display = with lib; {
     enable = mkEnableOption "the e-paper display renders";
     api = mkOption {
-      type = types.nullOr types.str;
-      default = null;
+      type = types.str;
       example = "http://aws1:8893";
       description = "The display server (server.py) whose wanted list to render, reached privately.";
     };
     package = mkOption {
       type = types.package;
       default = pkgs.callPackage ./default.nix { };
-    };
-    server = mkOption {
-      type = types.str;
-      default = "http://bee1.lan:1880/magtrmnl";
-      description = "Where the images are PUT, as <server>/<name>.";
-    };
-    onCalendar = mkOption {
-      type = types.str;
-      # Just after update-buoys' publish at :10 and :40, in the hours the
-      # displays are awake (the server sleeps them 21:00–05:45 HST).
-      default = "*-*-* 05..20:13,43:00 Pacific/Honolulu";
-    };
-    pages = mkOption {
-      type = types.listOf page;
-      default = [
-        { name = "buoy.bmp"; url = "https://downwind.pro/magtag.html"; }
-        { name = "kaipukaihina.bmp"; url = "https://downwind.pro/magtag.html?card=tide&spot=kaipukaihina"; }
-        { name = "ukumehame.bmp"; url = "https://downwind.pro/magtag.html?card=tide&spot=ukumehame"; }
-        { name = "guardrails.bmp"; url = "https://downwind.pro/magtag.html?card=tide&spot=guardrails"; }
-        { name = "kihei.png"; url = "https://downwind.pro/reterminal.html"; size = "800x480"; }
-      ];
-      description = "Pages to render, in the server's names (its playlists list them).";
     };
   };
 
@@ -96,7 +57,7 @@ in
   };
 
   config = lib.mkMerge [
-  (lib.mkIf (cfg.enable && cfg.api != null && pkgs.stdenv.hostPlatform.isLinux) {
+  (lib.mkIf (cfg.enable && pkgs.stdenv.hostPlatform.isLinux) {
     systemd.user.services.dwp-display-sync = {
       Unit.Description = "Render what the e-paper display server's devices want";
       Service = {
@@ -135,24 +96,5 @@ in
     };
   })
 
-  (lib.mkIf (cfg.enable && cfg.pages != [ ] && pkgs.stdenv.hostPlatform.isLinux) {
-    systemd.user.services.dwp-display = {
-      Unit.Description = "Render downwind.pro's e-paper display pages";
-      Service = {
-        Type = "oneshot";
-        ExecStart = "${run}";
-        # The pages draw times in the browser's zone.
-        Environment = [ "TZ=Pacific/Honolulu" ];
-      };
-    };
-    systemd.user.timers.dwp-display = {
-      Unit.Description = "Render downwind.pro's e-paper display pages";
-      Timer = {
-        OnCalendar = cfg.onCalendar;
-        Persistent = false;
-      };
-      Install.WantedBy = [ "timers.target" ];
-    };
-  })
   ];
 }

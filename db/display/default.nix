@@ -1,7 +1,7 @@
 # dwp-display-render SIZE URL PUT_URL: screenshot a downwind.pro display
 # page (one that sets <html data-ready>) at SIZE (WxH), cut it to the
-# panels' four greys, and PUT it to the display server (Node-RED's
-# /magtrmnl/<name>.bmp|png). A PUT_URL ending in .png gets a 2-bit
+# panels' four greys, and PUT it to the display server (server.py's
+# /internal/image/<page>/<WxH>.bmp|png). A PUT_URL ending in .png gets a 2-bit
 # grayscale PNG, which TRMNL firmware reads; anything else a 4-grey BMP3
 # for the MagTag.
 { lib, stdenv, writeShellApplication, python3, imagemagick, curl, chromium, dejavu_fonts, makeFontsConf }:
