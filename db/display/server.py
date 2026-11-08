@@ -290,8 +290,15 @@ def make_handler(state, public):
                     return self.send(204)
             return self.send(404, {"error": "not on the wanted list"})
 
+        def log_request(self, code="-", size="-"):
+            # One journal line per request: who, what, and the panel size.
+            ua = self.headers.get("User-Agent") or "-"
+            dims = f"{self.headers.get('Width') or '-'}x{self.headers.get('Height') or '-'}"
+            ip = self.headers.get("X-Forwarded-For") or self.client_address[0]
+            print(f"{ip} {self.command} {self.path} {code} {dims} id={self.headers.get('ID') or '-'} ua={ua}", flush=True)
+
         def log_message(self, fmt, *args):
-            pass
+            print(fmt % args, flush=True)
 
     return Handler
 
