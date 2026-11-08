@@ -36,6 +36,7 @@ import json
 import math
 import os
 import re
+import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -218,7 +219,7 @@ class State:
 SIZE = re.compile(r"[1-9][0-9]{1,3}x[1-9][0-9]{1,3}")
 
 
-def make_handler(state, public, devices):
+def make_handler(state, public, devices, mqtt=None):
     class Handler(BaseHTTPRequestHandler):
         def send(self, code, body=b"", ctype="application/json", headers=()):
             if isinstance(body, (dict, list)):
@@ -245,7 +246,10 @@ def make_handler(state, public, devices):
                 dev = devices.get((self.headers.get("ID") or "").upper())
                 if dev:
                     page = dev["page"]
+            else:
+                dev = None
             if page is None:
+                self.report(None)
                 ident = self.headers.get("ID") or "?"
                 return self.send(200, {"status": 0, "refresh_rate": 3600,
                                        "message": f"Not set up: add {ident} to the display server's devices"})
@@ -257,7 +261,7 @@ def make_handler(state, public, devices):
                 return self.send(200, {"status": 200, "api_key": "dwp", "friendly_id": dev,
                                        "image_url": None, "message": f"downwind.pro {page}"})
             if rest == ["api", "display"]:
-                return self.display(page, info)
+                return self.display(page, info, dev)
             if len(rest) == 1:                     # <WxH>-<hash>.<ext>
                 m = re.fullmatch(r"(\d+x\d+)(?:-[0-9a-f]+)?\.(png|bmp)", rest[0])
                 if m:
@@ -270,7 +274,26 @@ def make_handler(state, public, devices):
                     return self.send(200, data, f"image/{m[2]}", [("Cache-Control", "no-cache")])
             return self.send(404, {"error": "not found"})
 
-        def display(self, page, info):
+        def report(self, dev):
+            """Publish the device's battery voltage and RSSI to MQTT,
+            display/<sensor>/voltage and .../rssi (influxer files them under
+            weekly.battery and weekly.display)."""
+            if not mqtt:
+                return
+            ident = (self.headers.get("ID") or "").upper()
+            sensor = (dev or {}).get("sensor") or ident.replace(":", "")[-6:].lower() or "unknown"
+            readings = [("voltage", self.headers.get("Battery-Voltage")), ("rssi", self.headers.get("RSSI"))]
+            for name, value in readings:
+                try:
+                    float(value)
+                except (TypeError, ValueError):
+                    continue
+                cmd = [mqtt["pub"], "-h", mqtt["host"], "-t", f"display/{sensor}/{name}", "-m", value]
+                threading.Thread(target=subprocess.run, args=(cmd,),
+                                 kwargs={"timeout": 10, "stdout": subprocess.DEVNULL}, daemon=True).start()
+
+        def display(self, page, info, dev=None):
+            self.report(dev)
             w, h = self.headers.get("Width"), self.headers.get("Height")
             size = f"{w}x{h}"
             if not SIZE.fullmatch(size):
@@ -326,7 +349,9 @@ def main():
     ap.add_argument("--port", type=int, default=8893)
     ap.add_argument("--bind", default="0.0.0.0")
     ap.add_argument("--public", default="https://api.downwind.pro")
-    ap.add_argument("--devices", help='JSON {"<ID header>": {"name": ..., "page": ...}}')
+    ap.add_argument("--devices", help='JSON {"<ID header>": {"name": ..., "page": ..., "sensor": ...}}')
+    ap.add_argument("--mqtt", help="broker host for the devices' battery readings")
+    ap.add_argument("--mosquitto-pub", default="mosquitto_pub")
     a = ap.parse_args()
     os.makedirs(a.state_dir, exist_ok=True)
     devices = {}
@@ -336,7 +361,8 @@ def main():
     for k, v in devices.items():
         if page_info(v["page"]) is None:
             print(f"device {k} ({v.get('name')}): unknown page {v['page']!r}", flush=True)
-    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(State(a.state_dir), a.public.rstrip("/"), devices))
+    srv = ThreadingHTTPServer((a.bind, a.port), make_handler(State(a.state_dir), a.public.rstrip("/"), devices,
+                                                          {"host": a.mqtt, "pub": a.mosquitto_pub} if a.mqtt else None))
     srv.serve_forever()
 
 

@@ -43,10 +43,20 @@ in
       default = "https://api.downwind.pro";
       description = "Where devices reach it; image URLs start with this.";
     };
+    mqtt = mkOption {
+      type = types.nullOr types.str;
+      default = "localhost";
+      description = "Broker for the devices' battery voltage and RSSI (display/<sensor>/voltage, .../rssi); null for none.";
+    };
     devices = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
           name = mkOption { type = types.str; default = ""; };
+          sensor = mkOption {
+            type = types.nullOr types.str;
+            default = null;
+            description = "Its sensor tag for the battery readings (display/<sensor>/voltage); default the MAC's last 6.";
+          };
           page = mkOption { type = types.str; description = "Page name, as in server.py (kihei, maliko, buoy-pauwela, ...)."; };
         };
       });
@@ -84,11 +94,13 @@ in
         After = [ "network-online.target" ];
       };
       Service = {
-        ExecStart = lib.escapeShellArgs [
+        ExecStart = lib.escapeShellArgs ([
           (lib.getExe pkgs.python3) "${./server.py}" "%S/dwp-display"
           "--port" (toString scfg.port) "--public" scfg.public
           "--devices" (pkgs.writeText "dwp-display-devices.json" (builtins.toJSON scfg.devices))
-        ];
+        ] ++ lib.optionals (scfg.mqtt != null) [
+          "--mqtt" scfg.mqtt "--mosquitto-pub" "${pkgs.mosquitto}/bin/mosquitto_pub"
+        ]);
         Restart = "always";
         RestartSec = 10;
       };
