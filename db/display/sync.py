@@ -25,6 +25,8 @@ def last_slot(now):
 def due(e, now):
     if e.get("updated") is None:
         return True
+    if e.get("static"):                       # the same image every time: once is enough
+        return False
     slot = last_slot(now)
     return ((slot + TZ) % 86400) // 3600 in HOURS and e["updated"] < slot
 

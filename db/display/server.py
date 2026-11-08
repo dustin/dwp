@@ -55,6 +55,10 @@ FIXED = {
     "maliko": (f"{SITE}/reterminal.html?site=maliko", "go", HOOKIPA),
     "kihei-forecast": (f"{SITE}/reterminal.html?site=kihei&view=outlook", "day", KIHEI),
     "maliko-forecast": (f"{SITE}/reterminal.html?site=maliko&view=outlook", "day", HOOKIPA),
+    # Shown instead of a device's page while its battery is low; rendered
+    # once per size, as soon as the size is first seen, so it's there when
+    # needed.
+    "lowbattery": (f"{SITE}/lowbattery.html", "static", KIHEI),
 }
 PATTERNS = [
     (re.compile(r"buoy-([a-z_]+)"), lambda m: (f"{SITE}/magtag.html?site={m[1]}", "day", KIHEI)),
@@ -161,6 +165,12 @@ class State:
                 self.wanted = json.load(f)
         except (OSError, ValueError):
             self.wanted = {}
+        self.lows_path = os.path.join(root, "low-battery.json")
+        try:
+            with open(self.lows_path) as f:
+                self.lows = json.load(f)
+        except (OSError, ValueError):
+            self.lows = {}
 
     def save(self):
         tmp = self.path + ".tmp"
@@ -213,13 +223,35 @@ class State:
                     pass
             if stale:
                 self.save()
-            return [dict(e, key=k, url=page_info(e["page"])[0]) for k, e in self.wanted.items()]
+            return [dict(e, key=k, url=page_info(e["page"])[0], static=page_info(e["page"])[1] == "static")
+                    for k, e in self.wanted.items()]
+
+    def low_battery(self, ident, volts, low, ok):
+        """Whether the device is in low-battery mode: entered under `low`
+        volts, left at `ok` or more (charging), so it doesn't flap."""
+        with self.lock:
+            lows = self.lows
+            was = ident in lows
+            now_low = volts < low if not was else volts < ok
+            if now_low != was:
+                if now_low:
+                    lows[ident] = volts
+                else:
+                    lows.pop(ident, None)
+                self.save_lows()
+            return now_low
+
+    def save_lows(self):
+        tmp = self.lows_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.lows, f)
+        os.replace(tmp, self.lows_path)
 
 
 SIZE = re.compile(r"[1-9][0-9]{1,3}x[1-9][0-9]{1,3}")
 
 
-def make_handler(state, public, devices, mqtt=None):
+def make_handler(state, public, devices, mqtt=None, battery=None):
     class Handler(BaseHTTPRequestHandler):
         def send(self, code, body=b"", ctype="application/json", headers=()):
             if isinstance(body, (dict, list)):
@@ -299,6 +331,24 @@ def make_handler(state, public, devices, mqtt=None):
             if not SIZE.fullmatch(size):
                 return self.send(400, {"status": 400, "error": "send the panel size in Width and Height headers"})
             fmt = "bmp" if (self.headers.get("Format") or "").lower() == "bmp" else "png"
+            # The low-battery screen for this size, rendered ahead of need.
+            low = state.ask("lowbattery", size, fmt)
+            ident = (self.headers.get("ID") or "").upper()
+            try:
+                volts = float(self.headers.get("Battery-Voltage"))
+            except (TypeError, ValueError):
+                volts = None
+            if ident and volts is not None and volts > 0 \
+                    and state.low_battery(ident, volts, battery["low"], battery["ok"]) \
+                    and low["updated"] is not None:
+                # Low: the notice, then sleep long; it's checked again at the
+                # next wake, and charging (>= ok volts) brings the page back.
+                return self.send(200, {
+                    "status": 0,
+                    "refresh_rate": battery["refresh"],
+                    "image_url": f"{public}/trmnl/lowbattery/{size}-{low['hash']}.{fmt}",
+                    "filename": f"lowbattery-{low['hash']}",
+                })
             e = state.ask(page, size, fmt)
             now = time.time()
             nxt = next_wake(now, e["updated"], info[1], info[2])
@@ -352,6 +402,9 @@ def main():
     ap.add_argument("--devices", help='JSON {"<ID header>": {"name": ..., "page": ..., "sensor": ...}}')
     ap.add_argument("--mqtt", help="broker host for the devices' battery readings")
     ap.add_argument("--mosquitto-pub", default="mosquitto_pub")
+    ap.add_argument("--low-volts", type=float, default=3.5, help="low-battery mode under this")
+    ap.add_argument("--ok-volts", type=float, default=3.8, help="and out of it from this (charging)")
+    ap.add_argument("--low-refresh", type=int, default=12 * 3600, help="seconds between wakes while low")
     a = ap.parse_args()
     os.makedirs(a.state_dir, exist_ok=True)
     devices = {}
@@ -362,7 +415,8 @@ def main():
         if page_info(v["page"]) is None:
             print(f"device {k} ({v.get('name')}): unknown page {v['page']!r}", flush=True)
     srv = ThreadingHTTPServer((a.bind, a.port), make_handler(State(a.state_dir), a.public.rstrip("/"), devices,
-                                                          {"host": a.mqtt, "pub": a.mosquitto_pub} if a.mqtt else None))
+                                                          {"host": a.mqtt, "pub": a.mosquitto_pub} if a.mqtt else None,
+                                                          {"low": a.low_volts, "ok": a.ok_volts, "refresh": a.low_refresh}))
     srv.serve_forever()
 
 
