@@ -56,8 +56,7 @@ FIXED = {
     "kihei-forecast": (f"{SITE}/reterminal.html?site=kihei&view=outlook", "day", KIHEI),
     "maliko-forecast": (f"{SITE}/reterminal.html?site=maliko&view=outlook", "day", HOOKIPA),
     # Shown instead of a device's page while its battery is low; rendered
-    # once per size, as soon as the size is first seen, so it's there when
-    # needed.
+    # as soon as a size is first seen, so it's there when needed, then daily.
     "lowbattery": (f"{SITE}/lowbattery.html", "static", KIHEI),
 }
 PATTERNS = [
@@ -404,7 +403,7 @@ def main():
     ap.add_argument("--mosquitto-pub", default="mosquitto_pub")
     ap.add_argument("--low-volts", type=float, default=3.5, help="low-battery mode under this")
     ap.add_argument("--ok-volts", type=float, default=3.8, help="and out of it from this (charging)")
-    ap.add_argument("--low-refresh", type=int, default=12 * 3600, help="seconds between wakes while low")
+    ap.add_argument("--low-refresh", type=int, default=24 * 3600, help="seconds between wakes while low (a button press checks sooner)")
     a = ap.parse_args()
     os.makedirs(a.state_dir, exist_ok=True)
     devices = {}

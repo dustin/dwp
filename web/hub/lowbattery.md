@@ -36,7 +36,7 @@ display(html`<div class="lb">
     </svg>
     <h1>Battery low</h1>
   </div>
-  <p>No new images until it's charged. Plug it in and it'll pick up again on its next check.</p>
+  <p>No new updates until it's charged. Plug it in and press a button to check again.</p>
 </div>`);
 document.documentElement.dataset.ready = "";
 ```
