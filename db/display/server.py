@@ -292,6 +292,9 @@ def make_handler(state, public):
 
         def log_request(self, code="-", size="-"):
             # One journal line per request: who, what, and the panel size.
+            # Not the renderer's once-a-minute poll of the wanted list.
+            if self.path == "/internal/wanted" and str(code) == "200":
+                return
             ua = self.headers.get("User-Agent") or "-"
             dims = f"{self.headers.get('Width') or '-'}x{self.headers.get('Height') or '-'}"
             ip = self.headers.get("X-Forwarded-For") or self.client_address[0]
