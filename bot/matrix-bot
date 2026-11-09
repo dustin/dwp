@@ -2161,12 +2161,19 @@ class Bot:
         if not self.room_admin(room, ev["sender"]):
             return
         del self.asks[pid]
+        # Reactions on the preview show how far it got: 👀 applying, 💾 in
+        # the lake, 🌐 published (❌ where it stopped).
+        self.mx.react(room, pid, "👀")
         ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
         if ok:
+            self.mx.react(room, pid, "💾")
             try:
                 dwp_publish.run()
+                self.mx.react(room, pid, "🌐")
             except dwp_publish.PublishError as e:
                 ok, out = False, str(e)
+        if not ok:
+            self.mx.react(room, pid, "❌")
         if ok:
             self.mx.notice(room, f"✅ changed {change['n']} of {change['rider']}'s runs",
                            reply_to=pid)
