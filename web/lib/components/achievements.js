@@ -61,6 +61,11 @@ export const categories = [
   {key: "odometer", label: "Total distance", color: "#6b6ecf", ties: false,
    value: d => d3.max(milestones.filter(m => m <= d.odometer_km + d.distance_km)),
    score: v => v, fmt: v => `${d3.format(",")(v)} km`},
+  // The same milestones counting only distance on foil (foil_km_before is
+  // fetchMeta's on-foil odometer going into the run).
+  {key: "foil_odometer", label: "Total on foil", color: "#393b79", ties: false,
+   value: d => d3.max(milestones.filter(m => m <= (d.foil_km_before || 0) + (d.distance_on_foil || 0) / 1000)),
+   score: v => v, fmt: v => `${d3.format(",")(v)} km`},
   // Every 100 hours on the water, counting the run that got there.
   {key: "hours", label: "Total time", color: "#8c6bb1", ties: false,
    value: (d, ctx) => Math.floor(ctx.hours.get(d) / 100) * 100,

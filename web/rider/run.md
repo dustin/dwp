@@ -197,7 +197,7 @@ function formatIndividualSwells(ts) {
   <div class="card">
     <h2>Experience Going In</h2>
     <span class="big">${fmt.hours(runMeta.sec_before)}</span>
-    <div class="muted">${fmt.hours(runMeta.foil_sec_before)} on foil · ${fmt.comma(Math.round(runMeta.odometer_km))} km · run #${fmt.comma(runMeta.runs_before + 1)}</div>
+    <div class="muted">${fmt.hours(runMeta.foil_sec_before)} on foil · ${fmt.comma(Math.round(runMeta.odometer_km))} km (${fmt.comma(Math.round(runMeta.foil_km_before))} on foil) · run #${fmt.comma(runMeta.runs_before + 1)}</div>
   </div>
 </div>
 

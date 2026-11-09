@@ -1,6 +1,7 @@
 import { FileAttachment } from 'observablehq:stdlib';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
+import { FOIL_THRESHOLD_KPH } from './color.js';
 
 function toWeek(ts) {
   let week = new Date(ts);
@@ -32,14 +33,17 @@ function isDry(d) {
 
 // Experience going into each run: how many runs, and how much time (in
 // total and on foil) the rider had before it, not counting the run itself.
-// The distance counterpart is runs.csv's odometer_km.
+// The distance counterpart is runs.csv's odometer_km; foil_km_before is
+// the on-foil odometer (distance_on_foil summed over earlier runs).
 function addExperience(runs) {
-  let runsBefore = 0, secBefore = 0, foilSecBefore = 0;
+  let runsBefore = 0, secBefore = 0, foilSecBefore = 0, foilKmBefore = 0;
   for (const r of d3.sort(runs, r => r.ts)) {
-    Object.assign(r, { runs_before: runsBefore, sec_before: secBefore, foil_sec_before: foilSecBefore });
+    Object.assign(r, { runs_before: runsBefore, sec_before: secBefore, foil_sec_before: foilSecBefore,
+                       foil_km_before: foilKmBefore });
     runsBefore++;
     secBefore += r.duration_sec || 0;
     foilSecBefore += r.duration_on_foil || 0;
+    foilKmBefore += (r.distance_on_foil || 0) / 1000;
   }
   return runs;
 }
@@ -177,10 +181,24 @@ export function runDataURL(meta) {
 // time before it (sec_before, from fetchMeta) plus how far into it this is.
 const lifetimeSec = (meta, tsi) => meta.sec_before + Math.max(0, tsi - meta.ts.getTime() / 1000);
 
+// The on-foil odometer (m) at each point: distance covered while over the
+// foiling speed, scaled so the run adds exactly its distance_on_foil (which
+// db/run-stats.sql works out with debounced islands), on top of the
+// rider's foil_km_before.
+function addFoilOdometer(meta, data) {
+  const steps = data.map((d, i) =>
+    i > 0 && !d.synthetic && d.speed > FOIL_THRESHOLD_KPH ? Math.max(0, d.distance - data[i - 1].distance) : 0);
+  const raw = d3.sum(steps);
+  const scale = raw > 0 ? (meta.distance_on_foil || 0) / raw : 0;
+  let m = 1000 * (meta.foil_km_before || 0);
+  data.forEach((d, i) => { m += steps[i] * scale; d.foil_odometer = m; });
+  return data;
+}
+
 export async function fetchRun(meta) {
   if (!meta.has_track) return approximateRoute(meta);
   return d3.csv(runDataURL(meta), d3.autoType).then(data =>
-    d3.sort(
+    addFoilOdometer(meta, d3.sort(
       data.map(d => ({
         ...d,
         distance_to_land: landDist(d.distance_to_land),
@@ -189,7 +207,7 @@ export async function fetchRun(meta) {
         ts: new Date(d.tsi * 1000),
       })),
       d => d.tsi
-    )
+    ))
   );
 }
 
@@ -268,6 +286,7 @@ export async function approximateRoute(meta, points = 60) {
       distance_to_land: null,
       distance: t * totalM,
       odometer: t * totalM + 1000 * meta.odometer_km,
+      foil_odometer: 1000 * (meta.foil_km_before || 0) + t * (meta.distance_on_foil || 0),
       lifetime_sec: lifetimeSec(meta, tsi),
     };
   });

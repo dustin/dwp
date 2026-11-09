@@ -223,7 +223,7 @@ const GROUPS = [
   ["Heart rate", ["avg_hr", "min_hr"]],
   ["Conditions", ["light_wind", furthestRows]],
   ["Dry runs", ["dry", "dry_streak", "dry_month", firstDryRows]],
-  ["Streaks and totals", ["streak", "odometer", "hours", routesRow]],
+  ["Streaks and totals", ["streak", "odometer", "foil_odometer", "hours", routesRow]],
 ];
 const listed = new Set(GROUPS.flatMap(([, items]) => items.filter(i => typeof i === "string")).concat(["max_dist"]));
 const OTHER = categories.filter(c => !c.event && !listed.has(c.key)).map(c => c.key);

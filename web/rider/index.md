@@ -554,20 +554,23 @@ Each dot is a run; ★ is a dry run. The dark line is the median of the surround
 ## Odometer Milestones
 
 Every time my lifetime odometer ticks over a round number, here's roughly when and where it happened.
+The on-foil odometer counts only the distance up on foil, not the paddling.
 Crossing times are interpolated across the run assuming a steady pace, so treat them as approximate.
 
 ```js
+const odometerKind = view(Inputs.radio(["Total", "On foil"], {label: "Odometer", value: "Total"}));
 const odometerStepKm = view(Inputs.radio([100, 1000],
                             {label: "Milestone every", value: 1000, format: d => `${d} km`}));
 ```
 
 ```js
-const odometerCrossings = computeOdometerCrossings(runCsv, odometerStepKm)
+const odometerOnFoil = odometerKind === "On foil";
+const odometerCrossings = computeOdometerCrossings(runCsv, odometerStepKm, odometerOnFoil)
   .slice()
   .reverse();
 ```
 
-The odometer has crossed a ${odometerStepKm} km milestone ${fmt.comma(odometerCrossings.length)} times so far.
+The ${odometerOnFoil ? "on-foil " : ""}odometer has crossed a ${odometerStepKm} km milestone ${fmt.comma(odometerCrossings.length)} times so far.
 
 ```js
 function odometerCard(d) {
@@ -582,7 +585,7 @@ function odometerCard(d) {
       route[1] ? htl.html` → ${route[1]}` : ""}</div>
     <div class="run-card-stats">
       <span class="run-card-stat" style=${`color: ${foilColor(d.foil)}`}>${d.foil}</span> ·
-      <span class="run-card-stat">${into.into.toFixed(1)} of ${into.total.toFixed(1)} km into the run</span>
+      <span class="run-card-stat">${into.into.toFixed(1)} of ${into.total.toFixed(1)} km${odometerOnFoil ? " on foil" : ""} into the run</span>
     </div>
   </a>`;
 }
@@ -592,7 +595,7 @@ function odometerCard(d) {
 lazy(() => responsive(htl, Inputs.table(odometerCrossings, {
   columns: ["milestone_km", "linked_ts", "region", "start_beach", "end_beach", "foil", "into_run_km"],
   header: {
-    milestone_km: "Odometer (km)",
+    milestone_km: odometerOnFoil ? "On-foil Odometer (km)" : "Odometer (km)",
     linked_ts: "Crossed At",
     region: "Region",
     start_beach: "Start Beach",

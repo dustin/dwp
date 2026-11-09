@@ -268,6 +268,7 @@ export function trackViewer(
       approximate ? null : `${fmt.timeDiff(points[0].ts, d.ts)} elapsed`,
       approximate || !d.distance_to_land ? null : `${fmt.distanceM(d.distance_to_land)} from land`,
       d.odometer ? `odometer ${fmt.distanceM(d.odometer)}` : null,
+      d.foil_odometer ? `${fmt.distanceM(d.foil_odometer)} on foil` : null,
     ]
       .filter(Boolean)
       .join(' · ');

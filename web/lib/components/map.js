@@ -109,6 +109,23 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
     }
   }
 
+  // The on-foil odometer (foil_odometer, from fetchRun), every 100 km.
+  for (let i = 1; i < data.length; i++) {
+    if (data[i].foil_odometer == null || data[i - 1].foil_odometer == null) continue;
+    const prev = Math.floor(data[i - 1].foil_odometer / 100000);
+    const curr = Math.floor(data[i].foil_odometer / 100000);
+    for (let h = prev + 1; h <= curr; h++) {
+      const km = h * 100;
+      const big = h % 10 === 0;
+      callouts.push({
+        lat: data[i].lat,
+        lon: data[i].lon,
+        icon: big ? '🎉' : '🏄',
+        text: `${km.toLocaleString()} km on foil lifetime${big ? '!' : ''}`,
+      });
+    }
+  }
+
   // Lifetime hours on the water, every 100 h (lifetime_sec, from fetchRun).
   for (let i = 1; i < data.length; i++) {
     const prev = Math.floor(data[i - 1].lifetime_sec / 360000);
@@ -208,6 +225,7 @@ function pointTooltip(d, firstTs) {
         `Time so far: ${fmt.timeDiff(firstTs, d.ts)}`,
         `Distance So Far: ${(d.distance / 1000).toFixed(2)} km`,
         `Odometer: ${fmt.distanceM(d.odometer)}`,
+        `On-foil Odometer: ${d.foil_odometer != null ? fmt.distanceM(d.foil_odometer) : 'unknown'}`,
         `Speed: ${d.speed ? d.speed.toFixed(1) : 'N/A'} kph`,
         `Heart Rate: ${d.hr ? d.hr : 'unknown'} bpm`,
         `Nearest Land: ${d.distance_to_land ? (d.distance_to_land / 1000).toFixed(2) : 'unknown'} km`,
