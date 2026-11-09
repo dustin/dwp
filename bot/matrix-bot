@@ -2062,10 +2062,10 @@ class Bot:
             if p["kind"] == "unclear":
                 self.mx.notice(room, f"🤔 {p.get('say') or 'I did not follow that.'}", reply_to=eid)
                 return
-            sql = p["sql"]
             if p["kind"] == "edit":
                 self.propose(room, eid, question, p, rows, snap)
                 return
+            sql = p["sql"]
             said = ask.answer(a.ollama, a.ask_model, question, sql, rows)
             together = bool(re.search(r"\btogether\b", sql, re.I))
             links = [ask.link(snap, r, together) for r in ask.answered_runs(snap, rows, me)]
@@ -2086,41 +2086,50 @@ class Bot:
             shutil.rmtree(snap, ignore_errors=True)
 
     def propose(self, room, eid, question, p, rows, snap):
-        """Show the change plan p would make, and keep it for a ✅."""
-        ids = [r["id"] for r in rows if r.get("id")]
-        if len(ids) != len(rows):
-            raise ask.AskError("the change's SELECT has to pick runs by id")
-        if not ids:
-            raise ask.AskError("no runs match that")
-        picked = ask.sandboxed(snap, "select * from runs where id in ("
-                               + ", ".join(ask.sql_str(i) for i in ids) + ") order by date, time")
-        whose = {r["rider"] for r in picked}
+        """Show the change plan p (its steps, each with its rows) would
+        make, and keep it for a ✅."""
+        steps = []
+        for st in p["steps"]:
+            ids = [r["id"] for r in st["rows"] if r.get("id")]
+            if len(ids) != len(st["rows"]):
+                raise ask.AskError("the change's SELECT has to pick runs by id")
+            if not ids:
+                raise ask.AskError("no runs match that")
+            picked = ask.sandboxed(snap, "select * from runs where id in ("
+                                   + ", ".join(ask.sql_str(i) for i in ids) + ") order by date, time")
+            steps.append((st, ids, picked))
+        whose = {r["rider"] for _, _, picked in steps for r in picked}
         if len(whose) != 1:
             raise ask.AskError(f"one rider's runs at a time, please, not {' and '.join(sorted(whose))}'s")
         rider = whose.pop()
-        fields, new = ask.check_set(p.get("set"), lambda k, v: resolve_gear(rider, k, v))
-        lines = [ask.run_line(r) + ": " + ", ".join(
-            f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
-        if len(picked) > 20:
-            lines.append(f"… and {len(picked) - 20} more")
-        n = len(picked)
+        n = sum(len(ids) for _, ids, _ in steps)
         head = f"✏️ Change {n} of {rider}'s runs"
-        if new:
-            head += "".join(f" (🆕 new {k}: no {k} matched '{fields[k]}')" for k in sorted(new))
-        if p.get("count") and p["count"] != n:
-            self.mx.notice(room, f"🤔 You said {p['count']}, but that picks {n}:\n"
-                                 + "\n".join(lines) + "\nTry saying which ones another way.",
-                           reply_to=eid)
-            return
+        text, html, changes = [head + ":"], [f"<b>{escape(head)}:</b>"], []
+        for st, ids, picked in steps:
+            fields, new = ask.check_set(st.get("set"), lambda k, v: resolve_gear(rider, k, v))
+            changes.append((ids, fields))
+            dates = sorted(str(r["date"])[:10] for r in picked)
+            sub = (", ".join(f"{k} → {v}" + (" (🆕 new)" if k in new else "") for k, v in fields.items())
+                   + f" on {len(picked)} run{'s' * (len(picked) != 1)}"
+                   + (f", {dates[0]} to {dates[-1]}" if dates[0] != dates[-1] else f", {dates[0]}"))
+            lines = [ask.run_line(r) + ": " + ", ".join(
+                f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:10]]
+            if len(picked) > 10:
+                lines.append(f"… and {len(picked) - 10} more")
+            if st.get("count") and st["count"] != len(picked):
+                self.mx.notice(room, f"🤔 You said {st['count']}, but that picks {len(picked)}:\n"
+                                     + "\n".join(lines) + "\nTry saying which ones another way.",
+                               reply_to=eid)
+                return
+            text += [sub + ":", *("  " + l for l in lines)]
+            html.append(f"<br>{escape(sub)}:<ul>" + "".join(f"<li>{escape(l)}</li>" for l in lines) + "</ul>")
         foot = "A room admin's ✅ on this runs exactly this SQL:"
-        sql = ask.apply_sql(rider, ids, fields, question)
-        pid = self.mx.notice(room, "\n".join([head + ":", *lines, foot, sql]), reply_to=eid,
-                             html=f"<b>{escape(head)}:</b><ul>"
-                                  + "".join(f"<li>{escape(l)}</li>" for l in lines)
-                                  + f"</ul><details><summary>{escape(foot)}</summary>"
-                                    f"<pre><code>{escape(sql)}</code></pre></details>")
+        sql = ask.apply_sql(rider, changes, question)
+        pid = self.mx.notice(room, "\n".join([*text, foot, sql]), reply_to=eid,
+                             html="".join(html) + f"<details><summary>{escape(foot)}</summary>"
+                                                  f"<pre><code>{escape(sql)}</code></pre></details>")
         if pid:  # the SQL shown is the SQL run
-            self.asks[pid] = {"room": room, "rider": rider, "n": len(ids), "sql": sql, "at": time.time()}
+            self.asks[pid] = {"room": room, "rider": rider, "n": n, "sql": sql, "at": time.time()}
 
     def approve_delete(self, room, ev):
         """Delete the run a !delete question asks about when its rider or a

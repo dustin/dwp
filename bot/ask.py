@@ -123,13 +123,22 @@ Their foils: {foils}. Boards: {boards}.
 
 Answer with exactly one of:
   {{"kind": "query", "sql": "<one SELECT over runs answering the question>"}}
-  {{"kind": "edit", "sql": "<one SELECT id FROM runs WHERE ... picking the runs to change>",
-    "set": {{"<field>": "<value>", ...}}, "count": <how many runs the message says, or null>}}
+  {{"kind": "edit", "steps": [{{"sql": "<one SELECT id FROM runs WHERE ... picking the runs to change>",
+    "set": {{"<field>": "<value>", ...}}, "count": <how many runs the message says, or null>}}, ...]}}
   {{"kind": "unclear", "say": "<a short question back to the rider>"}}
+An edit has one step per different change, with SELECTs that pick
+different runs: "my unknown-foil runs until September were the X, after
+that the Y" is two steps, one setting foil X on the unknown-foil runs
+before September and one setting foil Y on those from September on. Keep
+every condition the message gives (unknown foil, a place) in each step.
+A month with no year is its latest one before today.
 An edit may set only: foil, foil_confidence ('high', 'medium' or 'low':
-how sure the rider is of the foil), board, name, description. Write foil
-as the rider wrote it; the bot matches it to a known foil, or adds it as
-a new one when none matches (same for board). Use only the
+how sure the rider is of the foil), board, name, description. The foil is
+the hydrofoil (wing and mast, e.g. Axis ART 999, F-One Eagle X 900); the
+board is what they stand on (e.g. Kalama Gator 95). When the message says
+foil, set foil, never board. Write foil as the rider wrote it; the bot
+matches it to a known foil, or adds it as a new one when none matches
+(same for board). Use only the
 columns above, and keep SELECTs to what the answer needs (at most 20 rows).
 When the answer is particular runs (the first, the longest, last week's),
 select their id too, so the bot can link them.
@@ -163,6 +172,9 @@ PLAN_SCHEMA = {
         "sql": {"type": "string"},
         "set": {"type": "object"},
         "count": {"type": ["integer", "null"]},
+        "steps": {"type": "array", "items": {"type": "object", "properties": {
+            "sql": {"type": "string"}, "set": {"type": "object"},
+            "count": {"type": ["integer", "null"]}}, "required": ["sql", "set"]}},
         "say": {"type": "string"},
     },
     "required": ["kind"],
@@ -184,8 +196,9 @@ def chat(url, model, messages, schema=None, timeout=180):
 def plan(url, model, question, context, parquet, tries=3):
     """(plan, rows): the model's JSON plan for question (see SYSTEM, which
     context fills) and the rows its SQL gives over parquet's runs (None for
-    "unclear"). SQL that fails goes back to the model with its error, up
-    to tries times in all."""
+    "unclear"). An edit's plan has steps, each with its rows. SQL that
+    fails, or an edit that looks wrong (see edit_trouble), goes back to the
+    model with the error, up to tries times in all."""
     msgs = [{"role": "system", "content": SYSTEM.format(columns=RUN_COLUMNS, **context)},
             {"role": "user", "content": question}]
     for attempt in range(tries):
@@ -196,16 +209,48 @@ def plan(url, model, question, context, parquet, tries=3):
             raise AskError(f"the model didn't answer in JSON: {out[:200]}")
         if p.get("kind") not in ("query", "edit"):
             return p, None
-        if not p.get("sql"):
-            raise AskError("the model gave no SQL")
         try:
-            return p, sandboxed(parquet, p["sql"])
+            if p["kind"] == "query":
+                if not p.get("sql"):
+                    raise AskError("the model gave no SQL")
+                return p, sandboxed(parquet, p["sql"])
+            p["steps"] = p.get("steps") or [{k: p.get(k) for k in ("sql", "set", "count")}]
+            for st in p["steps"]:
+                if not st.get("sql"):
+                    raise AskError("the model gave no SQL")
+                try:
+                    st["rows"] = sandboxed(parquet, st["sql"])
+                except AskError as e:
+                    raise AskError(f"That SQL failed in DuckDB:\n{e}\n{st['sql']}")
+            trouble = edit_trouble(question, p["steps"])
+            if trouble:
+                raise AskError(trouble)
+            return p, [r for st in p["steps"] for r in st["rows"]]
         except AskError as e:
             if attempt == tries - 1:
-                raise AskError(f"{e}\n(after {tries} tries) {p['sql']}")
+                raise AskError(f"{e}\n(after {tries} tries) {p.get('sql') or ''}".rstrip())
             msgs += [{"role": "assistant", "content": out},
-                     {"role": "user", "content": f"That SQL failed in DuckDB:\n{e}\n"
-                                                 "Fix it (DuckDB SQL only) and answer in the same JSON."}]
+                     {"role": "user", "content": f"{e}\nFix it (DuckDB SQL only) and answer in the same JSON."}]
+
+
+def edit_trouble(question, steps):
+    """Why an edit's steps (with rows) look wrong for question, or None."""
+    says = lambda w: re.search(rf"\b{w}s?\b", question, re.I)
+    for i, st in enumerate(steps, 1):
+        sets = st.get("set") or {}
+        if "board" in sets and "foil" not in sets and says("foil") and not says("board"):
+            return (f"Step {i} sets board to {sets['board']!r}, but the message is about a foil: "
+                    "set foil instead.")
+        if not st["rows"]:
+            return (f"Step {i} picks no runs. Check its dates and conditions against what the "
+                    "message says, or ask the rider (kind unclear) if it's not clear.")
+    seen = set()
+    for i, st in enumerate(steps, 1):
+        ids = {r.get("id") for r in st["rows"]}
+        if ids & seen:
+            return f"Step {i} picks runs an earlier step already picks; make the steps pick different runs."
+        seen |= ids
+    return None
 
 
 def answer(url, model, question, sql, rows):
@@ -298,15 +343,17 @@ def check_set(fields, resolve_gear):
     return out, new
 
 
-def apply_sql(rider, ids, fields, request):
-    """One lake commit setting fields on rider's runs ids."""
-    sets = ", ".join(f"{k} = {sql_str(v)}" for k, v in fields.items())
-    which = ", ".join(sql_str(i) for i in ids)
+def apply_sql(rider, changes, request):
+    """One lake commit setting, for each (ids, fields) in changes, fields on
+    rider's runs ids."""
     msg = f"matrix-bot ask ({rider}): {request}"[:200]
+    updates = "".join(
+        f"update dwlist set {', '.join(f'{k} = {sql_str(v)}' for k, v in fields.items())} "
+        f"where rider = {sql_str(rider)} and id::varchar in ({', '.join(sql_str(i) for i in ids)}); "
+        for ids, fields in changes)
     return ("use lake; begin; "
             f"call lake.set_commit_message('dustin', {sql_str(msg)}); "
-            f"update dwlist set {sets} where rider = {sql_str(rider)} "
-            f"and id::varchar in ({which}); commit;")
+            f"{updates}commit;")
 
 
 def answered_runs(path, rows, me=None, most=5):
