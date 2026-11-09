@@ -42,7 +42,7 @@ const wind = await fetchWind(first);
 
 # ${first.start_beach} → ${first.end_beach}, ${fmt.date(first.ts)}
 
-<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}<a href=${`togethertrack.html?${urlParams}`}>Open map</a></div>
+<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}${html`<a href=${`togethertrack.html?${urlParams}`}>Open map</a>`}</div>
 
 <style>
   .no-callouts .callouts { display: none; }
