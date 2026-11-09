@@ -170,6 +170,11 @@ ORDER BY
     -- so the web draws an approximate route between the beaches, which
     -- are placed at the beach outlines' centers.
     EXISTS (SELECT 1 FROM dws WHERE dws.dwid = dr.id) AS has_track,
+    -- Where the run's synthesized points start (synth_points in
+    -- schema.sql), or null: the web draws the track from there on as a
+    -- guess. It's here rather than a column in every track file so that
+    -- the tracks of the runs without any stay as they were.
+    (SELECT min(s.tsi) FROM synth_points s WHERE s.dwid = dr.id) AS synth_from_tsi,
     ST_Y(ST_Centroid(bs.geom)) AS start_lat,
     ST_X(ST_Centroid(bs.geom)) AS start_lon,
     ST_Y(ST_Centroid(be.geom)) AS end_lat,

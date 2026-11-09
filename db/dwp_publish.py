@@ -158,7 +158,11 @@ def conditions(table, day="x.day", cols="x.* exclude (site, day)", order="ts"):
 TABLES = [
     Table("tracks",
           # Only the points within the run's trim (run_points in schema.sql).
-          "run_points x join dwlist l on x.dwid = l.id where l.rider is not null",
+          # Without run_points.synthetic, so the tracks (and fingerprints) of
+          # runs with no synthesized points don't change; runs.csv's
+          # synth_from_tsi says where a run's start (export-lists.sql).
+          "(select * exclude (synthetic) from run_points) x "
+          "join dwlist l on x.dwid = l.id where l.rider is not null",
           # The rider is in the key, and so in the fingerprint.
           "'runs/rider=' || l.rider || '/dwid=' || x.dwid || '/data.csv'",
           "x.* exclude (dwid), ST_Distance_Sphere(ST_Point(x.lat, x.lon), "
