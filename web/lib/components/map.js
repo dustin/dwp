@@ -130,7 +130,9 @@ export function findCallouts(runMeta, data, fastestSegments = []) {
 
 // Find the fastest 1000m segment in the data
 export function findFastest1kSegment(data) {
-  // An approximate route's even spacing would make up a "fastest" km.
+  // An approximate route's even spacing would make up a "fastest" km, and
+  // so would a synthesized stretch (synth_points in db/schema.sql).
+  data = data.filter(d => !d.synthetic);
   if (data.length < 2 || data[0].approximate) return null;
 
   let bestSegment = null;
@@ -191,6 +193,13 @@ function mapHeight(width) {
 const coarsePointer = () => window.matchMedia?.('(pointer: coarse)').matches ?? false;
 
 function pointTooltip(d, firstTs) {
+  if (d.synthetic)
+    return [
+      'Synthesized: not recorded, a guess',
+      'from a similar run fitted to the landing.',
+      `Time: about ${fmt.time(d.ts)}`,
+      `Distance So Far: about ${(d.distance / 1000).toFixed(2)} km`,
+    ];
   return d.approximate
     ? ['Approximate route: no GPS track', `for this run (${fmt.date(d.ts)}).`, `Odometer: ${fmt.distanceM(d.odometer)}`]
     : [

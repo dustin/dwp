@@ -110,10 +110,13 @@ WHERE l.id = x.dwid;
 -- fast_islands_merged: slow gaps under 15s are bridged (reclassified
 -- fast) and re-merged, since a brief drop does not mean coming off foil.
 -- fast_sec is the time actually over 11 km/h, without the bridged gaps.
+-- Synthesized points (synth_points in schema.sql) have no speed, so they
+-- say nothing about being on foil and are left out.
 CREATE TEMP TABLE raw_islands AS
 WITH flagged AS (
   SELECT dwid, ts, distance, (speed > 11) AS fast
   FROM restat_points
+  WHERE NOT synthetic
 ),
 changes AS (
   SELECT *,

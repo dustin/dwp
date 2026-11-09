@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""One-time: synthesize the end of Dustin's 2026-11-06 run whose recording
+stopped early. See synth-end-2026-11-06.sql; this fills in run-stats.sql
+for the run and runs it on the lake (LAKE, default ~/stuff/duck) in one
+transaction, then prints the run's new stats. Publish afterwards."""
+
+import json
+
+import dwp_publish as p
+
+RUN = "a5bff5a0-4dbc-436b-8b60-8f6c5caede79"
+
+sql = p.read_sql("synth-end-2026-11-06.sql").replace(
+    "-- @run-stats.sql", p.run_stats_sql([RUN]))
+print(json.dumps(p.duckdb(sql, json_out=True), indent=2))

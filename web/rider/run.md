@@ -55,9 +55,20 @@ const known = (v, f) => (v == null || Number.isNaN(v) ? "—" : f(v));
 <div>${noTrack ? html`<p style="color: var(--theme-foreground-muted)"><b>No GPS track for this run.</b> Entered by hand from the watch summary; the gray line on the map is an approximate route between the beaches, and stats that need the track are left blank.</p>` : ""}</div>
 
 ```js
-const [runCsv, wind, swell, swellSpectrum] = await Promise.all([
+const [runTrack, wind, swell, swellSpectrum] = await Promise.all([
   fetchRun(runMeta), fetchWind(runMeta), fetchSwell(runMeta), fetchSwellSpectrum(runMeta)
 ]);
+// The map draws the whole track (runTrack), but the charts, splits and
+// speeds only use what was recorded: a synthesized stretch (synth_points in
+// db/schema.sql) has a place and time but no speed or heart rate.
+const runCsv = runTrack.filter(d => !d.synthetic);
+const synthetic = runTrack.filter(d => d.synthetic);
+const synthStart = runCsv.at(-1);
+const synthSummary = synthetic.length && synthStart ? {
+  km: (synthetic.at(-1).distance - synthStart.distance) / 1000,
+  sec: (synthetic.at(-1).ts - synthStart.ts) / 1000,
+  from: synthStart.ts,
+} : null;
 const swellPrimary = primarySwell(swell);
 const midRunSpectrumReading = readingNear(swellSpectrum, runMidpoint(runMeta));
 const midRunPartitions = partitionReading(midRunSpectrumReading);
@@ -75,7 +86,9 @@ function formatIndividualSwells(ts) {
 }
 ```
 
-<div class="card run-map-card"><div class="run-map-slot">${resize(width => renderRun(width, [runCsv], callouts, {
+<div>${synthSummary ? html`<p style="color: var(--theme-foreground-muted)"><b>Part of this track is synthesized.</b> The recording stopped at ${fmt.time(synthSummary.from)}; the gray dashed line is a guess at the rest, from a similar run fitted to where and when the run ended. Distance and total time include its ${synthSummary.km.toFixed(2)} km and ${fmt.seconds(synthSummary.sec)}; speeds, heart rate and foiling stats only use the recorded part.</p>` : ""}</div>
+
+<div class="card run-map-card"><div class="run-map-slot">${resize(width => renderRun(width, [runTrack], callouts, {
   additionalMarks: ({ d3, svg, width, height }) => {
     const scale = windRoseScale(width);
     const { size, centerX, centerY } = windRoseOrigin(16, 130, 0, scale);
@@ -125,8 +138,9 @@ function formatIndividualSwells(ts) {
 
 <div class="grid grid-cols-4">
   <div class="card">
-    <h2>Total Time</h2>
+    <h2>Total Time${synthSummary ? "*" : ""}</h2>
     <span class="big">${fmt.seconds(runMeta.duration_sec)}</span>
+    ${synthSummary ? html`<div style="color: var(--theme-foreground-muted); font-size: 0.85em">* includes ${fmt.seconds(synthSummary.sec)} synthesized</div>` : ""}
   </div>
   <div class="card">
     <h2>Foiling Time</h2>
@@ -135,8 +149,9 @@ function formatIndividualSwells(ts) {
     </span>
   </div>
   <div class="card">
-    <h2>Distance Traveled</h2>
+    <h2>Distance Traveled${synthSummary ? "*" : ""}</h2>
     <span class="big">${runMeta.distance_km.toFixed(2)} km</span>
+    ${synthSummary ? html`<div style="color: var(--theme-foreground-muted); font-size: 0.85em">* includes ${synthSummary.km.toFixed(2)} km synthesized</div>` : ""}
   </div>
   <div class="card">
     <h2>Distance Traveled on Foil</h2>

@@ -41,15 +41,21 @@ export const pointFeature = (d, properties = {}) => ({
 // same color share one line: thousands of two-point lines would be slow,
 // and Mapbox drops lines shorter than its simplification tolerance when
 // zoomed out, which leaves most of the track missing.
+// Synthesized points (synth_points in db/schema.sql: part of a run that
+// wasn't recorded, e.g. the end after the recording stopped) are drawn
+// gray and dashed, like an approximate route.
+const SYNTHETIC_COLOR = '#999';
+
 export function trackFeatures(points, color, properties = {}) {
   const features = [];
   let current = null;
   d3.pairs(points).forEach(([a, b]) => {
-    const c = color(b.speed);
-    if (current?.properties.color !== c) {
+    const c = b.synthetic ? SYNTHETIC_COLOR : color(b.speed);
+    const dashed = b.synthetic || properties.dashed || false;
+    if (current?.properties.color !== c || current.properties.dashed !== dashed) {
       current = {
         type: 'Feature',
-        properties: { ...properties, color: c },
+        properties: { ...properties, color: c, dashed },
         geometry: { type: 'LineString', coordinates: [[a.lon, a.lat]] },
       };
       features.push(current);

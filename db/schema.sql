@@ -105,18 +105,49 @@ CREATE TABLE run_trims(
   added_at TIMESTAMP WITH TIME ZONE
 );
 
--- The trackpoints that count: dws within each run's trim, with distance
--- counted from the run's first point (a trimmed start, or a !split's
--- second half, would otherwise start part way). Everything that computes run stats
--- (run-stats.sql and the views below) or publishes tracks reads this
--- instead of dws.
+-- Trackpoints made up for part of a run that wasn't recorded, e.g. the
+-- end of a run whose recording stopped early, drawn from a similar run's
+-- path and fitted to where and when the rider landed. They have a place
+-- and a time but no speed, heart rate or heading, so they count toward
+-- the run's distance and duration but not its speeds, heart rates or time
+-- on foil. distance is on the same scale as the run's dws.distance
+-- (continuing from its last point). source says where the shape came
+-- from. The dws rows are left alone, and deleting a run's rows here puts
+-- it back the way it was recorded. db/synth-end-2026-11-06.sql made the
+-- first ones.
+CREATE TABLE synth_points(
+  dwid UUID,
+  tsi DOUBLE,
+  ts TIMESTAMP WITH TIME ZONE,
+  date DATE,
+  "time" TIME,
+  lat DOUBLE,
+  lon DOUBLE,
+  distance DOUBLE,
+  source VARCHAR,
+  added_at TIMESTAMP WITH TIME ZONE
+);
+
+-- The trackpoints that count: dws within each run's trim, plus its
+-- synth_points (synthetic = true, with null speed, hr and so on), with
+-- distance counted from the run's first point (a trimmed start, or a
+-- !split's second half, would otherwise start part way). Everything that
+-- computes run stats (run-stats.sql and the views below) or publishes
+-- tracks reads this instead of dws.
 create or replace view run_points as
-select d.* replace (
-  d.distance - first_value(d.distance) over (partition by d.dwid order by d.ts) as distance)
-from dws d
-left join run_trims t on t.dwid = d.dwid
-where (t.start_ts is null or d.ts >= t.start_ts)
-  and (t.end_ts is null or d.ts <= t.end_ts);
+with p as (
+  select d.*, false as synthetic
+  from dws d
+  left join run_trims t on t.dwid = d.dwid
+  where (t.start_ts is null or d.ts >= t.start_ts)
+    and (t.end_ts is null or d.ts <= t.end_ts)
+  union all by name
+  select s.* exclude (source, added_at), true as synthetic
+  from synth_points s
+)
+select p.* replace (
+  p.distance - first_value(p.distance) over (partition by p.dwid order by p.ts) as distance)
+from p;
 
 -- Trackpoints whose speed must not count toward a run's top speed
 -- (dwlist.max_speed_kmh), added by the bot's !glitch. The dws row itself
