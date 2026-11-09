@@ -36,6 +36,7 @@ const totals = {
   sessions: runCsv.length,
   time: d3.sum(runCsv, d => d.duration_sec),
   dist: d3.sum(runCsv, d => d.distance_km),
+  foil_dist: d3.sum(runCsv, d => d.distance_on_foil) / 1000,
   paddle_ups: d3.sum(runCsv, d => d.paddle_up_count),
   max_speed: d3.max(runCsv, d => d.max_speed_kmh),
   max_speed_1k: d3.max(runCsv, d => d.max_speed_1k),
@@ -215,6 +216,7 @@ function achievementsCard() {
   <div class="card">
     <h2>Distance</h2>
     <span class="big">${fmt.comma(Math.round(totals.dist))} km</span>
+    <div class="muted">${fmt.comma(Math.round(totals.foil_dist))} km on foil (${(100 * totals.foil_dist / totals.dist).toFixed(0)}%)</div>
     ${regionBar("dist")}
   </div>
   <div class="card">
