@@ -187,8 +187,6 @@ export async function fetchRun(meta) {
         odometer: d.distance + 1000 * meta.odometer_km,
         lifetime_sec: lifetimeSec(meta, d.tsi),
         ts: new Date(d.tsi * 1000),
-        // Synthesized, not recorded (synth_points in db/schema.sql).
-        synthetic: meta.synth_from_tsi != null && d.tsi >= meta.synth_from_tsi,
       })),
       d => d.tsi
     )
