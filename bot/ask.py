@@ -31,14 +31,41 @@ region varchar, board varchar, foil varchar, foil_confidence varchar,
 name varchar, description varchar, distance_km double,
 distance_on_foil double, duration_sec double, duration_on_foil double,
 avg_speed_kmh double, max_speed_1k double, avg_foiling_hr double,
-max_hr double, paddle_up_count int, with_riders varchar[]"""
+max_hr double, paddle_up_count int, start_island varchar, end_island varchar,
+with_riders varchar[]"""
 
-SNAPSHOT_SQL = """\
+# Rough boxes (lat, lat, lon, lon) around each island and its near water,
+# checked in order, for where a run starts and ends: runs away from any
+# known beach have no beach or region, so this is all that says where they
+# were. Plain spellings, so the model's SQL needn't quote an ʻokina.
+ISLANDS = [("Kahoolawe", 20.47, 20.62, -156.72, -156.50),
+           ("Maui", 20.50, 21.10, -156.72, -155.90),
+           ("Lanai", 20.68, 20.98, -157.10, -156.72),
+           ("Molokai", 20.98, 21.30, -157.35, -156.60),
+           ("Oahu", 21.15, 21.80, -158.40, -157.55),
+           ("Kauai", 21.70, 22.35, -160.35, -159.20),
+           ("Hawaii", 18.85, 20.35, -156.15, -154.75)]
+
+
+def island_sql(lat, lon):
+    """A CASE naming the ISLANDS box lat, lon falls in, 'elsewhere', or null."""
+    return ("case " + "".join(f"when {lat} between {a} and {b} and {lon} between {c} and {d} then '{n}' "
+                              for n, a, b, c, d in ISLANDS)
+            + f"when {lat} is not null then 'elsewhere' end")
+
+
+SNAPSHOT_SQL = ("""\
+with r as (from dwlist_resolved where rider in ({riders})),
+ends as (select dwid, arg_min(lat, ts) as lat0, arg_min(lon, ts) as lon0,
+                arg_max(lat, ts) as lat1, arg_max(lon, ts) as lon1
+         from dws where dwid in (select id from r) group by dwid)
 select rider, id::varchar as id, date, time, start_beach, end_beach, region, board,
        foil, foil_confidence, name, description, distance_km,
        distance_on_foil, duration_sec, duration_on_foil, avg_speed_kmh,
-       max_speed_1k, avg_foiling_hr, max_hr, paddle_up_count
-from dwlist_resolved where rider in ({riders})"""
+       max_speed_1k, avg_foiling_hr, max_hr, paddle_up_count, """
+    + island_sql("e.lat0", "e.lon0") + " as start_island, "
+    + island_sql("e.lat1", "e.lon1") + " as end_island\n"
+    "from r left join ends e on e.dwid = r.id")
 
 # Runs that went together (as db/export-lists.sql's together.csv): same
 # start beach, overlapping by at least ten minutes, among riders only.
@@ -79,7 +106,13 @@ where rider = '{me}').
 
 distance_km is km, distance_on_foil METRES (divide by 1000 for km),
 duration_* seconds, speeds km/h (max_speed_1k is the fastest 1 km),
-heart rates bpm. region is e.g. 'Kihei' or 'Maui North Shore'. Use
+heart rates bpm. region is one of: {regions}. start_island and
+end_island are where a run began and ended: {islands} or 'elsewhere'
+(plain spellings: 'Oahu' for Oʻahu, 'Molokai' for Molokaʻi); use them for
+any island but Maui, where beaches and regions are more exact. A trip,
+camp, race or event somewhere means the runs there (and on those dates),
+also matched against name and description. In SQL strings write a quote
+as two ('O''ahu'), never \\'. Use
 dayname(date) for days of the week (isodow(date) to order them, Monday
 first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
 "went to X" means either one, and a loose place name means the closest
@@ -184,7 +217,8 @@ def answer(url, model, question, sql, rows):
 
 def one_select(sql):
     """sql as a single SELECT (or WITH ... SELECT) statement, else AskError."""
-    s = sql.strip().rstrip(";").strip()
+    # DuckDB strings have no backslash escapes; models write 'O\'ahu' anyway.
+    s = sql.strip().rstrip(";").strip().replace("\\'", "''")
     if ";" in s:
         raise AskError("only one statement, please")
     if not re.match(r"(?is)^(select|with|from)\b", s):
@@ -360,7 +394,8 @@ def context(path, me, riders, beaches):
         path, f"select distinct {col} as v from runs where {col} is not null order by 1"))
     return {"me": me, "riders": " and ".join(riders),
             "today": f"{datetime.now(ZoneInfo('Pacific/Honolulu')):%A %Y-%m-%d}",
-            "beaches": ", ".join(beaches), "foils": distinct("foil"), "boards": distinct("board")}
+            "beaches": ", ".join(beaches), "foils": distinct("foil"), "boards": distinct("board"),
+            "regions": distinct("region"), "islands": ", ".join(n for n, *_ in ISLANDS)}
 
 
 def main():
