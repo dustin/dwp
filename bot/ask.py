@@ -131,7 +131,16 @@ different runs: "my unknown-foil runs until September were the X, after
 that the Y" is two steps, one setting foil X on the unknown-foil runs
 before September and one setting foil Y on those from September on. Keep
 every condition the message gives (unknown foil, a place) in each step.
-A month with no year is its latest one before today.
+A month with no year is its latest one before today. Set count to 1
+when the message means one run ("that run", "a run", "the run"). A
+change to runs done with someone must pick them through with_riders or
+together, and can use the other rider's run too: "A and I did a run
+together where I used her 716; set her foil to X for that run" (asked by
+{me}) picks A's run whose matching run of {me}'s was on the 716:
+  select a.id from runs a join together t on t.rider = a.rider and t.id = a.id
+    join runs b on b.rider = t.other_rider and b.id = t.other_id
+  where a.rider = 'a' and b.rider = '{me}' and b.foil ilike '%716%'
+If that still picks more than the message means, ask (kind unclear).
 An edit may set only: foil, foil_confidence ('high', 'medium' or 'low':
 how sure the rider is of the foil), board, name, description. The foil is
 the hydrofoil (wing and mast, e.g. Axis ART 999, F-One Eagle X 900); the
@@ -236,6 +245,7 @@ def plan(url, model, question, context, parquet, tries=3):
 def edit_trouble(question, steps):
     """Why an edit's steps (with rows) look wrong for question, or None."""
     says = lambda w: re.search(rf"\b{w}s?\b", question, re.I)
+    one = re.search(r"\b(a|that|the|this|one) (run|session|day)\b", question, re.I) and not says("all")
     for i, st in enumerate(steps, 1):
         sets = st.get("set") or {}
         if "board" in sets and "foil" not in sets and says("foil") and not says("board"):
@@ -244,6 +254,14 @@ def edit_trouble(question, steps):
         if not st["rows"]:
             return (f"Step {i} picks no runs. Check its dates and conditions against what the "
                     "message says, or ask the rider (kind unclear) if it's not clear.")
+        want = st.get("count") or (1 if one and len(steps) == 1 else None)
+        if want and want != len(st["rows"]):
+            return (f"Step {i} picks {len(st['rows'])} runs, but the message means {want}. Use every "
+                    "condition it gives, or ask the rider (kind unclear) which.")
+        if (re.search(r"\btogether\b|\band I\b|\bwith (me|her|him)\b", question, re.I)
+                and not re.search(r"\btogether\b|\bwith_riders\b", st["sql"], re.I)):
+            return (f"Step {i} doesn't use with_riders or together, but the message is about runs "
+                    "done together.")
     seen = set()
     for i, st in enumerate(steps, 1):
         ids = {r.get("id") for r in st["rows"]}
