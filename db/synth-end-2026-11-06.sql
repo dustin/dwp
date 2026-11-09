@@ -24,20 +24,16 @@ begin;
 
 call lake.set_commit_message('dustin', 'synthesized end of run a5bff5a0 (recording stopped early)');
 
-SET VARIABLE run = 'a5bff5a0-4dbc-436b-8b60-8f6c5caede79'::uuid;
-SET VARIABLE tpl = '885b4f9e-80a7-4f4c-8dfc-cbefbb3135e6'::uuid;
-SET VARIABLE landed = '2026-11-06 14:37:38-10'::timestamptz;
-
 -- Where the recording stopped.
 CREATE TEMP TABLE cut AS
 SELECT ts, lat, lon, distance FROM dws
-WHERE dwid = getvariable('run')
+WHERE dwid = 'a5bff5a0-4dbc-436b-8b60-8f6c5caede79'::uuid
 ORDER BY ts DESC LIMIT 1;
 
 -- Apphia's track from her point nearest that, with how far along it each
 -- point is (0 to 1, by her distance) and the time stretch.
 CREATE TEMP TABLE seg AS
-WITH t AS (SELECT * FROM dws WHERE dwid = getvariable('tpl')),
+WITH t AS (SELECT * FROM dws WHERE dwid = '885b4f9e-80a7-4f4c-8dfc-cbefbb3135e6'::uuid),
 k AS (
   SELECT t.ts FROM t, cut
   ORDER BY ST_Distance_Sphere(ST_Point(t.lat, t.lon), ST_Point(cut.lat, cut.lon))
@@ -56,7 +52,7 @@ WINDOW w AS (ORDER BY s.ts ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOW
 CREATE TEMP TABLE synth AS
 WITH p AS (
   SELECT
-    cut.ts + to_microseconds((epoch(getvariable('landed') - cut.ts) * seg.tf * 1e6)::bigint) AS ts,
+    cut.ts + to_microseconds((epoch('2026-11-06 14:37:38-10'::timestamptz - cut.ts) * seg.tf * 1e6)::bigint) AS ts,
     seg.lat + (cut.lat - seg.lat0) * (1 - seg.f) AS lat,
     seg.lon + (cut.lon - seg.lon0) * (1 - seg.f) AS lon
   FROM seg, cut
@@ -73,9 +69,9 @@ SELECT step.ts, step.lat, step.lon,
   cut.distance + sum(step.d) over (ORDER BY step.ts) AS distance
 FROM step, cut;
 
-DELETE FROM synth_points WHERE dwid = getvariable('run');
+DELETE FROM synth_points WHERE dwid = 'a5bff5a0-4dbc-436b-8b60-8f6c5caede79'::uuid;
 INSERT INTO synth_points BY NAME
-SELECT getvariable('run') AS dwid, epoch(ts) AS tsi, ts,
+SELECT 'a5bff5a0-4dbc-436b-8b60-8f6c5caede79'::uuid AS dwid, epoch(ts) AS tsi, ts,
        (ts AT TIME ZONE 'Pacific/Honolulu')::date AS date,
        (ts AT TIME ZONE 'Pacific/Honolulu')::time AS "time",
        lat, lon, distance,
@@ -89,12 +85,5 @@ DROP TABLE cut;
 
 -- The run's stats again (synth-end-2026-11-06 puts run-stats.sql here).
 -- @run-stats.sql
-
-SELECT (SELECT count(*) FROM synth_points WHERE dwid = getvariable('run')) AS synth_points,
-       round(distance_km, 2) AS distance_km, round(duration_sec / 60, 1) AS duration_min,
-       round(avg_speed_kmh, 1) AS avg_speed_kmh, max_speed_kmh,
-       round(distance_on_foil) AS distance_on_foil, paddle_up_count,
-       (SELECT name FROM beaches WHERE id = end_pos) AS end_beach
-FROM dwlist WHERE id = getvariable('run');
 
 commit;

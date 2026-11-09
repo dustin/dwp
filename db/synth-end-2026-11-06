@@ -12,4 +12,10 @@ RUN = "a5bff5a0-4dbc-436b-8b60-8f6c5caede79"
 
 sql = p.read_sql("synth-end-2026-11-06.sql").replace(
     "-- @run-stats.sql", p.run_stats_sql([RUN]))
-print(json.dumps(p.duckdb(sql, json_out=True), indent=2))
+p.duckdb(sql)
+print(json.dumps(p.duckdb(f"""
+select (select count(*) from synth_points where dwid = '{RUN}') as synth_points,
+       round(distance_km, 2) as distance_km, round(duration_sec / 60, 1) as duration_min,
+       max_speed_kmh, round(distance_on_foil) as distance_on_foil, paddle_up_count,
+       (select name from beaches where id = end_pos) as end_beach
+from dwlist where id = '{RUN}';""", json_out=True), indent=2))
