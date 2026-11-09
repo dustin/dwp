@@ -131,6 +131,8 @@ export function onMarkerTap(el, onTap) {
 export function calloutMarker(callout, onTap) {
   const cls = callout.run === 1 ? 'track-callout track-callout-run2' : callout.run === 0 ? 'track-callout track-callout-run1' : 'track-callout';
   const el = html`<button class=${cls} type="button" aria-label=${callout.text}>${callout.icon}</button>`;
+  // A callout carrying its own color (the together page's riders).
+  if (callout.color) el.style.setProperty('--c', callout.color);
   onMarkerTap(el, onTap);
   return new mapboxgl.Marker({ element: el, anchor: 'bottom' }).setLngLat([+callout.lon, +callout.lat]);
 }

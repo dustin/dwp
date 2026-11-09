@@ -42,7 +42,7 @@ const wind = await fetchWind(first);
 
 # ${first.start_beach} → ${first.end_beach}, ${fmt.date(first.ts)}
 
-<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}</div>
+<div class="riders">${riders.map(r => html`<span class="rider" style="--c: ${r.color}"><a href=${runLink(r.meta)}><b>${r.name}</b></a> on ${/^unknown/.test(r.meta.foil) ? "an unknown foil" : r.meta.foil}</span>`)}<a href=${`togethertrack.html?${urlParams}`}>Open map</a></div>
 
 <style>
   .no-callouts .callouts { display: none; }
@@ -50,6 +50,11 @@ const wind = await fetchWind(first);
   .rider b { color: var(--c); }
   .multi { display: grid; gap: .1rem; font-size: 1.15rem; font-weight: 600; margin-top: .3rem; }
   .multi .v { color: var(--c); font-variant-numeric: tabular-nums; }
+  .scrub { display: grid; grid-template-columns: auto 1fr; gap: .3rem .8rem; align-items: center; margin-top: .6rem; }
+  .scrub input { width: 100%; margin: 0; }
+  .scrub .when { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .scrub .who { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .2rem 1.2rem; font-variant-numeric: tabular-nums; }
+  .scrub .who span { color: var(--c); }
   .multi .v.best::after { content: " ★"; font-size: .8em; }
 </style>
 
@@ -66,6 +71,39 @@ const annotations = Inputs.toggle({label: "Annotations", value: true});
 annotations.addEventListener("input", () =>
   document.getElementById("together-map").classList.toggle("no-callouts", !annotations.value));
 display(annotations);
+
+// The time scrubber: one clock time for everybody, a dot per rider where
+// they were then. It isn't a reactive input, so moving it only redraws
+// the dots, not the map.
+const scrubTracks = csvs.map(c => c.filter(d => d.lat != null && d.lon != null));
+const tMin = d3.min(scrubTracks, t => t[0]?.tsi);
+const tMax = d3.max(scrubTracks, t => t[t.length - 1]?.tsi);
+// The trail behind each dot: the last few minutes, fading out with age.
+const TRAIL_SEC = 180;
+const trailOf = (track, t) => {
+  const bis = d3.bisector(d => d.tsi);
+  return track.slice(bis.left(track, t - TRAIL_SEC), bis.right(track, t));
+};
+const scrubAt = (track, t) => {
+  if (!track.length || t < track[0].tsi - 5) return null;
+  const i = Math.min(track.length - 1, d3.bisector(d => d.tsi).center(track, t));
+  return {d: track[i], done: t > track[track.length - 1].tsi + 5};
+};
+const scrubInput = html`<input type="range" min=${tMin} max=${tMax} step="1" value=${tMin} aria-label="Time">`;
+const scrubWhen = html`<span class="when"></span>`;
+const scrubWho = html`<div class="who"></div>`;
+const scrub = html`<div class="scrub">${scrubWhen}${scrubInput}${scrubWho}</div>`;
+const dots = {draw: () => {}};
+function scrubTo(t) {
+  scrubWhen.textContent = fmt.time(new Date(t * 1000));
+  scrubWho.replaceChildren(...riders.map((r, i) => {
+    const at = scrubAt(scrubTracks[i], t);
+    const text = !at ? "not started" : `${at.d.speed == null ? "–" : at.d.speed.toFixed(1)} km/h · ${(at.d.distance / 1000).toFixed(2)} km${at.done ? " · finished" : ""}`;
+    return html`<span style="--c: ${r.color}"><b>${r.name}</b> ${text}</span>`;
+  }));
+  dots.draw();
+}
+scrubInput.addEventListener("input", () => scrubTo(+scrubInput.value));
 ```
 
 <div class="card" id="together-map">${resize(width => renderRun(width, csvs, callouts, {
@@ -75,9 +113,37 @@ display(annotations);
     const scale = windRoseScale(width);
     const {centerX, centerY} = windRoseOrigin(16, 130, 0, scale);
     addWindRose(d3, svg, wind, {x: centerX, y: centerY, title: "Wind (avg)", scheme: WIND_SPEED_COLORS, scale});
+    // The scrubber's dots, redrawn on every pan/zoom and scrub.
+    const g = svg.append("g");
+    let transform = null;
+    dots.draw = () => {
+      if (!transform) return;
+      const projection = d3.geoMercator().scale(transform.k / (2 * Math.PI)).translate([transform.x, transform.y]);
+      const t = +scrubInput.value;
+      g.selectAll("*").remove();
+      riders.forEach((r, i) => {
+        const at = scrubAt(scrubTracks[i], t);
+        if (!at) return;
+        const trail = trailOf(scrubTracks[i], t).map(d => [d.tsi, ...projection([+d.lon, +d.lat])]);
+        for (let j = 1; j < trail.length; j++) {
+          const age = (t - trail[j][0]) / TRAIL_SEC;
+          g.append("line").attr("x1", trail[j - 1][1]).attr("y1", trail[j - 1][2]).attr("x2", trail[j][1]).attr("y2", trail[j][2])
+            .attr("stroke", r.color).attr("stroke-width", 5).attr("stroke-linecap", "round").attr("opacity", 1 - 0.85 * age);
+        }
+        const [x, y] = projection([+at.d.lon, +at.d.lat]);
+        g.append("circle").attr("cx", x).attr("cy", y).attr("r", 8)
+          .attr("fill", r.color).attr("stroke", "white").attr("stroke-width", 3)
+          .attr("opacity", at.done ? 0.5 : 1);
+      });
+    };
+    return {updateOnZoom: ({transform: tr}) => { transform = tr; dots.draw(); }};
   },
   fastestSegments: fastest,
-}))}</div>
+}))}${scrub}</div>
+
+```js
+scrubTo(tMin);
+```
 
 ## At a Glance
 

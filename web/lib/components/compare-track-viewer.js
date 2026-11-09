@@ -40,16 +40,17 @@ function trackLines(pointsArr, colorizers) {
 
 // Elapsed milliseconds since each run's own start, precomputed once so
 // picking a point by elapsed time is a binary search.
-function withElapsed(points) {
+// `t0` (seconds) overrides the run's own start: the together page uses
+// one shared start so every rider's cursor is at the same clock time.
+function withElapsed(points, t0 = points[0]?.tsi) {
   if (!points.length) return points;
-  const t0 = points[0].tsi;
   return points.map(d => ({ ...d, elapsed: (d.tsi - t0) * 1000 }));
 }
 
 // The shared speed strip: one area per run (run1 green, run2 orange),
 // sharing an elapsed-time x-axis so the two runs scrub together. Returns
 // the element plus a function to move the cursor to an elapsed time (ms).
-function compareStrip(pointsArr, { onSelect }) {
+function compareStrip(pointsArr, { onSelect, colors = RUN_COLORS }) {
   const height = 64;
   const el = html`<div class="track-strip"></div>`;
   let cursorAt = 0;
@@ -76,7 +77,7 @@ function compareStrip(pointsArr, { onSelect }) {
     el.replaceChildren(html`<svg width=${width} height=${height}>
       ${pointsArr.map(
         (points, i) =>
-          svg`<path d=${area(points)} fill=${RUN_COLORS[i]} fill-opacity="0.55"></path>`
+          svg`<path d=${area(points)} fill=${colors[i]} fill-opacity="0.55"></path>`
       )}
       <line x1=${x(cursorAt)} x2=${x(cursorAt)} y1="0" y2=${height} stroke="white" stroke-width="2"></line>
     </svg>`);
@@ -117,9 +118,27 @@ export function compareTrackViewer(
   metas,
   pointsArr,
   colorizers,
-  { invalidation, backHref, callouts = [], fastestSegments = [null, null], winds = [[], []], buoy = null } = {}
+  {
+    invalidation,
+    backHref,
+    backLabel = 'Back to the comparison',
+    callouts = [],
+    fastestSegments = [null, null],
+    winds = [[], []],
+    buoy = null,
+    // The together page: one color per rider, a title line per rider, and
+    // the cursor at the same clock time on every track, not the same
+    // elapsed time.
+    colors = RUN_COLORS,
+    titles = null,
+    names = null,
+    sameClock = false,
+    // Seconds of trail drawn behind each cursor (0: none).
+    trailSec = 0,
+  } = {}
 ) {
-  const tracks = pointsArr.map(withElapsed);
+  const t0 = sameClock ? Math.min(...pointsArr.filter(p => p.length).map(p => p[0].tsi)) : undefined;
+  const tracks = pointsArr.map(points => withElapsed(points, t0));
   const approximate = tracks.map(points => points[0]?.approximate ?? false);
   const ends = metas.map(m => new Date(m.ts.getTime() + m.duration_sec * 1000));
   const anyChart = tracks.some((points, i) => !approximate[i] && points.length >= 2);
@@ -134,17 +153,17 @@ export function compareTrackViewer(
     windBox.hidden = !windBox.hidden;
     windButton.setAttribute('aria-pressed', String(!windBox.hidden));
   });
-  const chart = anyChart ? compareStrip(tracks, { onSelect: elapsed => select(elapsed) }) : null;
+  const chart = anyChart ? compareStrip(tracks, { onSelect: elapsed => select(elapsed), colors }) : null;
 
   const root = html`<div class="track-app">
     ${mapEl}
     ${windBox ? html`<div class="track-wind-area">${windButton}${windBox}</div>` : ''}
     <header class="track-bar track-bar-compare">
-      <a class="track-back" href=${backHref} aria-label="Back to the comparison">‹</a>
+      <a class="track-back" href=${backHref} aria-label=${backLabel}>‹</a>
       <div class="track-title">
-        ${metas.map(
+        ${titles ?? metas.map(
           (m, i) =>
-            html`<div class="track-route" style=${`color: ${RUN_COLORS[i]}`}>${m.start_beach} → ${m.end_beach}
+            html`<div class="track-route" style=${`color: ${colors[i]}`}>${m.start_beach} → ${m.end_beach}
               <span class="track-sub">${fmt.shortStamp(m.ts)}–${fmt.clock(ends[i])} · ${m.distance_km.toFixed(1)} km</span></div>`
         )}
       </div>
@@ -176,27 +195,47 @@ export function compareTrackViewer(
       return Math.max(0, Math.min(points.length - 1, d3.bisector(d => d.elapsed).center(points, elapsed)));
     });
     const cursorFeatures = tracks
-      .map((points, i) => (points[selected[i]] ? pointFeature(points[selected[i]], { color: RUN_COLORS[i] }) : null))
+      .map((points, i) => (points[selected[i]] ? pointFeature(points[selected[i]], { color: colors[i] }) : null))
       .filter(Boolean);
     map?.getSource('cursor')?.setData({ type: 'FeatureCollection', features: cursorFeatures });
+    if (trailSec) {
+      // One segment per step so each can fade with its age.
+      const trail = tracks.flatMap((points, i) => {
+        const end = selected[i];
+        const now = points[end]?.elapsed;
+        if (now == null || approximate[i]) return [];
+        const out = [];
+        for (let j = end; j > 0 && now - points[j - 1].elapsed <= trailSec * 1000; j--) {
+          const a = points[j - 1], b = points[j];
+          out.push({ ...lineFeature([a.lon, a.lat], [b.lon, b.lat]), properties: { color: colors[i], o: 1 - (0.85 * (now - b.elapsed)) / (trailSec * 1000) } });
+        }
+        return out;
+      });
+      map?.getSource('trail')?.setData({ type: 'FeatureCollection', features: trail });
+    }
     chart?.moveTo(elapsed);
     const lines = tracks.map((points, i) => {
       const m = metas[i];
       const d = points[selected[i]];
       if (!d) return null;
-      if (approximate[i]) return html`<span style=${`color: ${RUN_COLORS[i]}`}>${fmt.clock(m.ts)}–${fmt.clock(ends[i])}</span>`;
-      return html`<span style=${`color: ${RUN_COLORS[i]}`}><b>${d.speed == null ? '–' : d.speed.toFixed(1)}</b> km/h
-        · <b>${d.hr ?? '–'}</b> bpm · <b>${(d.distance / 1000).toFixed(2)}</b> km</span>`;
+      const who = names ? html`<b>${names[i]}</b> ` : '';
+      if (approximate[i]) return html`<span style=${`color: ${colors[i]}`}>${who}${fmt.clock(m.ts)}–${fmt.clock(ends[i])}</span>`;
+      // Past the end of a rider's track the cursor stays on its last point.
+      const done = sameClock && elapsed > points[points.length - 1].elapsed + 5000 ? ' · finished' : '';
+      return html`<span style=${`color: ${colors[i]}`}>${who}<b>${d.speed == null ? '–' : d.speed.toFixed(1)}</b> km/h
+        · <b>${d.hr ?? '–'}</b> bpm · <b>${(d.distance / 1000).toFixed(2)}</b> km${done}</span>`;
     });
     readout.replaceChildren(...lines.filter(Boolean));
-    details.textContent = `${fmt.seconds(elapsed / 1000)} elapsed`;
+    details.textContent = sameClock
+      ? `${fmt.time(new Date(t0 * 1000 + elapsed))} · ${fmt.seconds(elapsed / 1000)} since the first start`
+      : `${fmt.seconds(elapsed / 1000)} elapsed`;
   }
 
   function init() {
     if (windBox) {
       winds.forEach((wind, i) => {
         if (!wind.length) return;
-        const rose = windRoseInset(wind, window.innerWidth, `Wind ${i + 1} (avg)`);
+        const rose = windRoseInset(wind, window.innerWidth, winds.length > 1 ? `Wind ${i + 1} (avg)` : 'Wind (avg)');
         windBox.append(rose);
         fitToContents(rose);
       });
@@ -235,6 +274,14 @@ export function compareTrackViewer(
           source: `fastest${i}`,
           paint: { 'line-color': '#f0f', 'line-width': 3, 'line-opacity': 0.85, 'line-dasharray': [1.5, 1.5] },
         });
+      });
+      map.addSource('trail', { type: 'geojson', data: emptyCollection });
+      map.addLayer({
+        id: 'trail',
+        type: 'line',
+        source: 'trail',
+        layout: { 'line-cap': 'round' },
+        paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': ['get', 'o'] },
       });
       map.addSource('cursor', { type: 'geojson', data: emptyCollection });
       map.addLayer({
