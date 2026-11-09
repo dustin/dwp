@@ -95,7 +95,8 @@ Answer with exactly one of:
   {{"kind": "unclear", "say": "<a short question back to the rider>"}}
 An edit may set only: foil, foil_confidence ('high', 'medium' or 'low':
 how sure the rider is of the foil), board, name, description. Write foil
-as the rider wrote it; the bot matches it to a known foil. Use only the
+as the rider wrote it; the bot matches it to a known foil, or adds it as
+a new one when none matches (same for board). Use only the
 columns above, and keep SELECTs to what the answer needs (at most 20 rows).
 When the answer is particular runs (the first, the longest, last week's),
 select their id too, so the bot can link them.
@@ -236,11 +237,13 @@ def sandboxed(path, sql, duckdb="duckdb"):
 # --- changes ----------------------------------------------------------------
 
 def check_set(fields, resolve_gear):
-    """fields with foil and board matched to known ones (resolve_gear(kind,
-    name) → (name, why)), else AskError."""
+    """(fields with foil and board matched to known ones, the kinds whose
+    value is new), else AskError. resolve_gear(kind, name) → (name, why);
+    a foil or board nothing matches (why starts "no ") is taken as a new one
+    under the name given, which the preview says."""
     if not fields:
         raise AskError("the change sets nothing")
-    out = {}
+    out, new = {}, set()
     for k, v in fields.items():
         if k not in EDITABLE:
             raise AskError(f"{k} can't be changed here")
@@ -250,11 +253,15 @@ def check_set(fields, resolve_gear):
         if EDITABLE[k] and v not in EDITABLE[k]:
             raise AskError(f"{k} must be one of {', '.join(sorted(EDITABLE[k]))}")
         if k in ("foil", "board"):
-            v, why = resolve_gear(k, v)
-            if why:
+            got, why = resolve_gear(k, v)
+            if why and why.startswith("no ") and v:
+                new.add(k)
+            elif why:
                 raise AskError(why)
+            else:
+                v = got
         out[k] = v
-    return out
+    return out, new
 
 
 def apply_sql(rider, ids, fields, request):

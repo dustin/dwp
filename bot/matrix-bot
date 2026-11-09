@@ -2098,13 +2098,15 @@ class Bot:
         if len(whose) != 1:
             raise ask.AskError(f"one rider's runs at a time, please, not {' and '.join(sorted(whose))}'s")
         rider = whose.pop()
-        fields = ask.check_set(p.get("set"), lambda k, v: resolve_gear(rider, k, v))
+        fields, new = ask.check_set(p.get("set"), lambda k, v: resolve_gear(rider, k, v))
         lines = [ask.run_line(r) + ": " + ", ".join(
             f"{r.get(k) or 'none'} → {v}" for k, v in fields.items()) for r in picked[:20]]
         if len(picked) > 20:
             lines.append(f"… and {len(picked) - 20} more")
         n = len(picked)
         head = f"✏️ Change {n} of {rider}'s runs"
+        if new:
+            head += "".join(f" (🆕 new {k}: no {k} matched '{fields[k]}')" for k in sorted(new))
         if p.get("count") and p["count"] != n:
             self.mx.notice(room, f"🤔 You said {p['count']}, but that picks {n}:\n"
                                  + "\n".join(lines) + "\nTry saying which ones another way.",
