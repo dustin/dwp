@@ -81,7 +81,11 @@ ${Object.assign(html`<button title="Swap which run is first (and which color eac
 })}
 
 ```js
-const [runCsv1, runCsv2] = await Promise.all(csvFetches);
+const [runTrack1, runTrack2] = await Promise.all(csvFetches);
+// As on the run page: the map draws the whole track, but charts, splits and
+// speeds only use recorded points. A synthesized stretch (synth_points in
+// db/schema.sql) has a place and time but no speed or heart rate.
+const [runCsv1, runCsv2] = [runTrack1, runTrack2].map(t => t.filter(d => !d.synthetic));
 
 const colorizers = compareColorizers(runCsv1, runCsv2);
 
@@ -139,7 +143,7 @@ function aRose(d3, svg, width, height, wind, idx, colors, off) {
 }
 ```
 
-<div class="card">${resize(width => renderRun(width, [runCsv1, runCsv2], callouts, {
+<div class="card">${resize(width => renderRun(width, [runTrack1, runTrack2], callouts, {
   colorizers: colorizers,
   additionalMarks: ({ d3, svg, width, height }) => {
     // Riders out together had the same wind, so one rose does.
