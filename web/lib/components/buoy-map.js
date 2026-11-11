@@ -98,8 +98,14 @@ export function renderBuoyMap({
   // Fit the islands to the width, then shrink them until every rose (and
   // its label) fits inside too.
   const projection = d3.geoMercator().fitWidth(width - 2 * margin, islands);
-  const roseBox = () => Object.entries(BUOYS).filter(([site]) => !dead(site)).map(([, b]) => {
+  // Every buoy has to fit: a rose with its label, or an X with room for its
+  // name beside it (the outer buoys are far outside the islands' bounds).
+  const roseBox = () => Object.entries(BUOYS).map(([site, b]) => {
     const [x, y] = projection([b.lon, b.lat]);
+    if (dead(site)) {
+      const w = label * 0.85 * 0.6 * (b.name.length + 12) + 10;
+      return b.side === 'left' ? [[x - w, y - label], [x + 8, y + label]] : [[x - 8, y - label], [x + w, y + label]];
+    }
     const cx = x + b.place[0] * rose, cy = y + b.place[1] * rose;
     return [[cx - rose / 2, cy - rose / 2], [cx + rose / 2, cy + rose / 2 + label * 2.8]];
   });
