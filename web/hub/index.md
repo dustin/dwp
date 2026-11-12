@@ -151,7 +151,7 @@ function riderCard({slug, name, runs}) {
 }
 ```
 
-## Conditions
+## Conditions <a class="heading-link" href="buoy.html">All buoys →</a>
 
 <div class="grid grid-cols-4">
   ${windNow.map(windCard)}
@@ -202,7 +202,7 @@ function pickCard(wind, forecasts, riders) {
   ${windNow.map(({site, name, rows}) => forecastMini(site, forecasts[site] ?? [], rows, {name, href: WIND_PAGES[site] && `${WIND_PAGES[site]}#forecast`}))}
 </div>
 
-## Riders <a class="riders-compare" href="versus.html">Compare two riders →</a>
+## Riders <a class="heading-link" href="versus.html">Compare two riders →</a>
 
 <div class="grid grid-cols-4">
   ${riders.filter(r => r.runs.length).map(riderCard)}
@@ -329,6 +329,6 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
     background: color-mix(in srgb, var(--wq) 14%, transparent); border: 1px solid color-mix(in srgb, var(--wq) 45%, transparent); }
   .pick-card { display: flex; flex-direction: column; gap: 0.3rem; }
   .pick-route { font-weight: 600; color: var(--theme-foreground); }
-  .riders-compare { font-size: 0.9rem; font-weight: 400; margin-left: 0.6rem; }
+  .heading-link { font-size: 0.9rem; font-weight: 400; margin-left: 0.6rem; }
   .rider-host { margin-top: auto; padding-top: 0.4rem; font-size: 0.8rem; color: var(--theme-foreground-focus); }
 </style>
