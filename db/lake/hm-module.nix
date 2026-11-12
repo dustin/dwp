@@ -17,7 +17,8 @@
 # can't serve some other lake's directory by mistake. lake/ must be this
 # lake's alone, since maintenance deletes files the catalog doesn't list.
 #
-# Also a nightly dwp-lake-maintenance (maintenance.sql) through the server.
+# Also a nightly dwp-lake-maintenance (maintenance.sql) through the server,
+# and dwp-lake-local, a DuckDB CLI with the lake attached directly.
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-lake;
@@ -78,6 +79,17 @@ let
     '';
   };
 
+  # The lake opened directly, without the server: for one-off work while
+  # dwp-lake is stopped (or refusing to start), like the split's drops.
+  local = pkgs.writeShellApplication {
+    name = "dwp-lake-local";
+    runtimeInputs = [ duckdb ];
+    text = ''
+      cd ${lib.escapeShellArg cfg.dir}
+      exec duckdb -init ${sessionSql} "$@"
+    '';
+  };
+
   maintenance = pkgs.writeShellApplication {
     name = "dwp-lake-maintenance";
     runtimeInputs = [ duckdb ];
@@ -128,7 +140,7 @@ in
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
-    { home.packages = [ maintenance ]; }
+    { home.packages = [ maintenance local ]; }
 
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       systemd.user.services.dwp-lake = {
