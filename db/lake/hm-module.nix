@@ -93,8 +93,8 @@ let
 
   # The big lake's back-the-duck-up.sh, for this lake: each table in main
   # copied to BACKUP_DIR/lake/<table>.parquet (zstd 9, the names its
-  # backup.sql used), copied (never synced: dsstudio's lake writes there
-  # too) to backup.remote, and a full copy as one DuckDB file, xz'd, at
+  # backup.sql used), synced to backup.remote (this lake's own prefix),
+  # and, separately, a full copy as one DuckDB file, xz'd, at
   # BACKUP_DIR/lake.db.xz. The COPYs run in the server's session through
   # quack, so the paths are the server's: this belongs on the lake's host.
   backup = pkgs.writeShellApplication {
@@ -128,8 +128,8 @@ let
       echo "copying $(grep -c . <<< "$sql") tables to $out"
       duckdb -bail --init quack-init.sql <<< "$sql"
 
-      echo "copying to ${cfg.backup.remote}"
-      rclone copy -v "$out/" ${lib.escapeShellArg cfg.backup.remote}
+      echo "syncing to ${cfg.backup.remote}"
+      rclone sync -v "$out/" ${lib.escapeShellArg cfg.backup.remote}
 
       echo "full copy to $bak/lake.db.xz"
       duckdb -bail --init quack-init.sql <<SQL
@@ -199,8 +199,8 @@ in
       };
       remote = mkOption {
         type = types.str;
-        example = "s3:backup.west.spy.net/ducklake/";
-        description = "rclone destination the Parquet files are copied to (rclone copy: nothing there is deleted).";
+        example = "s3:backup.west.spy.net/ducklake-dwp/";
+        description = "rclone destination the Parquet files are synced to: this lake's alone, since sync deletes what isn't in BACKUP_DIR/lake.";
       };
       rcloneConfig = mkOption {
         type = types.nullOr types.str;
