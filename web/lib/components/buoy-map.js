@@ -18,7 +18,7 @@ export const BUOYS = {
   },
   waimea: {
     name: 'Waimea Bay', station: '51201', where: "off Oʻahu's North Shore",
-    lat: 21.671, lon: -158.118, start: new Date('2026-09-14T00:00:00-10:00'), place: [-0.05, -0.85],
+    lat: 21.671, lon: -158.118, start: new Date('2026-09-14T00:00:00-10:00'), place: [-0.15, -1.05],
   },
   barbers_point: {
     name: 'Barbers Point', station: '51212', where: "off Kalaeloa, Oʻahu's southwest corner",
@@ -58,6 +58,14 @@ export const BUOYS = {
     name: 'Hanalei', station: '51208', where: "off Kauaʻi's North Shore", offline: '2026-09-09',
     lat: 22.285, lon: -159.574, side: 'right',
   },
+};
+
+// Readings normally arrive 2-4 h late (the offshore buoys are the slowest).
+const STALE = 4 * 3600e3, VERY_STALE = 6 * 3600e3;
+const STALE_COLOR = '#d98200';
+const formatAge = ms => {
+  const m = Math.round(ms / 60e3);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 };
 
 // The buoys we collect and have pages for.
@@ -107,7 +115,7 @@ export function renderBuoyMap({
       return b.side === 'left' ? [[x - w, y - label], [x + 8, y + label]] : [[x - 8, y - label], [x + w, y + label]];
     }
     const cx = x + b.place[0] * rose, cy = y + b.place[1] * rose;
-    return [[cx - rose / 2, cy - rose / 2], [cx + rose / 2, cy + rose / 2 + label * 2.8]];
+    return [[cx - rose / 2, cy - rose / 2], [cx + rose / 2, cy + rose / 2 + label * 4.1]];
   });
   let height = 0;
   for (let i = 0; i < 6; i++) {
@@ -178,7 +186,7 @@ export function renderBuoyMap({
     // Leader from the buoy to the edge of its rose.
     const a = Math.atan2(cy - y, cx - x), d = Math.hypot(cx - x, cy - y);
     // A rose above its buoy has its label underneath, so stop short of that.
-    const end = cy < y ? Math.max(0, d - (rose / 2 + label * 3)) : d - r;
+    const end = cy < y ? Math.max(0, d - (rose / 2 + label * 4.3)) : d - r;
     g.append('line').attr('x1', x).attr('y1', y)
       .attr('x2', x + Math.cos(a) * end).attr('y2', y + Math.sin(a) * end)
       .attr('stroke', 'currentColor').attr('stroke-opacity', 0.4);
@@ -190,9 +198,17 @@ export function renderBuoyMap({
       .attr('stroke', here ? 'var(--theme-foreground-focus)' : 'none').attr('stroke-width', 2);
 
     const snap = snapshots[site];
+    // How old the reading is: past STALE it's amber and faded, past
+    // VERY_STALE fainter still with a dashed ring.
+    const at = snap.sampleTs ?? snap.spectrumTs;
+    const age = at ? Date.now() - at : null;
+    const stale = age == null ? 0 : age > VERY_STALE ? 2 : age > STALE ? 1 : 0;
+    if (stale === 2) g.append('circle').attr('cx', cx).attr('cy', cy).attr('r', r + 2)
+      .attr('fill', 'none').attr('stroke', STALE_COLOR).attr('stroke-width', 1.5).attr('stroke-dasharray', '4 3');
     const node = renderMiniRose(snap.spectrum, { size: rose });
     d3.select(node).attr('x', cx - rose / 2).attr('y', cy - rose / 2);
-    g.append(() => node);
+    // On a wrapping <g>: Chrome ignores opacity on a nested <svg>.
+    g.append('g').attr('opacity', [1, 0.5, 0.25][stale]).append(() => node);
 
     const t = g.append('text').attr('x', cx).attr('y', cy + rose / 2 + label * 0.4).attr('text-anchor', 'middle').attr('fill', 'currentColor');
     t.append('tspan').attr('x', cx).attr('dy', '0.7em').attr('font-weight', 600)
@@ -200,6 +216,10 @@ export function renderBuoyMap({
     const p = snap?.primary;
     if (p) t.append('tspan').attr('x', cx).attr('dy', '1.25em').attr('fill-opacity', 0.7)
       .text(`${p.height.toFixed(1)}′ @ ${p.period.toFixed(0)}s ${compassPoint(p.direction)}`);
+    if (age != null) t.append('tspan').attr('x', cx).attr('dy', '1.25em')
+      .attr('fill', stale ? STALE_COLOR : 'currentColor').attr('fill-opacity', stale ? 1 : 0.55)
+      .attr('font-weight', stale ? 600 : null)
+      .text(`${formatAge(age)} ago`);
   }
   return svg.node();
 }

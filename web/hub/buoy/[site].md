@@ -257,7 +257,7 @@ const comparison = compareSnapshot?.spectrum.length > 0
 ```js
 // Every buoy's latest rose, for the map of the others.
 const buoySnapshots = Object.fromEntries(await Promise.all(Object.keys(LIVE_BUOYS).map(async site =>
-  [site, await fetchBuoySnapshot(new Date(), site, {windowHours: 6}).catch(() => null)])));
+  [site, await fetchBuoySnapshot(new Date(), site, {windowHours: 12}).catch(() => null)])));
 ```
 
 <div class="card">${resize(width => renderBuoyMap({width, snapshots: buoySnapshots, current: buoy.site}))}</div>

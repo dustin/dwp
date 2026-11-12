@@ -19,7 +19,7 @@ sidebar: false
 import {BUOYS, LIVE_BUOYS, renderBuoyMap} from "./components/buoy-map.js";
 import {fetchBuoySnapshot} from "./components/data.js";
 const snapshots = Object.fromEntries(await Promise.all(Object.keys(LIVE_BUOYS).map(async site =>
-  [site, await fetchBuoySnapshot(new Date(), site, {windowHours: 6}).catch(() => null)])));
+  [site, await fetchBuoySnapshot(new Date(), site, {windowHours: 12}).catch(() => null)])));
 ```
 
 <div class="card">${resize(width => renderBuoyMap({width, snapshots, href: site => `buoy/${site}.html`}))}</div>
