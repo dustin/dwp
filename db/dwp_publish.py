@@ -83,6 +83,7 @@ Run it as ./publish from db's nix dev shell (python3, duckdb, rclone), like
 add-run. Python in db/ imports this module and calls publish.run() instead.
 """
 
+import csv
 import argparse
 import fcntl
 import gzip
@@ -288,7 +289,26 @@ def import_sql(env):
     through quack, getenv() runs on the server, which doesn't have the
     importer's environment."""
     sql = read_sql("import.sql").replace("-- @run-stats.sql", read_sql("run-stats.sql"))
-    return re.sub(r"getenv\('(DWP_\w+)'\)", lambda m: sql_str(env.get(m.group(1), "")), sql)
+    sql = re.sub(r"getenv\('(DWP_\w+)'\)", lambda m: sql_str(env.get(m.group(1), "")), sql)
+    # The filtered CSV goes in as rows too: read_csv_auto() would read the
+    # lake host's disk.
+    csv_path = env.get("DWP_CSV")
+    if csv_path:
+        read = "FROM read_csv_auto(getvariable('csv_path'));"
+        if read not in sql:
+            raise PublishError("import.sql no longer reads csv_path the way import_sql expects")
+        with open(csv_path, newline="") as fh:
+            recs = list(csv.DictReader(fh))
+        cols = [(c, "VARCHAR" if c == "time_utc" else "DOUBLE") for c in IMPORT_CSV_COLS]
+        rows = [tuple((r.get(c) or None) for c in IMPORT_CSV_COLS) for r in recs]
+        sql = sql.replace(read, "FROM activity_csv;")
+        sql = temp_table("activity_csv", cols, rows) + "\n" + sql
+    return sql
+
+
+# The columns import.sql takes from gpx_filter.py's CSV.
+IMPORT_CSV_COLS = ["time_utc", "lat_filtered", "lon_filtered", "hr",
+                   "speed_final_kmh", "distance_cumulative_m"]
 
 
 def run_stats_sql(dwids):

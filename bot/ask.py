@@ -289,17 +289,32 @@ def one_select(sql):
     return s
 
 
-def snapshot(lake_dir, riders, path):
+def snapshot(lake_dir, riders, path, duckdb="duckdb"):
     """Copy riders' runs, and which of them went together, out of the
-    lake into the directory path (runs.parquet, together.parquet)."""
+    lake into the directory path (runs.parquet, together.parquet).
+
+    Through quack every statement runs on the lake's host, so a COPY TO
+    would write that host's disk. The CLI's .output writes here instead,
+    so the rows come back as CSV, and a local duckdb (no lake) turns them
+    into the Parquet files sandboxed() reads."""
     who = ", ".join(map(sql_str, riders))
-    sql = "use lake; " + "".join(
-        f"copy ({q.format(riders=who)}) to {sql_str(os.path.join(path, name))} (format parquet); "
-        for q, name in ((SNAPSHOT_SQL, "runs.parquet"), (TOGETHER_SQL, "together.parquet")))
-    r = subprocess.run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=lake_dir,
+    script = "use lake;\n.mode csv\n.headers on\n.nullvalue ''\n"
+    for q, name in ((SNAPSHOT_SQL, "runs"), (TOGETHER_SQL, "together")):
+        script += f'.output "{os.path.join(path, name)}.csv"\n{q.format(riders=who)};\n'
+    script += ".output\n"
+    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=lake_dir, input=script,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if r.returncode != 0:
         raise AskError(f"couldn't read the runs: {r.stdout.strip()[-300:]}")
+    local = "".join(
+        f"copy (from read_csv({sql_str(os.path.join(path, name + '.csv'))}, header = true,"
+        f" nullstr = '', types = {{'id': 'VARCHAR'{extra}}}))"
+        f" to {sql_str(os.path.join(path, name + '.parquet'))} (format parquet);\n"
+        for name, extra in (("runs", ""), ("together", ", 'other_id': 'VARCHAR'")))
+    r = subprocess.run([duckdb, "-bail", "-init", os.devnull, "-c", local],
+                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    if r.returncode != 0:
+        raise AskError(f"couldn't save the runs: {r.stdout.strip()[-300:]}")
 
 
 # MySQL's FIELD(x, a, b, ...): x's 1-based place among up to 12 values (0
