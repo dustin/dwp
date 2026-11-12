@@ -18,6 +18,7 @@
 # lake's alone, since maintenance deletes files the catalog doesn't list.
 #
 # Also a nightly dwp-lake-maintenance (maintenance.sql) through the server,
+# optionally a nightly dwp-lake-backup (backup.*),
 # and dwp-lake-local, a DuckDB CLI with the lake attached directly.
 { config, lib, pkgs, ... }:
 let
@@ -90,6 +91,43 @@ let
     '';
   };
 
+  # The big lake's back-the-duck-up.sh, for this lake: an EXPORT DATABASE
+  # (Parquet) synced to S3, and a full copy as one DuckDB file, xz'd, next
+  # to it. Both run in the server's session through quack, so the paths
+  # are the server's: this belongs on the lake's host.
+  backup = pkgs.writeShellApplication {
+    name = "dwp-lake-backup";
+    runtimeInputs = [ duckdb pkgs.rclone pkgs.xz pkgs.coreutils ];
+    text = ''
+      bak=${lib.escapeShellArg cfg.backup.dir}
+      mkdir -p "$bak"
+      cd "''${LAKE:-${cfg.client}}"
+      rm -rf "$bak/export.new" "$bak/full.tmp.db" "$bak/full.tmp.db.xz"
+
+      echo "exporting to $bak/export.new"
+      duckdb -bail --init quack-init.sql <<SQL
+      EXPORT DATABASE lake TO '$bak/export.new' (FORMAT parquet);
+      SQL
+      rm -rf "$bak/export.old"
+      [ -d "$bak/export" ] && mv "$bak/export" "$bak/export.old"
+      mv "$bak/export.new" "$bak/export"
+      rm -rf "$bak/export.old"
+
+      echo "syncing to ${cfg.backup.remote}"
+      rclone sync -v "$bak/export/" ${lib.escapeShellArg cfg.backup.remote}
+
+      echo "full copy to $bak/lake.db.xz"
+      duckdb -bail --init quack-init.sql <<SQL
+      DETACH DATABASE IF EXISTS bak;
+      ATTACH '$bak/full.tmp.db' AS bak;
+      COPY FROM DATABASE lake TO bak;
+      DETACH bak;
+      SQL
+      xz -9 -T0 "$bak/full.tmp.db"
+      mv "$bak/full.tmp.db.xz" "$bak/lake.db.xz"
+    '';
+  };
+
   maintenance = pkgs.writeShellApplication {
     name = "dwp-lake-maintenance";
     runtimeInputs = [ duckdb ];
@@ -137,10 +175,28 @@ in
       default = true;
       description = "Run maintenance.sql nightly at 03:30.";
     };
+    backup = {
+      enable = mkEnableOption "the nightly export (03:00) to S3 and full .db.xz copy";
+      dir = mkOption {
+        type = types.str;
+        default = "${config.home.homeDirectory}/lakes/dwp-bak";
+        description = "Where the export and lake.db.xz are kept. Never inside DIR/lake.";
+      };
+      remote = mkOption {
+        type = types.str;
+        example = "s3:backup.west.spy.net/ducklake-dwp/";
+        description = "rclone destination the export is synced to.";
+      };
+      rcloneConfig = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = "RCLONE_CONFIG with the remote's credentials (null for rclone's default).";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
-    { home.packages = [ maintenance local ]; }
+    { home.packages = [ maintenance local ] ++ lib.optional cfg.backup.enable backup; }
 
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       systemd.user.services.dwp-lake = {
@@ -155,6 +211,23 @@ in
           LimitNOFILE = 65536;
         };
         Install.WantedBy = [ "default.target" ];
+      };
+      systemd.user.services.dwp-lake-backup = lib.mkIf cfg.backup.enable {
+        Unit.Description = "dwp lake backup (export to S3, full copy)";
+        Service = {
+          Type = "oneshot";
+          ExecStart = lib.getExe backup;
+          Environment = lib.optional (cfg.backup.rcloneConfig != null)
+            "RCLONE_CONFIG=${cfg.backup.rcloneConfig}";
+        };
+      };
+      systemd.user.timers.dwp-lake-backup = lib.mkIf cfg.backup.enable {
+        Unit.Description = "dwp lake backup, nightly";
+        Timer = {
+          OnCalendar = "*-*-* 03:00:00";
+          Persistent = true;
+        };
+        Install.WantedBy = [ "timers.target" ];
       };
       systemd.user.services.dwp-lake-maintenance = lib.mkIf cfg.maintenance {
         Unit.Description = "dwp lake maintenance";
@@ -186,6 +259,18 @@ in
           HardResourceLimits.NumberOfFiles = 65536;
           StandardOutPath = "${config.home.homeDirectory}/Library/Logs/dwp-lake.log";
           StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/dwp-lake.log";
+        };
+      };
+      launchd.agents.dwp-lake-backup = lib.mkIf cfg.backup.enable {
+        enable = true;
+        config = {
+          Label = "pro.downwind.lake-backup";
+          ProgramArguments = [ (lib.getExe backup) ];
+          StartCalendarInterval = [ { Hour = 3; Minute = 0; } ];
+          EnvironmentVariables = lib.optionalAttrs (cfg.backup.rcloneConfig != null)
+            { RCLONE_CONFIG = cfg.backup.rcloneConfig; };
+          StandardOutPath = "${config.home.homeDirectory}/Library/Logs/dwp-lake-backup.log";
+          StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/dwp-lake-backup.log";
         };
       };
       launchd.agents.dwp-lake-maintenance = lib.mkIf cfg.maintenance {
