@@ -21,7 +21,7 @@ toc: true
 
 # ${buoy.name} Buoy
 
-Conditions from the ${buoy.name} buoy (<a href="https://www.ndbc.noaa.gov/station_page.php?station=${buoy.station}">NDBC ${buoy.station}</a>), ${buoy.where}: the latest readings, or any time back to ${fmt.date(buoy.start)}.
+Conditions from the ${buoy.name} buoy (${html`<a href="https://www.ndbc.noaa.gov/station_page.php?station=${buoy.station}">NDBC ${buoy.station}</a>`}), ${buoy.where}: the latest readings, or any time back to ${fmt.date(buoy.start)}.
 
 </div>
 <div class="buoy-head-map">${renderBuoyMap({width: 200, roses: false, current: buoy.site})}</div>
