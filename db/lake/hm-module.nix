@@ -92,7 +92,8 @@ let
   };
 
   # The big lake's back-the-duck-up.sh, for this lake: an EXPORT DATABASE
-  # (Parquet) synced to S3, and a full copy as one DuckDB file, xz'd, next
+  # (Parquet, zstd 9 like its backup.sql, but every table plus the views
+  # and macros in schema.sql, so nothing new is left out) synced to S3, and a full copy as one DuckDB file, xz'd, next
   # to it. Both run in the server's session through quack, so the paths
   # are the server's: this belongs on the lake's host.
   backup = pkgs.writeShellApplication {
@@ -106,7 +107,7 @@ let
 
       echo "exporting to $bak/export.new"
       duckdb -bail --init quack-init.sql <<SQL
-      EXPORT DATABASE lake TO '$bak/export.new' (FORMAT parquet);
+      EXPORT DATABASE lake TO '$bak/export.new' (FORMAT parquet, COMPRESSION zstd, COMPRESSION_LEVEL 9);
       SQL
       rm -rf "$bak/export.old"
       [ -d "$bak/export" ] && mv "$bak/export" "$bak/export.old"
