@@ -42,6 +42,12 @@ toc: false
 Maliko conditions: present, future, and past.
 
 ```js
+// NWS High Surf Advisories and Warnings for these shores, up top.
+import {fetchSurfAlerts, surfAlertBanner} from "./components/surf-alerts.js";
+display(surfAlertBanner(await fetchSurfAlerts("maliko")));
+```
+
+```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";

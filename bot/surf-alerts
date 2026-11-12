@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""Keep live/alerts.json in the bucket from the National Weather Service's
+active Hawaiʻi alerts: the High Surf Advisories and Warnings that cover
+Maui, with which shores they're for.
+
+The Kīhei and Maliko pages, the hub and the e-paper displays read it (see
+web/lib/components/surf-alerts.js). Each alert lists the spots it touches:
+maliko for north or east facing shores, kihei for south or west, both when
+the text doesn't say.
+
+    surf-alerts [--every SECONDS] [--once] [--dry-run] [--file NWS.json]
+
+--file reads a saved api.weather.gov response instead of fetching (for
+testing). Uploads with rclone (RCLONE_CONFIG picks the config) to
+$DWP_DEST (default s3:db.downwind.pro), when the alerts change and at
+least hourly so the page can tell the file is current.
+"""
+
+import argparse
+import gzip
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+from datetime import datetime, timezone
+
+DEST = (os.environ.get("DWP_DEST") or "s3:db.downwind.pro").rstrip("/") + "/"
+KEY = "live/alerts.json"
+URL = "https://api.weather.gov/alerts/active?area=HI"
+# api.weather.gov wants a User-Agent naming the client.
+AGENT = "downwind.pro surf alerts (https://downwind.pro)"
+EVENTS = {"High Surf Advisory", "High Surf Warning"}
+HEADERS = ["Content-Encoding: gzip", "Content-Type: application/json",
+           "Cache-Control: public, max-age=60"]
+REFRESH = 3600  # rewrite unchanged alerts this often
+NWS_PAGE = "https://www.weather.gov/hfo/"
+
+DIRS = r"(?:north|south|east|west)[a-z]*"
+DIR_LIST = rf"{DIRS}(?:\s*,?\s*(?:and\s+)?{DIRS})*"
+# "north and east facing shores of Molokai and Maui", up to the next such
+# phrase or the end.
+SHORES = re.compile(rf"({DIR_LIST})\s+facing\s+shores\s+of\s+(.*?)(?=,?\s*(?:and\s+)?{DIR_LIST}\s+facing|$)",
+                    re.I | re.S)
+SPOT_FOR = {"north": "maliko", "east": "maliko", "south": "kihei", "west": "kihei"}
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} surf-alerts: {msg}", file=sys.stderr, flush=True)
+
+
+def sections(description):
+    """The * WHAT... / * WHERE... parts of an NWS description, whitespace
+    folded, keyed lower case."""
+    out = {}
+    for m in re.finditer(r"\*\s*([A-Z ]+?)\.\.\.(.*?)(?=\n\s*\*|\Z)", description or "", re.S):
+        out[m.group(1).strip().lower()] = " ".join(m.group(2).split())
+    return out
+
+
+def maui_shores(where):
+    """The Maui shores in a WHERE line ("north", "east", ...), [] when it
+    names Maui without any, None when it isn't about Maui."""
+    found, any_maui = [], False
+    for m in SHORES.finditer(where):
+        if re.search(r"maui|all (?:the )?islands|all hawaiian islands", m.group(2), re.I):
+            any_maui = True
+            for d in re.findall(r"north|south|east|west", m.group(1).lower()):
+                if d not in found:
+                    found.append(d)
+    if any_maui:
+        return found
+    return [] if "maui" in where.lower() else None
+
+
+def maui_alerts(collection, now):
+    """The surf alerts in an api.weather.gov alerts collection that cover
+    Maui and haven't ended, soonest ending first."""
+    out = []
+    for f in collection.get("features", []):
+        p = f.get("properties", {})
+        if p.get("event") not in EVENTS or p.get("status") != "Actual" or p.get("messageType") == "Cancel":
+            continue
+        ends = p.get("ends") or p.get("expires")
+        if ends and datetime.fromisoformat(ends) <= now:
+            continue
+        s = sections(p.get("description"))
+        where = s.get("where") or p.get("areaDesc") or ""
+        shores = maui_shores(where)
+        if shores is None and "maui" not in (p.get("areaDesc") or "").lower():
+            continue
+        spots = sorted({SPOT_FOR[d] for d in shores or []}) or ["kihei", "maliko"]
+        out.append({
+            "id": p.get("id"),
+            "event": p["event"],
+            "severity": p.get("severity"),
+            "headline": (p.get("parameters", {}).get("NWSheadline") or [p.get("headline")])[0],
+            "what": s.get("what"), "where": where, "when": s.get("when"), "impacts": s.get("impacts"),
+            "description": p.get("description"),
+            "shores": shores or [], "spots": spots,
+            "sent": p.get("sent"), "onset": p.get("onset"), "ends": ends,
+            "url": NWS_PAGE,
+        })
+    # One per event and shore set: an extended advisory replaces the old one.
+    latest = {}
+    for a in sorted(out, key=lambda a: a["sent"] or ""):
+        latest[(a["event"], tuple(a["shores"]))] = a
+    return sorted(latest.values(), key=lambda a: a["ends"] or "9")
+
+
+def fetch(path=None):
+    if path:
+        with open(path) as f:
+            return json.load(f)
+    req = urllib.request.Request(URL, headers={"User-Agent": AGENT, "Accept": "application/geo+json"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return json.load(r)
+
+
+def upload(doc, dry_run):
+    body = gzip.compress(json.dumps(doc, separators=(",", ":")).encode(), mtime=0)
+    if dry_run:
+        log(f"would write {KEY}: {json.dumps(doc, indent=1)}")
+        return True
+    args = ["rclone", "rcat", DEST + KEY]
+    for h in HEADERS:
+        args += ["--header-upload", h]
+    r = subprocess.run(args, input=body, capture_output=True)
+    if r.returncode != 0:
+        log(f"writing {KEY} failed: {r.stderr.decode(errors='replace').strip()}")
+    return r.returncode == 0
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--every", type=int, default=600, help="seconds between polls")
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="log instead of uploading")
+    ap.add_argument("--file", help="a saved api.weather.gov response to read instead")
+    args = ap.parse_args(argv)
+
+    last, written = None, 0
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            alerts = maui_alerts(fetch(args.file), now)
+            if alerts != last or time.time() - written > REFRESH:
+                if alerts != last:
+                    log(f"{len(alerts)} Maui surf alert(s): "
+                        + "; ".join(f"{a['event']} {'/'.join(a['shores']) or 'all'} until {a['ends']}" for a in alerts))
+                if upload({"updated": now.isoformat(timespec="seconds"), "alerts": alerts}, args.dry_run):
+                    last, written = alerts, time.time()
+        except Exception as e:
+            log(f"poll failed: {e!r}")
+        if args.once:
+            return
+        time.sleep(args.every)
+
+
+if __name__ == "__main__":
+    main()

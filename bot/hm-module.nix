@@ -36,7 +36,7 @@ let
   publishEnv = lib.optionalAttrs (cfg.mqtt != "") { DWP_MQTT = cfg.mqtt; };
 in
 {
-  imports = [ ./live-wind.nix ];
+  imports = [ ./live-wind.nix ./surf-alerts.nix ];
 
   options.services.dwp-matrix-bot = with lib; {
     enable = mkEnableOption "the downwind.pro Matrix import bot";

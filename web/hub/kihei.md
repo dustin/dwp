@@ -39,6 +39,12 @@ toc: false
 Kīhei conditions: present, future, and past.
 
 ```js
+// NWS High Surf Advisories and Warnings for these shores, up top.
+import {fetchSurfAlerts, surfAlertBanner} from "./components/surf-alerts.js";
+display(surfAlertBanner(await fetchSurfAlerts("kihei")));
+```
+
+```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchCamImages, fetchWindForecast} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";

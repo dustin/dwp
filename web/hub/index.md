@@ -7,6 +7,12 @@ toc: false
 # downwind.pro
 
 ```js
+// Any Maui High Surf Advisory or Warning, linking to its spot's page.
+import {fetchSurfAlerts, surfAlertLines} from "./components/surf-alerts.js";
+display(surfAlertLines(await fetchSurfAlerts()));
+```
+
+```js
 import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot, fetchSwellPartitionWindow} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";

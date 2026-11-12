@@ -34,6 +34,13 @@ pager: false
   .rt-day { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; font-size: 15px; font-weight: 600; }
   .rt-day b { font-size: 22px; font-weight: 800; }
   .rt-muted { color: #555; }
+  .rt-alerts { grid-column: 1 / -1; margin: 0 -18px; }
+  .rt-alert { background: #000; color: #fff; padding: 3px 18px; display: flex; align-items: baseline; gap: 14px; font-size: 16px; font-weight: 600; }
+  .rt-alert + .rt-alert { border-top: 2px solid #fff; }
+  .rt-alert-event { font-size: 21px; font-weight: 800; }
+  .rt-alert-until { margin-left: auto; font-weight: 700; }
+  /* Room for the bar: a smaller big number. */
+  .rt.rt-alerting .rt-big { font-size: 50px; }
 </style>
 
 ```js
@@ -56,6 +63,7 @@ import {compassPoint} from "./components/spectrum.js";
 import {fetchLiveWind, fetchRecentWind, fetchWindForecast, parseHstParam} from "./components/data.js";
 import {hourlyForecast, outlook, sunTimes, hstDay} from "./components/forecast.js";
 import {CLASSES, windClass} from "./components/wind-quality.js";
+import {fetchSurfAlerts, shortShores, shortUntil} from "./components/surf-alerts.js";
 
 const HOUR = 3600e3;
 const GO_START = 9;        // HST hour
@@ -70,7 +78,8 @@ const SITES = {
     finish: "kanaha", finishName: "Kanaha", against: () => false},
 };
 const params = new URLSearchParams(location.search);
-const site = SITES[params.get("site")] ?? SITES.kihei;
+const siteKey = params.get("site") in SITES ? params.get("site") : "kihei";
+const site = SITES[siteKey];
 const now = parseHstParam(params.get("t")) ?? new Date();
 const today = hstDay(now);
 const {rise, set} = sunTimes(today, site.spot);
@@ -94,6 +103,8 @@ const ahead = isLive ? daylight.filter(h => h.ts >= +now - HOUR / 2) : daylight;
 const days = outlook(site.station, forecastRows, now).filter(d => d.day > day).slice(0, 5);
 const last = obs.at(-1);
 const rating = live?.rating;
+// NWS surf alerts for these shores: a black bar across the top.
+const alerts = await fetchSurfAlerts(siteKey, now);
 ```
 
 ```js
@@ -129,7 +140,7 @@ function summary() {
 const seen = isLive ? obs.filter(d => d.ts >= +rise - HOUR / 2) : [];
 const yMax = Math.max(25, d3.max(seen, d => d.wgust) ?? 0, d3.max(ahead, h => h.wavg) ?? 0);
 const chart = Plot.plot({
-  width: 496, height: 250, marginLeft: 30, clip: true, marginRight: 6, marginBottom: 22, marginTop: 6,
+  width: 496, height: alerts.length ? 250 - 34 * Math.min(alerts.length, 2) : 250, marginLeft: 30, clip: true, marginRight: 6, marginBottom: 22, marginTop: 6,
   style: {fontSize: "14px", fontWeight: 700, color: "#000", background: "#fff", fontFamily: "DejaVu Sans, sans-serif"},
   x: {type: "time", domain: [sun.rise, sun.set], ticks: d3.timeHour.every(2), tickFormat: hh, label: null},
   y: {domain: [-4, yMax], ticks: [0, 10, 20, 30, 40].filter(t => t <= yMax), label: null, grid: true},
@@ -148,10 +159,10 @@ for (const el of chart.querySelectorAll("[stroke-opacity]")) el.setAttribute("st
 for (const el of chart.querySelectorAll("g[aria-label='y-grid'] line")) el.setAttribute("stroke", "#aaa");
 
 const liveLeft = html`<div class="rt-now">
-    <span class="rt-label">Now · ${site.where}</span>
+    <span class="rt-label">Now · ${alerts.length && last ? (ago(last.ts) <= 1 ? "just now" : `${ago(last.ts)} min ago`) : site.where}</span>
     ${last ? html`<div class="rt-big">${Math.round(last.wavg)}<small> kn</small>${last.wgust != null ? html` <small>g${Math.round(last.wgust)}</small>` : ""}</div>
       <div class="rt-dir">${compassPoint(last.wdir)} ${Math.round(last.wdir)}° ${badge(windClass(site.station, last))}</div>
-      <div class="rt-line rt-muted">${ago(last.ts) <= 1 ? "just now" : `${ago(last.ts)} min ago`}${last.wlull != null ? ` · lull ${Math.round(last.wlull)}` : ""}</div>`
+      ${alerts.length ? "" : html`<div class="rt-line rt-muted">${ago(last.ts) <= 1 ? "just now" : `${ago(last.ts)} min ago`}${last.wlull != null ? ` · lull ${Math.round(last.wlull)}` : ""}</div>`}`
     : html`<div class="rt-line">No recent reading</div>`}
     <div class="rt-rule"></div>
     <span class="rt-label">Finish · ${site.finishName}</span>
@@ -177,7 +188,10 @@ const outlookLeft = html`<div class="rt-now">
     <div class="rt-line rt-muted">Live from ${String(GO_START).padStart(2, "0")}:00</div>
   </div>`;
 
-const panel = html`<div class="rt">
+const panel = html`<div class="rt ${alerts.length ? "rt-alerting" : ""}" style=${alerts.length ? "grid-template-rows: auto auto minmax(0, 1fr) auto; padding-top: 0" : ""}>
+  ${alerts.length ? html`<div class="rt-alerts">${alerts.slice(0, 2).map(a => html`<div class="rt-alert">
+    <span class="rt-alert-event">⚠ ${a.event.toUpperCase()}</span><span>${shortShores(a)}</span><span class="rt-alert-until">${shortUntil(a)}</span>
+  </div>`)}</div>` : ""}
   <div class="rt-head">
     <h1>${site.title}</h1>
     <span class="rt-meta">${isLive ? html`${today} · ${hh(now)} · sunset ${hh(set)}` : html`${day} · sunrise ${hh(sun.rise)} · sunset ${hh(sun.set)}`}</span>
