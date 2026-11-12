@@ -25,7 +25,12 @@
 # elsewhere.
 
 here=`cd "$(dirname "$0")" && pwd`
-lake=${LAKE:-$HOME/stuff/duck}
+# LAKE: the dwp lake's client dir when this machine has one, else ~/stuff/duck.
+if [ -z "${LAKE-}" ]; then
+  LAKE=$HOME/stuff/duck
+  [ -e "$HOME/.config/lakes/dwp/quack-init.sql" ] && LAKE=$HOME/.config/lakes/dwp
+fi
+lake=$LAKE
 
 # update.sql still opens the NDBC realtime files while planning even though
 # a backfill discards them, so hand it empty local stand-ins instead.

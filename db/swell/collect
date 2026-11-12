@@ -35,7 +35,12 @@ station=$1
 site=$2
 
 here=`cd "$(dirname "$0")" && pwd`
-lake=${LAKE:-$HOME/stuff/duck}
+# LAKE: the dwp lake's client dir when this machine has one, else ~/stuff/duck.
+if [ -z "${LAKE-}" ]; then
+  LAKE=$HOME/stuff/duck
+  [ -e "$HOME/.config/lakes/dwp/quack-init.sql" ] && LAKE=$HOME/.config/lakes/dwp
+fi
+lake=$LAKE
 ndbc=https://www.ndbc.noaa.gov/data
 
 # A buoy that's out (no recent reports) has no realtime files. Skip it

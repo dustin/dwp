@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 csv.field_size_limit(sys.maxsize)  # coastline WKT is megabytes
 DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))

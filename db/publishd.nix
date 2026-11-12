@@ -45,7 +45,7 @@ in
     };
     lake = mkOption {
       type = types.str;
-      default = "${config.home.homeDirectory}/stuff/duck";
+      default = "${config.home.homeDirectory}/.config/lakes/dwp";
       description = "LAKE: a directory whose quack-init.sql connects to the lake.";
     };
     rcloneConfig = mkOption {

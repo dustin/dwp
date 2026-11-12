@@ -475,7 +475,7 @@ def main():
     ap.add_argument("riders")
     ap.add_argument("question", nargs="+")
     a = ap.parse_args()
-    lake = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+    lake = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
     question, riders = " ".join(a.question), a.riders.split(",")
     with tempfile.TemporaryDirectory() as tmp:
         snapshot(lake, riders, tmp)

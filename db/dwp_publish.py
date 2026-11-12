@@ -101,7 +101,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
-LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
 # Every publish goes through the publish service (publishd), over the
 # broker DWP_MQTT (default mqtt); publishd sets DWP_PUBLISH_LOCAL for the
 # ./publish it runs, and ./publish --local runs here when it's down.

@@ -2,7 +2,8 @@
 # publish, publishd),
 # with what they need on PATH (python3, DuckDB 2.0, rclone), so a service on
 # any host can run them without a checkout. They still find the lake the
-# usual way: LAKE (default ~/stuff/duck) holding quack-init.sql.
+# usual way: LAKE (default ~/.config/lakes/dwp, which nixos-configs' duckq
+# renders, else ~/stuff/duck) holding quack-init.sql.
 #
 # duckdb must be 2.0 (the lake is on 2.0 / DuckLake 1.1); cams/hm-module.nix
 # passes ../nix/duckdb.nix's when pkgs' is older.

@@ -15,7 +15,13 @@ set -o pipefail
 PATH=/bin:/usr/bin:$PATH
 
 here=$(cd "$(dirname "$0")" && pwd)
-cd "${LAKE:-$HOME/stuff/duck}"
+# LAKE: the dwp lake's client dir when this machine has one, else ~/stuff/duck.
+if [ -z "${LAKE-}" ]; then
+  LAKE=$HOME/stuff/duck
+  [ -e "$HOME/.config/lakes/dwp/quack-init.sql" ] && LAKE=$HOME/.config/lakes/dwp
+fi
+export LAKE
+cd "$LAKE"
 
 nc -vz -w 3 mqtt 1883 >&2
 

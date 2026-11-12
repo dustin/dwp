@@ -130,7 +130,7 @@ import sources  # noqa: E402
 import ask  # noqa: E402
 import forecast  # noqa: E402
 
-LAKE_DIR = os.environ.get("LAKE") or os.path.expanduser("~/stuff/duck")
+LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
 STATUS_EVERY = 5 * 60  # how often the bot's status checks the conditions
 EDIT_EVERY = 15 * 60  # the least time between edits of the pinned message
 CAM_PAGE = "https://www.grandwailea.com/grand-wailea-maui-webcam"
