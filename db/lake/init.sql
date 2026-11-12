@@ -6,7 +6,6 @@ INSTALL ducklake; LOAD ducklake;
 INSTALL sqlite; LOAD sqlite;
 INSTALL spatial; LOAD spatial;
 INSTALL httpfs; LOAD httpfs;
-INSTALL aws; LOAD aws;
 
 SET autoinstall_known_extensions = 1;
 SET autoload_known_extensions = 1;
@@ -20,14 +19,4 @@ CREATE SECRET http_auth (
     EXTRA_HTTP_HEADERS MAP {
         'Accept': 'application/csv'
     }
-);
-
--- Older data files live in S3 (s3://lake.west.spy.net/files/...). Same
--- region and path style as the big lake's persistent secret on dsstudio;
--- the key comes from ~/.aws/credentials (nixos-configs' my.secrets).
-CREATE SECRET lake_s3 (
-    TYPE s3,
-    PROVIDER credential_chain,
-    CHAIN 'config',
-    REGION 'us-east-1'
 );

@@ -39,10 +39,27 @@ let
     .output
   '';
 
+  # Prints a CREATE SECRET for the lake's data files in S3
+  # (s3://lake.west.spy.net/files/...), with the default profile's key from
+  # the AWS credentials file (the aws extension's credential chain wants a
+  # ~/.aws/config too). Same region as the big lake's secret. Nothing
+  # without the file.
+  s3Secret = ''
+    s3_secret() {
+      local f=${lib.escapeShellArg cfg.awsCredentials} id="" key=""
+      [ -r "$f" ] || return 0
+      id=$(sed -n 's/^[[:space:]]*aws_access_key_id[[:space:]]*=[[:space:]]*//p' "$f" | head -n 1)
+      key=$(sed -n 's/^[[:space:]]*aws_secret_access_key[[:space:]]*=[[:space:]]*//p' "$f" | head -n 1)
+      [ -n "$id" ] && [ -n "$key" ] || return 0
+      printf "CREATE OR REPLACE SECRET lake_s3 (TYPE s3, KEY_ID '%s', SECRET '%s', REGION '%s');\n" \
+        "$id" "$key" ${lib.escapeShellArg cfg.s3Region}
+    }
+  '';
+
   server = pkgs.writeShellApplication {
     name = "dwp-lake-server";
-    runtimeInputs = [ duckdb pkgs.coreutils ];
-    text = ''
+    runtimeInputs = [ duckdb pkgs.coreutils pkgs.gnused ];
+    text = s3Secret + ''
       dir=${lib.escapeShellArg cfg.dir}
       token_file=${lib.escapeShellArg cfg.tokenFile}
 
@@ -72,7 +89,9 @@ let
       # that never ends. .bail around quack_serve so a failure exits (and
       # the service manager restarts it) instead of idling unserved.
       exec duckdb < <(
-        printf '.read %s\n.bail on\nINSTALL quack; LOAD quack;\n' ${sessionSql}
+        printf '.read %s\n' ${sessionSql}
+        printf '.output /dev/null\n'; s3_secret; printf '.output\n'
+        printf '.bail on\nINSTALL quack; LOAD quack;\n'
         printf "CALL quack_serve('%s', token = '%s');\n.bail off\n" \
           ${lib.escapeShellArg cfg.listen} "$token"
         exec tail -f /dev/null
@@ -84,10 +103,13 @@ let
   # dwp-lake is stopped (or refusing to start), like the split's drops.
   local = pkgs.writeShellApplication {
     name = "dwp-lake-local";
-    runtimeInputs = [ duckdb ];
-    text = ''
+    runtimeInputs = [ duckdb pkgs.coreutils pkgs.gnused ];
+    text = s3Secret + ''
       cd ${lib.escapeShellArg cfg.dir}
-      exec duckdb -init ${sessionSql} "$@"
+      init=$(umask 077; mktemp)
+      trap 'rm -f "$init"' EXIT
+      { cat ${sessionSql}; printf '.output /dev/null\n'; s3_secret; printf '.output\n'; } > "$init"
+      duckdb -init "$init" "$@"
     '';
   };
 
@@ -169,6 +191,16 @@ in
     tokenFile = mkOption {
       type = types.str;
       description = "File holding the Quack token clients attach with.";
+    };
+    awsCredentials = mkOption {
+      type = types.str;
+      default = "${config.home.homeDirectory}/.aws/credentials";
+      description = "AWS credentials file whose default key reads the lake's data files in S3.";
+    };
+    s3Region = mkOption {
+      type = types.str;
+      default = "us-east-1";
+      description = "Region for the lake's S3 secret.";
     };
     memoryLimit = mkOption {
       type = types.str;
