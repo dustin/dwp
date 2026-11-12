@@ -129,6 +129,17 @@ let
       cd "''${LAKE:-${cfg.client}}"
       rm -f "$bak/tables" "$bak/full.tmp.db" "$bak/full.tmp.db.xz"
 
+      # Right after a (re)start the server isn't listening yet; give it
+      # two minutes before failing.
+      for i in $(seq 24); do
+        duckdb -bail --init quack-init.sql -c 'select 1' >/dev/null 2>&1 && break
+        if [ "$i" = 24 ]; then
+          echo "dwp-lake-backup: lake server not answering" >&2
+          exit 1
+        fi
+        sleep 5
+      done
+
       # The CLI's .output writes here, so the list of tables comes back as
       # a file; keep only names, since 2.0 may print warnings first.
       duckdb -bail --init quack-init.sql <<SQL
