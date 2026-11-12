@@ -91,31 +91,45 @@ let
     '';
   };
 
-  # The big lake's back-the-duck-up.sh, for this lake: an EXPORT DATABASE
-  # (Parquet, zstd 9 like its backup.sql, but every table plus the views
-  # and macros in schema.sql, so nothing new is left out) synced to S3, and a full copy as one DuckDB file, xz'd, next
-  # to it. Both run in the server's session through quack, so the paths
-  # are the server's: this belongs on the lake's host.
+  # The big lake's back-the-duck-up.sh, for this lake: each table in main
+  # copied to BACKUP_DIR/lake/<table>.parquet (zstd 9, the names its
+  # backup.sql used), copied (never synced: dsstudio's lake writes there
+  # too) to backup.remote, and a full copy as one DuckDB file, xz'd, at
+  # BACKUP_DIR/lake.db.xz. The COPYs run in the server's session through
+  # quack, so the paths are the server's: this belongs on the lake's host.
   backup = pkgs.writeShellApplication {
     name = "dwp-lake-backup";
-    runtimeInputs = [ duckdb pkgs.rclone pkgs.xz pkgs.coreutils ];
+    runtimeInputs = [ duckdb pkgs.rclone pkgs.xz pkgs.coreutils pkgs.gnugrep ];
     text = ''
       bak=${lib.escapeShellArg cfg.backup.dir}
-      mkdir -p "$bak"
+      out=$bak/lake
+      mkdir -p "$out"
       cd "''${LAKE:-${cfg.client}}"
-      rm -rf "$bak/export.new" "$bak/full.tmp.db" "$bak/full.tmp.db.xz"
+      rm -f "$bak/tables" "$bak/full.tmp.db" "$bak/full.tmp.db.xz"
 
-      echo "exporting to $bak/export.new"
+      # The CLI's .output writes here, so the list of tables comes back as
+      # a file; keep only names, since 2.0 may print warnings first.
       duckdb -bail --init quack-init.sql <<SQL
-      EXPORT DATABASE lake TO '$bak/export.new' (FORMAT parquet, COMPRESSION zstd, COMPRESSION_LEVEL 9);
+      .mode list
+      .headers off
+      .output $bak/tables
+      select table_name from duckdb_tables()
+       where database_name = 'lake' and schema_name = 'main' order by 1;
+      .output
       SQL
-      rm -rf "$bak/export.old"
-      [ -d "$bak/export" ] && mv "$bak/export" "$bak/export.old"
-      mv "$bak/export.new" "$bak/export"
-      rm -rf "$bak/export.old"
+      sql=""
+      while read -r t; do
+        sql+="copy (from main.\"$t\") to '$out/$t.parquet' (compression zstd, compression_level 9);"$'\n'
+      done < <(grep -E '^[a-z_][a-z0-9_]*$' "$bak/tables")
+      if [ -z "$sql" ]; then
+        echo "dwp-lake-backup: no tables found in lake.main" >&2
+        exit 1
+      fi
+      echo "copying $(grep -c . <<< "$sql") tables to $out"
+      duckdb -bail --init quack-init.sql <<< "$sql"
 
-      echo "syncing to ${cfg.backup.remote}"
-      rclone sync -v "$bak/export/" ${lib.escapeShellArg cfg.backup.remote}
+      echo "copying to ${cfg.backup.remote}"
+      rclone copy -v "$out/" ${lib.escapeShellArg cfg.backup.remote}
 
       echo "full copy to $bak/lake.db.xz"
       duckdb -bail --init quack-init.sql <<SQL
@@ -177,16 +191,16 @@ in
       description = "Run maintenance.sql nightly at 03:30.";
     };
     backup = {
-      enable = mkEnableOption "the nightly export (03:00) to S3 and full .db.xz copy";
+      enable = mkEnableOption "the nightly per-table Parquet copy (03:00) to S3 and full .db.xz copy";
       dir = mkOption {
         type = types.str;
         default = "${config.home.homeDirectory}/lakes/dwp-bak";
-        description = "Where the export and lake.db.xz are kept. Never inside DIR/lake.";
+        description = "Where lake/<table>.parquet and lake.db.xz are kept. Never inside DIR/lake.";
       };
       remote = mkOption {
         type = types.str;
-        example = "s3:backup.west.spy.net/ducklake-dwp/";
-        description = "rclone destination the export is synced to.";
+        example = "s3:backup.west.spy.net/ducklake/";
+        description = "rclone destination the Parquet files are copied to (rclone copy: nothing there is deleted).";
       };
       rcloneConfig = mkOption {
         type = types.nullOr types.str;
