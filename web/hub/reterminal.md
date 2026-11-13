@@ -103,8 +103,9 @@ const ahead = isLive ? daylight.filter(h => h.ts >= +now - HOUR / 2) : daylight;
 const days = outlook(site.station, forecastRows, now).filter(d => d.day > day).slice(0, 5);
 const last = obs.at(-1);
 const rating = live?.rating;
-// NWS surf alerts for these shores: a black bar across the top.
-const alerts = await fetchSurfAlerts(siteKey, now);
+// NWS surf alerts: a black bar across the top. Kīhei shows every Maui
+// one, north shore too (Dustin wants to see them on the Sticky).
+const alerts = await fetchSurfAlerts(siteKey === "kihei" ? null : siteKey, now);
 ```
 
 ```js
