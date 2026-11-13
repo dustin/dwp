@@ -39,9 +39,9 @@ toc: false
 Kīhei conditions: present, future, and past.
 
 ```js
-// NWS High Surf Advisories and Warnings for these shores, up top.
+// Every Maui NWS High Surf Advisory or Warning, north shore ones too.
 import {fetchSurfAlerts, surfAlertBanner} from "./components/surf-alerts.js";
-display(surfAlertBanner(await fetchSurfAlerts("kihei")));
+display(surfAlertBanner(await fetchSurfAlerts()));
 ```
 
 ```js
