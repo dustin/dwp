@@ -18,13 +18,14 @@ from the room each time) can act for any rider and publish:
     again with the same caption, "!retry 585" with another foil.
     A room admin can import someone else's run by naming the rider first
     in the caption: "walter 585", or just "walter".
-  * a .zip of GPX files (like the Waterspeed export on the hub's
-    waterspeed page), captioned with a rider and optionally a foil and
-    board ("walter", "apphia 685 board watermelon"), imports every GPX in
-    it as that rider's runs, then publishes once. Riders can send their
-    own; naming another rider takes a room admin. Without a foil each run
-    takes the rider's last foil from its start beach, or "unknown" when
-    there is none (fix it later with !foil or !ask).
+  * "!import [rider] <url> [foil] [board <board>]" downloads a zip of GPX
+    files (like the Waterspeed export on the hub's waterspeed page), or
+    one GPX, from an http(s) URL and imports every GPX as that rider's
+    runs (the sender's by default; another rider takes a room admin),
+    then publishes once: "!import walter https://example.com/part01.zip".
+    Without a foil each run takes the rider's last foil from its start
+    beach, or "unknown" when there is none (fix it later with !foil or
+    !ask).
   * "!sync" runs drive-sync for the sender's rider: their shared Google
     Drive folder, an rclone remote named after them. A room admin's
     "!sync" syncs every rider, and "!sync walter" just Walter.
@@ -185,14 +186,14 @@ HELP_RIDER = [
     ("!unsplit <run link>", "join a split run (the first half) back up"),
     ("!delete <run link>", "delete that run for good (asks you to confirm with a 👍)"),
     ("!sync", "import your new runs from your Drive folder"),
-    ("📎 a .zip of GPX files", "import them all as your runs (caption: foil, board, or nothing)"),
+    ("!import <url>", "download a zip of GPX files (or one GPX) and import them all as your runs; a foil and board can follow the URL"),
     ("!retry", "import your last GPX again after a failure (\"!retry 585\" with another foil)"),
     ("!ask how many km on Sundays?", "ask about your runs in plain English"),
     ("!ask the 2 runs with an unknown foil were the ART 999", "propose a change; a room admin's ✅ applies it"),
 ]
 HELP_ADMIN = [
     ("📎 a .gpx captioned walter 585", "import it as Walter's run (any rider, before the foil)"),
-    ("📎 a .zip captioned walter", "import every GPX in it as Walter's runs"),
+    ("!import walter <url>", "import a zip of GPX files as Walter's runs"),
     ("!sync", "sync every rider"),
     ("!sync walter", "sync one rider"),
     ("!foil walter orca 685", "change another rider's latest foil"),
@@ -203,7 +204,7 @@ HELP_ADMIN = [
     ("!ask walter ...", "ask about (or change) another rider's runs"),
 ]
 # Commands only --user riders can run; anyone else gets a 🚫.
-RIDER_COMMANDS = {"!sync", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!delete", "!ask", "!publish"}
+RIDER_COMMANDS = {"!sync", "!import", "!retry", "!last", "!foil", "!board", "!glitch", "!trim", "!split", "!unsplit", "!delete", "!ask", "!publish"}
 HELP_ALERTS = [
     ("!alerts runs off", "stop new-run posts from the 16:00, 18:00 and 23:00 syncs in this room"),
     ("!alerts sources off", "stop data source alerts (a feed going offline and coming back)"),
@@ -219,7 +220,7 @@ HELP_ROOMS = [
 ]
 # Any unambiguous start of a command works, since long commands are a pain
 # to type on a phone: "!c chart" is "!conditions chart", "!l" is "!last".
-COMMANDS = ["conditions", "forecast", "alerts", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "delete", "sync", "ask", "publish", "room", "rooms", "retry"]
+COMMANDS = ["conditions", "forecast", "alerts", "help", "last", "foil", "board", "glitch", "trim", "split", "unsplit", "delete", "sync", "ask", "publish", "room", "rooms", "retry", "import"]
 ROOM_SETTINGS = {"alerts": "run alerts", "sources": "data source alerts",
                  "runs": "new runs from scheduled syncs", "pinned": "pinned conditions"}
 # What !alerts and !room call each setting: "ratings" for run alerts, since
@@ -571,17 +572,48 @@ ZIP_MAX_FILES = 500  # more GPX than this in one zip is a mistake
 ZIP_MAX_BYTES = 2 << 30  # the same, unpacked
 
 
-def import_zip(mx, room, event_id, path, caption, rider, tmp):
-    """Import every GPX in the zip at path as rider's runs (caption: foil
-    and board, as for one GPX), publish once, then describe them."""
+def download_url(url, path):
+    """Save url to path, at most ZIP_MAX_BYTES; (filename, seconds)."""
+    t = time.monotonic()
+    req = urllib.request.Request(url, headers={"User-Agent": "dwp-matrix-bot"})
+    with urllib.request.urlopen(req, timeout=120) as r, open(path, "wb") as out:
+        got = 0
+        while chunk := r.read(1 << 20):
+            got += len(chunk)
+            if got > ZIP_MAX_BYTES:
+                raise OSError(f"more than {ZIP_MAX_BYTES >> 20} MB")
+            out.write(chunk)
+        name = os.path.basename(urllib.parse.urlparse(r.geturl()).path) or "download"
+    return name, time.monotonic() - t
+
+
+def import_zip(mx, room, event_id, path, caption, rider, tmp, name="", fetched=None):
+    """Import every GPX in the zip (or the one GPX) at path as rider's runs
+    (caption: foil and board, as for one GPX), publish once, then describe
+    them. fetched: seconds the download took, for the timings."""
     foil, board = split_caption(caption or "-")
     if board:
         board, why = resolve_gear(rider, "board", board)
         if why:
-            mx.notice(room, f"🤔 {why}\nSend the zip again with another caption.",
+            mx.notice(room, f"🤔 {why}\nTry again with another foil and board.",
                       reply_to=event_id)
             return
-    mx.react(room, event_id, "👀")
+    if not zipfile.is_zipfile(path):
+        with open(path, "rb") as fh:
+            if b"<gpx" not in fh.read(4096):
+                mx.notice(room, "❌ that isn't a zip or a GPX file.", reply_to=event_id)
+                return
+        files = [(name or "download.gpx", path)]
+    else:
+        files = unzip_gpx(mx, room, event_id, path, tmp)
+        if not files:
+            return
+    import_files(mx, room, event_id, files, foil, board, rider, fetched)
+
+
+def unzip_gpx(mx, room, event_id, path, tmp):
+    """[(name, path)] of the GPX files in the zip at path, unpacked in tmp;
+    None (having said why) if there are none or too many."""
     try:
         with zipfile.ZipFile(path) as z:
             members = [m for m in z.infolist() if not m.is_dir()
@@ -589,11 +621,11 @@ def import_zip(mx, room, event_id, path, caption, rider, tmp):
                        and not os.path.basename(m.filename).startswith("._")]
             if not members:
                 mx.notice(room, "❌ there are no .gpx files in that zip.", reply_to=event_id)
-                return
+                return None
             if len(members) > ZIP_MAX_FILES or sum(m.file_size for m in members) > ZIP_MAX_BYTES:
                 mx.notice(room, f"❌ that zip is too big ({len(members)} GPX files); "
                                 f"send at most {ZIP_MAX_FILES} at a time.", reply_to=event_id)
-                return
+                return None
             files = []
             for i, m in enumerate(sorted(members, key=lambda m: m.filename)):
                 out = os.path.join(tmp, f"{i:04d}.gpx")  # never the member's own path
@@ -602,7 +634,13 @@ def import_zip(mx, room, event_id, path, caption, rider, tmp):
                 files.append((os.path.basename(m.filename), out))
     except (zipfile.BadZipFile, OSError) as e:
         mx.notice(room, f"❌ couldn't read that zip: {e}", reply_to=event_id)
-        return
+        return None
+    return files
+
+
+def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
+    """Import files [(name, gpx path)] as rider's runs, publish once, and
+    say how it went (see import_zip)."""
     head = f"Importing {len(files)} GPX files as {rider}'s runs"
     status = mx.notice(room, head + "…", reply_to=event_id)
     progress = (lambda text: mx.edit(room, status, text)) if status else (lambda text: None)
@@ -645,8 +683,9 @@ def import_zip(mx, room, event_id, path, caption, rider, tmp):
         else:
             progress(f"❌ {rider}: nothing committed to the lake ({stats})")
     lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"
-             f" in {secs(took + (pub_time or 0))}"]
-    lines.append(f"  parse {secs(parse)} · lake {secs(lake)}"
+             f" in {secs(took + (pub_time or 0) + (fetched or 0))}"]
+    lines.append("  " + (f"download {secs(fetched)} · " if fetched is not None else "")
+                 + f"parse {secs(parse)} · lake {secs(lake)}"
                  + (f" · publish {secs(pub_time)}" if pub_time is not None else ""))
     if unknown:
         lines.append(f"{unknown} with foil unknown (no earlier foil from that beach)")
@@ -1525,12 +1564,6 @@ def is_gpx(c):
         name.endswith(".gpx") or "gpx" in c.get("info", {}).get("mimetype", ""))
 
 
-def is_zip(c):
-    name = (c.get("filename") or c.get("body") or "").lower()
-    return c.get("msgtype") == "m.file" and "url" in c and (
-        name.endswith(".zip") or "zip" in c.get("info", {}).get("mimetype", ""))
-
-
 def caption(c):
     """A file's caption (Matrix 1.10: a body that differs from filename)."""
     fn, body = c.get("filename"), c.get("body", "")
@@ -1989,8 +2022,8 @@ class Bot:
             if text.split()[:1] and text.split()[0] in RIDER_COMMANDS:
                 self.mx.react(room, eid, "🚫")  # seen, and not for them
             return
-        if is_gpx(c) or is_zip(c):
-            # A caption can name whose run(s) these are first: "walter 585".
+        if is_gpx(c):
+            # A caption can name whose run this is first: "walter 585".
             foil, whose = caption(c), rider
             first = foil.split()[:1]
             if first and first[0].lower() in self.riders():
@@ -2000,22 +2033,12 @@ class Bot:
                     self.mx.notice(room, "Only room admins can import someone else's runs.",
                                    reply_to=eid)
                     return
-            suffix = ".gpx" if is_gpx(c) else ".zip"
-            fd, path = tempfile.mkstemp(suffix=suffix, dir=self.tmp)
+            fd, path = tempfile.mkstemp(suffix=".gpx", dir=self.tmp)
             try:
                 with os.fdopen(fd, "wb") as fh:
                     fh.write(self.mx.download(c["url"]))
             except (urllib.error.URLError, OSError) as e:
                 self.mx.notice(room, f"❌ couldn't download that file: {e}", reply_to=eid)
-                return
-            if suffix == ".zip":
-                if foil and not FOIL.match(foil):
-                    os.unlink(path)
-                    self.mx.notice(room, "A zip's caption is a rider, foil and board, "
-                                         "like: walter 585 board gator", reply_to=eid)
-                    return
-                threading.Thread(target=self.zip_job, args=(room, eid, path, foil, whose),
-                                 name="zip-import", daemon=True).start()
                 return
             if (room, sender) in self.pending:  # a newer file replaces one still waiting
                 os.unlink(self.pending.pop((room, sender))[1])
@@ -2029,6 +2052,24 @@ class Bot:
         if c.get("msgtype") != "m.text":
             return
         text = unalias(c.get("body", "").strip())
+        if text.startswith("!import"):
+            words = text.split()[1:]
+            whose = rider
+            if words and words[0].lower() in self.riders():
+                whose = words.pop(0).lower()
+            url = words.pop(0) if words else ""
+            rest = " ".join(words)
+            if not re.match(r"https?://\S+$", url) or (rest and not FOIL.match(rest)):
+                self.mx.notice(room, "!import takes a URL of a zip of GPX files (or one GPX), "
+                                     "like: !import walter https://example.com/runs.zip 585 "
+                                     "board gator", reply_to=eid)
+            elif whose != rider and not self.room_admin(room, sender):
+                self.mx.notice(room, "Only room admins can import someone else's runs.",
+                               reply_to=eid)
+            else:
+                threading.Thread(target=self.url_job, args=(room, eid, url, rest, whose),
+                                 name="url-import", daemon=True).start()
+            return
         if text.startswith("!sync"):
             riders = text.split()[1:]
             if not self.room_admin(room, sender):
@@ -2395,15 +2436,22 @@ class Bot:
         else:
             self.pending[room, sender] = (eid, path, time.time(), foil, rider)
 
-    def zip_job(self, room, eid, path, foil, rider):
+    def url_job(self, room, eid, url, foil, rider):
+        """!import: download url, then import_zip it."""
         tmp = tempfile.mkdtemp(dir=self.tmp)
+        path = os.path.join(tmp, "download")
+        self.mx.react(room, eid, "👀")
         try:
-            import_zip(self.mx, room, eid, path, foil, rider, tmp)
+            try:
+                name, took = download_url(url, path)
+            except (urllib.error.URLError, OSError, ValueError) as e:
+                self.mx.notice(room, f"❌ couldn't download that: {e}", reply_to=eid)
+                return
+            import_zip(self.mx, room, eid, path, foil, rider, tmp, name, took)
         except Exception as e:  # noqa: BLE001 - say so rather than die quietly
-            log(f"zip import failed: {e!r}")
-            self.mx.notice(room, f"❌ zip import failed: {e}", reply_to=eid)
+            log(f"url import failed: {e!r}")
+            self.mx.notice(room, f"❌ import failed: {e}", reply_to=eid)
         finally:
-            os.unlink(path)
             shutil.rmtree(tmp, ignore_errors=True)
 
 
