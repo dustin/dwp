@@ -47,7 +47,7 @@ put the number of runs already saved in **Skip first**.
 
 ## 4. Send the zips
 
-Send the zip files to Dustin, or share them in a Google Drive or Dropbox folder.
+Drop the zip files into [copyparty.sallings.org/upload](https://copyparty.sallings.org/upload/).
 If any runs failed, there's a `failed.txt` in the zip listing them.
 
 <style>
