@@ -552,6 +552,15 @@ def secs(t):
     return f"{t:.1f}s" if t < 10 else f"{t:.0f}s" if t < 60 else f"{int(t // 60)}m{int(t % 60):02d}s"
 
 
+ADMIN_ROOM = None  # the first --room: import timings go there (see profile)
+
+
+def profile(mx, text):
+    """Post timing details to the admin room, not the room the import was in."""
+    if ADMIN_ROOM:
+        mx.notice(ADMIN_ROOM, "⏱ " + text)
+
+
 def publish_timed():
     """Run publish; (seconds it took, None or why it failed)."""
     t = time.monotonic()
@@ -649,7 +658,7 @@ def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
     with SYNC_LOCK:
         start = time.monotonic()
         if start - waited > 5:
-            progress(f"{head}… (waited {secs(start - waited)} for a sync to finish)")
+            progress(f"{head}… (waited for a sync to finish)")
         before = runs(rider)
         shown = start
         for i, (name, f) in enumerate(files, 1):
@@ -666,27 +675,27 @@ def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
                 failed.append((name, tail(out, 1)))
             if time.monotonic() - shown > 15 and i < len(files):  # edits are cheap, not free
                 shown = time.monotonic()
-                progress(f"{head}… {i}/{len(files)} in {secs(shown - start)}"
+                progress(f"{head}… {i}/{len(files)}"
                          + (f", {len(failed)} failed" if failed else ""))
         new = runs(rider) - before
         done = len(files) - len(failed)
         took = time.monotonic() - start
-        stats = f"{secs(took)}: parse {secs(parse)}, lake {secs(lake)}"
         published = pub_time = None
         if done:
-            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake in {stats}. "
+            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake. "
                      "Publishing…")
             pub_time, published = publish_timed()
-            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake in {stats}. "
-                     + (f"❌ publish failed after {secs(pub_time)}" if published
-                        else f"📤 published in {secs(pub_time)}."))
+            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake. "
+                     + ("❌ publish failed." if published else "📤 published."))
         else:
-            progress(f"❌ {rider}: nothing committed to the lake ({stats})")
-    lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"
-             f" in {secs(took + (pub_time or 0) + (fetched or 0))}"]
-    lines.append("  " + (f"download {secs(fetched)} · " if fetched is not None else "")
-                 + f"parse {secs(parse)} · lake {secs(lake)}"
-                 + (f" · publish {secs(pub_time)}" if pub_time is not None else ""))
+            progress(f"❌ {rider}: nothing committed to the lake")
+    lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"]
+    profile(mx, f"{rider}: {done} of {len(files)} GPX files in "
+                f"{secs(took + (pub_time or 0) + (fetched or 0))}: "
+                + (f"download {secs(fetched)} · " if fetched is not None else "")
+                + f"parse {secs(parse)} · lake {secs(lake)} (import {secs(took)} wall)"
+                + (f" · publish {secs(pub_time)}" if pub_time is not None else "")
+                + (f" · waited {secs(start - waited)} for a sync" if start - waited > 1 else ""))
     if unknown:
         lines.append(f"{unknown} with foil unknown (no earlier foil from that beach)")
     if failed:
@@ -726,13 +735,12 @@ def import_gpx(mx, room, event_id, path, foil, rider):
                            f"{escape(again)}")
         return False
     parse, lake = import_times(out)
-    stats = f"parse {secs(parse)} · lake {secs(lake)}"
-    status = mx.notice(room, f"💾 committed to the lake ({stats}). Publishing…",
-                       reply_to=event_id)
+    status = mx.notice(room, "💾 committed to the lake. Publishing…", reply_to=event_id)
     pub_time, failed = publish_timed()
-    stats += f" · publish {secs(pub_time)}"
+    profile(mx, f"{rider}: 1 GPX: parse {secs(parse)} · lake {secs(lake)} · "
+                f"publish {secs(pub_time)}")
     done = (f"❌ publish failed: {failed}\nThe run is in the lake; !publish tries again."
-            if failed else f"💾 committed to the lake · 📤 published ({stats})")
+            if failed else "💾 committed to the lake · 📤 published")
     if status:
         mx.edit(room, status, done)
     elif failed:
@@ -740,11 +748,9 @@ def import_gpx(mx, room, event_id, path, foil, rider):
     new = runs(rider) - before
     r = latest(rider, new.pop()) if len(new) == 1 else None
     if not r:
-        mx.notice(room, f"✅ imported (couldn't tell which run it is)\n{stats}",
-                  reply_to=event_id)
+        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
         return True
     text, html = summary(r, rider)
-    text, html = text + f"\n⏱ {stats}", html + f"<br>⏱ {escape(stats)}"
     new = achievements(rider, r["id"])
     if new:
         text += "\n" + "\n".join(new)
@@ -1593,6 +1599,8 @@ class Bot:
         self.invites = json.loads(load_state(self.invites_file) or "{}")
         self.rooms_file = os.path.join(args.state_dir, "rooms")
         self.rooms = list(dict.fromkeys(args.room + (load_state(self.rooms_file) or "").split()))
+        global ADMIN_ROOM
+        ADMIN_ROOM = self.rooms[0]
         self.settings_file = os.path.join(args.state_dir, "room-settings.json")
         self.settings = json.loads(load_state(self.settings_file) or "{}")
 
