@@ -537,6 +537,30 @@ def add_run_cmd(path, foil, board, rider, publish=True):
     return cmd + ([] if publish else ["--no-publish"])
 
 
+COMMITTED = re.compile(r"add-run: committed parse=([\d.]+)s lake=([\d.]+)s")
+
+
+def import_times(out):
+    """(parse, lake) seconds from add-run's output, (0, 0) if it didn't say."""
+    m = COMMITTED.search(out)
+    return (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
+
+
+def secs(t):
+    """A duration for people: 0.4s, 12s, 3m05s."""
+    return f"{t:.1f}s" if t < 10 else f"{t:.0f}s" if t < 60 else f"{int(t // 60)}m{int(t % 60):02d}s"
+
+
+def publish_timed():
+    """Run publish; (seconds it took, None or why it failed)."""
+    t = time.monotonic()
+    try:
+        dwp_publish.run()
+        return time.monotonic() - t, None
+    except dwp_publish.PublishError as e:
+        return time.monotonic() - t, str(e)
+
+
 def foil_lookup_failed(out):
     """The line saying add-run's foil lookup failed, if that's why it did."""
     return next((ln for ln in reversed(out.splitlines())
@@ -579,27 +603,51 @@ def import_zip(mx, room, event_id, path, caption, rider, tmp):
     except (zipfile.BadZipFile, OSError) as e:
         mx.notice(room, f"❌ couldn't read that zip: {e}", reply_to=event_id)
         return
-    mx.notice(room, f"Importing {len(files)} GPX files as {rider}'s runs…", reply_to=event_id)
-    failed, unknown = [], 0
+    head = f"Importing {len(files)} GPX files as {rider}'s runs"
+    status = mx.notice(room, head + "…", reply_to=event_id)
+    progress = (lambda text: mx.edit(room, status, text)) if status else (lambda text: None)
+    failed, unknown, parse, lake = [], 0, 0.0, 0.0
+    waited = time.monotonic()
     with SYNC_LOCK:
+        start = time.monotonic()
+        if start - waited > 5:
+            progress(f"{head}… (waited {secs(start - waited)} for a sync to finish)")
         before = runs(rider)
-        for name, f in files:
+        shown = start
+        for i, (name, f) in enumerate(files, 1):
             ok, out = run(add_run_cmd(f, foil, board, rider, publish=False))
             if not ok and foil == "-" and foil_lookup_failed(out):
                 # nothing ridden from that beach yet: fix the foil later
+                p, l = import_times(out)
+                parse, lake = parse + p, lake + l
                 ok, out = run(add_run_cmd(f, "new unknown", board, rider, publish=False))
                 unknown += ok
+            p, l = import_times(out)
+            parse, lake = parse + p, lake + l
             if not ok:
                 failed.append((name, tail(out, 1)))
+            if time.monotonic() - shown > 15 and i < len(files):  # edits are cheap, not free
+                shown = time.monotonic()
+                progress(f"{head}… {i}/{len(files)} in {secs(shown - start)}"
+                         + (f", {len(failed)} failed" if failed else ""))
         new = runs(rider) - before
-        published = None
-        if len(failed) < len(files):
-            try:
-                dwp_publish.run()
-            except dwp_publish.PublishError as e:
-                published = str(e)
-    done = len(files) - len(failed)
-    lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"]
+        done = len(files) - len(failed)
+        took = time.monotonic() - start
+        stats = f"{secs(took)}: parse {secs(parse)}, lake {secs(lake)}"
+        published = pub_time = None
+        if done:
+            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake in {stats}. "
+                     "Publishing…")
+            pub_time, published = publish_timed()
+            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake in {stats}. "
+                     + (f"❌ publish failed after {secs(pub_time)}" if published
+                        else f"📤 published in {secs(pub_time)}."))
+        else:
+            progress(f"❌ {rider}: nothing committed to the lake ({stats})")
+    lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"
+             f" in {secs(took + (pub_time or 0))}"]
+    lines.append(f"  parse {secs(parse)} · lake {secs(lake)}"
+                 + (f" · publish {secs(pub_time)}" if pub_time is not None else ""))
     if unknown:
         lines.append(f"{unknown} with foil unknown (no earlier foil from that beach)")
     if failed:
@@ -624,7 +672,7 @@ def import_gpx(mx, room, event_id, path, foil, rider):
             return False
     mx.react(room, event_id, "👀")
     before = runs(rider)
-    ok, out = run(add_run_cmd(path, foil, board, rider))
+    ok, out = run(add_run_cmd(path, foil, board, rider, publish=False))
     if not ok:
         why = foil_lookup_failed(out)
         if why:  # the foil lookup failed: ask again, the file waits
@@ -638,12 +686,26 @@ def import_gpx(mx, room, event_id, path, foil, rider):
                       html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>"
                            f"{escape(again)}")
         return False
+    parse, lake = import_times(out)
+    stats = f"parse {secs(parse)} · lake {secs(lake)}"
+    status = mx.notice(room, f"💾 committed to the lake ({stats}). Publishing…",
+                       reply_to=event_id)
+    pub_time, failed = publish_timed()
+    stats += f" · publish {secs(pub_time)}"
+    done = (f"❌ publish failed: {failed}\nThe run is in the lake; !publish tries again."
+            if failed else f"💾 committed to the lake · 📤 published ({stats})")
+    if status:
+        mx.edit(room, status, done)
+    elif failed:
+        mx.notice(room, done, reply_to=event_id)
     new = runs(rider) - before
     r = latest(rider, new.pop()) if len(new) == 1 else None
     if not r:
-        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
+        mx.notice(room, f"✅ imported (couldn't tell which run it is)\n{stats}",
+                  reply_to=event_id)
         return True
     text, html = summary(r, rider)
+    text, html = text + f"\n⏱ {stats}", html + f"<br>⏱ {escape(stats)}"
     new = achievements(rider, r["id"])
     if new:
         text += "\n" + "\n".join(new)

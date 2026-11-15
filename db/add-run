@@ -28,6 +28,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
@@ -76,13 +77,18 @@ def main(argv=None):
 
     with tempfile.TemporaryDirectory(prefix="dwp-import-") as tmp:
         csv_path = os.path.join(tmp, "activity.csv")
+        t0 = time.monotonic()
         gpx_filter.main([args.gpx, "-o", csv_path])
+        t1 = time.monotonic()
         # import.sql reads these with getenv(); import_sql fills them in.
         env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
                    DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
         run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env,
             input=dwp_publish.import_sql(env))
+        t2 = time.monotonic()
+    # The bot reads this line for its timings.
+    print(f"add-run: committed parse={t1 - t0:.2f}s lake={t2 - t1:.2f}s", file=sys.stderr)
 
     if args.no_publish:
         return
@@ -90,6 +96,7 @@ def main(argv=None):
         dwp_publish.run()
     except dwp_publish.PublishError as e:
         die(f"publish: {e}")
+    print(f"add-run: published in {time.monotonic() - t2:.2f}s", file=sys.stderr)
 
 
 if __name__ == "__main__":
