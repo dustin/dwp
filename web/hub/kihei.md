@@ -171,3 +171,14 @@ const similar = similarRuns(allRuns.filter(d => d.ts >= yearAgo), "Kihei", top);
 ```
 
 ${similarRunsCard(similar, top, {station: "Kīhei", region: "Kīhei"})}
+
+## Where everyone rides
+
+```js
+import {fetchHeatmap, heatmapCard} from "./components/trail-heatmap.js";
+const heat = await fetchHeatmap("kihei");
+```
+
+<div class="grid grid-cols-1 kihei-col">${heat.cells.length
+  ? heatmapCard(heat, {resize, runs: allRuns.filter(d => d.region === "Kihei").filter(d => d.has_track).length, maxHeight: 900})
+  : html`<div class="card"><div class="muted">No trail map yet.</div></div>`}</div>

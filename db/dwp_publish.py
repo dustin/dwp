@@ -128,6 +128,16 @@ IMAGE = ["Content-Type: image/jpeg", "Cache-Control: public, max-age=31536000, i
 IMAGE_KEEP_DAYS = float(os.environ.get("DWP_IMAGE_KEEP_DAYS") or 14)
 
 
+# The heatmap grids (see the heatmap table below): spot, region, the
+# southwest corner's lat and lon, and the grid's width and height in cells
+# of HEATMAP_CELL degrees (about 22 m).
+HEATMAP_CELL = 0.0002
+HEATMAP_SPOTS = ", ".join([
+    "('maliko', 'Maui North Shore', 20.880, -156.500, 875, 400)",
+    "('kihei', 'Kihei', 20.640, -156.495, 300, 800)",
+])
+
+
 class Table:
     """One lake table published as one CSV per key.
 
@@ -137,13 +147,13 @@ class Table:
     recent marks keys the first publish re-sends instead of adopting S3's copy.
     """
 
-    def __init__(self, name, frm, key, cols, order, recent, day=None):
+    def __init__(self, name, frm, key, cols, order, recent, day=None, headers=GZ_CSV):
         self.name, self.frm, self.key, self.cols = name, frm, key, cols
-        self.order, self.recent, self.day = order, recent, day
+        self.order, self.recent, self.day, self.hdr = order, recent, day, headers
 
     def headers(self, key, today):
         if self.day is None:
-            return GZ_CSV
+            return self.hdr
         day = re.search(r"/day=([0-9-]+)/", key).group(1)
         return SHORT if day >= (today - timedelta(days=1)).isoformat() else LONG
 
@@ -178,6 +188,37 @@ TABLES = [
     conditions("wind_forecast", order="ts, model, issued, lead_days"),
     # file is where the image is on this machine; not published.
     conditions("cam_images", cols="x.* exclude (site, day, file)", order="ts, kind"),
+    # Trail heatmaps for the Maliko and Kihei pages: how many runs (by
+    # every rider on the hub, as riders.hub says) passed through each cell of a grid over the spot, as cell
+    # column i and row j from the grid's southwest corner. Each point and
+    # the midpoint back to the one before it count, so a fast stretch
+    # doesn't skip cells. HEATMAP_SPOTS in web/lib/components/trail-heatmap.js
+    # must match the grids here.
+    Table("heatmap", f"""(
+        with spots(spot, region, lat0, lon0, nx, ny) as (values {HEATMAP_SPOTS}),
+        p as (
+          select s.spot, s.lat0, s.lon0, s.nx, s.ny, x.dwid, x.lat, x.lon,
+                 lag(x.lat) over w as plat, lag(x.lon) over w as plon
+          from run_points x
+          join dwlist_resolved l on x.dwid = l.id
+          join spots s on s.region = l.region
+          left join riders r on r.rider = l.rider
+          where coalesce(r.hub, true) and l.rider is not null and not x.synthetic and x.lat is not null
+          window w as (partition by x.dwid order by x.ts)
+        ),
+        c as (
+          select spot, nx, ny, dwid,
+                 floor((unnest([lon, (lon + coalesce(plon, lon)) / 2]) - lon0) / {HEATMAP_CELL})::int as i,
+                 floor((unnest([lat, (lat + coalesce(plat, lat)) / 2]) - lat0) / {HEATMAP_CELL})::int as j
+          from p
+        )
+        select spot, i, j, count(distinct dwid) as runs
+        from c
+        where i between 0 and nx - 1 and j between 0 and ny - 1
+        group by spot, i, j
+    ) x""",
+          "'heatmap/spot=' || x.spot || '/data.csv'",
+          "x.i, x.j, x.runs", "j, i", "true", headers=SHORT),
 ]
 
 

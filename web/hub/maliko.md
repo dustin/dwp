@@ -238,3 +238,14 @@ ${buoyNow
   : html`<div class="card"><div class="muted">Buoy like now: the Pauwela buoy isn't reporting${buoyLast ? ` (no reports since ${fmt.minuteStamp(buoyLast.ts)}, ${fmt.relativeTime(buoyLast.ts)})` : ""}, so there's nothing to match. ${withBuoy} north shore runs have buoy data.</div></div>`}
 
 ${similarRunsCard(windLike, top, {station: "Hoʻokipa", region: "North shore", buoy: true})}
+
+## Where everyone rides
+
+```js
+import {fetchHeatmap, heatmapCard} from "./components/trail-heatmap.js";
+const heat = await fetchHeatmap("maliko");
+```
+
+<div class="grid grid-cols-1 spot-col">${heat.cells.length
+  ? heatmapCard(heat, {resize, runs: nsRuns.filter(d => d.has_track).length})
+  : html`<div class="card"><div class="muted">No trail map yet.</div></div>`}</div>
