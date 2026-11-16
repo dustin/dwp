@@ -24,17 +24,18 @@ toc: false
 ```js
 import * as d3 from "npm:d3";
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {STATIONS, SPOTS, fetchExtremes, renderTideChart, nowSummary} from "./components/tides.js";
 ```
 
 ```js
-const day = view(Inputs.date({label: "Day", value: d3.timeDay(new Date())}));
+const day = view(Inputs.date({label: "Day", value: hst.timeDay(new Date())}));
 ```
 
 ```js
-// Inputs.date gives UTC midnight; we want that calendar day in local time.
-const start = day ? new Date(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate()) : d3.timeDay(new Date());
-const end = d3.timeDay.offset(start, 1);
+// Inputs.date gives UTC midnight; we want that calendar day in Hawaii.
+const start = day ? hst.midnight(day) : hst.timeDay(new Date());
+const end = hst.timeDay.offset(start, 1);
 const now = new Date();
 const stations = [...new Set(SPOTS.map(s => s.station))];
 const extremes = Object.fromEntries(await Promise.all(

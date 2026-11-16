@@ -6,6 +6,7 @@
 // sent, onset, ends and url.
 
 import * as d3 from 'npm:d3';
+import * as hst from './hst.js';
 import {html} from 'npm:htl';
 import * as fmt from './formatters.js';
 
@@ -75,4 +76,4 @@ export function surfAlertLines(alerts) {
 
 // Short words for the e-paper strip: "N + E shores", "until Sat 06:00".
 export const shortShores = a => a.shores.length ? `${a.shores.map(s => s[0].toUpperCase()).join(" + ")} shores` : "Maui";
-export const shortUntil = a => a.ends ? `until ${d3.timeFormat("%a %H:%M")(a.ends)}` : "";
+export const shortUntil = a => a.ends ? `until ${hst.timeFormat("%a %H:%M")(a.ends)}` : "";

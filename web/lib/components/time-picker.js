@@ -1,14 +1,15 @@
 // A date and time picker in 24-hour time: a native calendar for the date
 // plus a text field for the time. (A native datetime-local input picks its
 // clock from the OS locale and can't be told otherwise.) The field shows
-// 14:30 but also takes 1430 or 2:30 pm. Times are the browser's local time,
+// 14:30 but also takes 1430 or 2:30 pm. Times are Hawaii time (hst.js),
 // like the rest of the pages.
 
 import { html } from 'npm:htl';
 import * as d3 from 'npm:d3';
+import * as hst from './hst.js';
 import * as fmt from './formatters.js';
 
-const dateValue = d3.timeFormat('%Y-%m-%d');
+const dateValue = hst.timeFormat('%Y-%m-%d');
 
 // "14:30", "1430", "7:05", "2:30 pm", "2pm" -> [hours, minutes] in 24-hour
 // time; anything else -> null.
@@ -45,7 +46,7 @@ export function timePicker({ label, value, min, max, onChange }) {
     time.reportValidity();
     if (!t) return;
     const [y, mo, d] = date.value.split('-').map(Number);
-    const ts = new Date(y, mo - 1, d, t[0], t[1]);
+    const ts = new Date(Date.UTC(y, mo - 1, d, t[0], t[1]) + hst.OFFSET_MS);
     time.value = fmt.clock(ts);
     onChange(ts);
   };

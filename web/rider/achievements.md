@@ -49,6 +49,7 @@ Every run that beat or matched the previous best in at least one category, or ma
 ```js
 import * as d3 from "npm:d3";
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {fetchMeta, riderFile} from "./components/data.js";
 import {beachColorScale} from "./components/beaches.js";
 import {regionList, regionColorOf} from "./components/regions.js";
@@ -130,7 +131,7 @@ const snapshots = (() => {
   return out;
 })();
 const bestAsOf = ts => [...snapshots].reverse().find(s => s.ts <= ts)?.best ?? new Map();
-const shortDate = d3.timeFormat("%b %-d, %Y");
+const shortDate = hst.timeFormat("%b %-d, %Y");
 const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const regionOrder = new Map(regionList(allRuns).map((r, i) => [r, i]));
 
@@ -242,13 +243,13 @@ const summary = (best, since, sinceTs, untilTs) => {
 
 // Where each best stood at the end of the year, against the start of it.
 const yearSummary = year => {
-  const start = new Date(year, 0, 1);
-  const end = new Date(year + 1, 0, 1, 0, 0, -1);
+  const start = hst.midnight(`${year}-01-01`);
+  const end = new Date(+hst.midnight(`${year + 1}-01-01`) - 1000);
   return summary(bestAsOf(end), bestAsOf(new Date(start - 1)), start, end);
 };
 
-const runsPerYear = d3.rollup(allRuns, v => v.length, d => d.ts.getFullYear());
-const byYear = d3.groups(achievements, d => d.run.ts.getFullYear());
+const runsPerYear = d3.rollup(allRuns, v => v.length, d => hst.year(d.ts));
+const byYear = d3.groups(achievements, d => hst.year(d.run.ts));
 display(htl.html`<nav class="ach-nav"><a href="#current">Current</a>${byYear.map(([year]) => htl.html` · <a href=${`#y${year}`}>${year}</a>`)}</nav>`);
 display(htl.html`<h2 id="current">Current</h2>`);
 display(summary(bestAsOf(new Date())));

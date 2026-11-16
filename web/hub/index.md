@@ -14,6 +14,7 @@ display(surfAlertLines(await fetchSurfAlerts()));
 
 ```js
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchBuoySnapshot, fetchSwellPartitionWindow} from "./components/data.js";
 import {compassPoint, renderSpectrumSparkline, renderMiniRose} from "./components/spectrum.js";
 import {SPOTS, fetchExtremes, heightAt} from "./components/tides.js";
@@ -67,7 +68,7 @@ const buoyLastTs = buoyNow.then(b => b?.primary ? null
       .then(rows => rows.filter(d => d.values.some(v => v.rank === 1)).at(-1)?.ts ?? null)
       .catch(() => null));
 const tidesNow = (async () => {
-  const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
+  const start = hst.timeDay(new Date()), end = hst.timeDay.offset(start, 1);
   const stations = [...new Set(SPOTS.map(s => s.station))];
   return Object.fromEntries(await Promise.all(stations.map(async s => [s, await fetchExtremes(s, start, end)])));
 })().catch(() => null);
@@ -144,7 +145,7 @@ function tideCard(ex) {
 
 function riderCard({slug, name, runs}) {
   const latest = d3.greatest(runs, d => d.ts);
-  const year = runs.filter(d => d.ts.getFullYear() === new Date().getFullYear());
+  const year = runs.filter(d => hst.year(d.ts) === hst.year(new Date()));
   return htl.html`<a class="card nav-card rider-card" href=${riderHref(slug)}>
     <h2>${name} <span class="nav-card-arrow">→</span></h2>
     ${latest ? htl.html`
@@ -218,8 +219,8 @@ function pickCard(wind, forecasts, riders) {
 // Every rider's runs in one list, newest first.
 const allRuns = riders.flatMap(r => r.runs.map(d => ({...d, riderName: r.name, riderSlug: r.slug})))
   .sort((a, b) => d3.descending(a.ts, b.ts));
-const today = d3.timeDay(new Date());
-const since90 = d3.timeDay.offset(today, -90);
+const today = hst.timeDay(new Date());
+const since90 = hst.timeDay.offset(today, -90);
 const recent90 = allRuns.filter(d => d.ts >= since90);
 const route = d => d.end_beach && d.end_beach !== d.start_beach ? `${d.start_beach} → ${d.end_beach}` : d.start_beach;
 const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
@@ -241,25 +242,25 @@ const runLink = d => `https://${d.riderSlug}.downwind.pro/run.html?id=${d.id}`;
   <div class="card">
     <h2>Last 90 days <span class="nav-age">${recent90.length} runs · ${fmt.comma(Math.round(d3.sum(recent90, d => d.distance_km)))} km</span></h2>
     ${resize(width => {
-      const byDay = d3.rollup(recent90, v => ({km: d3.sum(v, d => d.distance_km), n: v.length, riders: new Set(v.map(d => d.riderName))}), d => +d3.timeDay(d.ts));
-      const days = d3.timeDays(since90, d3.timeDay.offset(today, 1)).map(day => ({day, ...(byDay.get(+day) ?? {km: 0, n: 0, riders: new Set()})}));
+      const byDay = d3.rollup(recent90, v => ({km: d3.sum(v, d => d.distance_km), n: v.length, riders: new Set(v.map(d => d.riderName))}), d => +hst.timeDay(d.ts));
+      const days = hst.timeDays(since90, hst.timeDay.offset(today, 1)).map(day => ({day, ...(byDay.get(+day) ?? {km: 0, n: 0, riders: new Set()})}));
       // Square cells: size them from the width, then size the plot from the cells.
-      const weeks = d3.timeWeek.count(d3.timeWeek(since90), today) + 1;
+      const weeks = hst.timeWeek.count(hst.timeWeek(since90), today) + 1;
       const cell = Math.max(10, Math.min(22, Math.floor((width - 24) / weeks)));
       return Plot.plot({
         width: 24 + cell * weeks, height: 4 + cell * 7 + 22, marginLeft: 24, marginRight: 0, marginTop: 4, marginBottom: 22, padding: 0.12,
-        x: {type: "band", axis: "bottom", tickSize: 0, tickFormat: (w, i) => i % 4 ? "" : d3.timeFormat("%b %-d")(d3.timeWeek.offset(d3.timeWeek(since90), w)), label: null},
+        x: {type: "band", axis: "bottom", tickSize: 0, tickFormat: (w, i) => i % 4 ? "" : hst.timeFormat("%b %-d")(hst.timeWeek.offset(hst.timeWeek(since90), w)), label: null},
         y: {type: "band", domain: d3.range(7), tickFormat: d => "SMTWTFS"[d], label: null, tickSize: 0},
         color: {type: "linear", domain: [0, 40], range: ["#c6dbef", "#08519c"], clamp: true},
         marks: [Plot.cell(days, {
-          x: d => d3.timeWeek.count(d3.timeWeek(since90), d.day), y: d => d.day.getDay(),
+          x: d => hst.timeWeek.count(hst.timeWeek(since90), d.day), y: d => hst.weekday(d.day),
           fill: "var(--theme-foreground-faintest)", inset: 0.5
         }), Plot.cell(days.filter(d => d.n), {
-          x: d => d3.timeWeek.count(d3.timeWeek(since90), d.day), y: d => d.day.getDay(),
+          x: d => hst.timeWeek.count(hst.timeWeek(since90), d.day), y: d => hst.weekday(d.day),
           fill: d => d.km, inset: 0.5,
-          title: d => `${d3.timeFormat("%a %b %-d")(d.day)}\n${d.n ? `${d.n} runs · ${d.km.toFixed(1)} km · ${[...d.riders].join(", ")}` : "no runs"}`
+          title: d => `${hst.timeFormat("%a %b %-d")(d.day)}\n${d.n ? `${d.n} runs · ${d.km.toFixed(1)} km · ${[...d.riders].join(", ")}` : "no runs"}`
         }), Plot.cell(days.filter(d => +d.day === +today), {
-          x: d => d3.timeWeek.count(d3.timeWeek(since90), d.day), y: d => d.day.getDay(),
+          x: d => hst.timeWeek.count(hst.timeWeek(since90), d.day), y: d => hst.weekday(d.day),
           fill: "none", stroke: "var(--theme-foreground)", inset: 0.5
         })]
       });

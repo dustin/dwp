@@ -2,6 +2,7 @@
 // in some category. Shared by the achievements page and the index card.
 import * as d3 from "npm:d3";
 import * as fmt from "./formatters.js";
+import * as hst from "./hst.js";
 
 const km = m => `${(m / 1000).toFixed(2)} km`;
 const kph = v => `${v.toFixed(1)} kph`;
@@ -15,7 +16,7 @@ const bpm = v => `${Math.round(v)} bpm`;
 const fullRun = d => d.distance_km >= 10;
 const days = v => `${v} day${v === 1 ? "" : "s"}`;
 const years = v => `${v} year${v === 1 ? "" : "s"}`;
-const shortDate = d3.timeFormat("%b %-d, %Y");
+const shortDate = hst.timeFormat("%b %-d, %Y");
 const milestones = [100, 250, 500, ...d3.range(1000, 100001, 500)];
 
 export const categories = [
@@ -94,9 +95,9 @@ export const categories = [
 // Whole years from the day of `start` to `t`.
 function yearsSince(start, t) {
   if (!start) return null;
-  const day = d3.timeDay(start);
-  let n = d3.timeYear.count(day, t);
-  if (d3.timeYear.offset(day, n) > t) n--;
+  const day = hst.timeDay(start);
+  let n = hst.timeYear.count(day, t);
+  if (hst.timeYear.offset(day, n) > t) n--;
   return n;
 }
 
@@ -144,9 +145,9 @@ function streaks(runs) {
   const streaks = new Map();
   let lastDay = null, streak = 0;
   for (const run of d3.sort(runs, d => d.ts)) {
-    const day = d3.timeDay(run.ts);
+    const day = hst.timeDay(run.ts);
     if (+day === +lastDay) continue;
-    streak = lastDay && +d3.timeDay.offset(lastDay, 1) === +day ? streak + 1 : 1;
+    streak = lastDay && +hst.timeDay.offset(lastDay, 1) === +day ? streak + 1 : 1;
     lastDay = day;
     streaks.set(run, streak);
   }
@@ -168,7 +169,7 @@ function hoursAfter(runs) {
 function monthCounts(runs) {
   const counts = new Map(), seen = new Map();
   for (const run of d3.sort(runs, d => d.ts)) {
-    const month = +d3.timeMonth(run.ts);
+    const month = +hst.timeMonth(run.ts);
     const n = (seen.get(month) ?? 0) + 1;
     seen.set(month, n);
     counts.set(run, n);

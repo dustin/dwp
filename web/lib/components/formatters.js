@@ -1,4 +1,5 @@
 import * as d3 from 'npm:d3';
+import * as hst from './hst.js';
 const rtf = new Intl.RelativeTimeFormat('en', { numeric: 'always' });
 const rtUnits = [['year', 31536e6], ['month', 2628e6], ['day', 864e5], ['hour', 36e5], ['minute', 6e4], ['second', 1e3]];
 
@@ -14,19 +15,19 @@ export const relativeTime = d => {
 const clockSpec = '%H:%M';
 const clockSecondsSpec = '%H:%M:%S';
 
-export const date = d3.timeFormat('%Y-%m-%d');
-export const time = d3.timeFormat(clockSecondsSpec);
-export const timestamp = d3.timeFormat(`%Y-%m-%d ${clockSecondsSpec}`);
+export const date = hst.timeFormat('%Y-%m-%d');
+export const time = hst.timeFormat(clockSecondsSpec);
+export const timestamp = hst.timeFormat(`%Y-%m-%d ${clockSecondsSpec}`);
 // To the minute: 14:30, 2026-10-02 14:30, 10/2 14:30.
-export const clock = d3.timeFormat(clockSpec);
-export const minuteStamp = d3.timeFormat(`%Y-%m-%d ${clockSpec}`);
-export const shortStamp = d3.timeFormat(`%-m/%-d ${clockSpec}`);
+export const clock = hst.timeFormat(clockSpec);
+export const minuteStamp = hst.timeFormat(`%Y-%m-%d ${clockSpec}`);
+export const shortStamp = hst.timeFormat(`%-m/%-d ${clockSpec}`);
 export const comma = d3.format(',');
 
 // 24-hour time-axis ticks: the time of day, or the date at midnight (where
 // Plot's default would show "12 AM").
-const tickDay = d3.timeFormat('%-m/%-d');
-export const timeTick = d => (d3.timeDay(d) < d ? clock(d) : tickDay(d));
+const tickDay = hst.timeFormat('%-m/%-d');
+export const timeTick = d => (hst.timeDay(d) < d ? clock(d) : tickDay(d));
 
 export function timeDiff(start, end) {
   const diffMs = end - start;
@@ -68,7 +69,7 @@ export function minutes(x) {
 
 export function mmYYYY(ts) {
   const d = new Date(ts);
-  return d.toLocaleString('default', { month: 'short', year: 'numeric' });
+  return d.toLocaleString('default', { month: 'short', year: 'numeric', timeZone: hst.TZ });
 }
 
 export function paceNoUnit(kph) {

@@ -6,6 +6,7 @@ toc: false
 
 ```js
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {fetchMeta, riderFile, ridersWith} from "./components/data.js";
 import {categories, computeAchievements} from "./components/achievements.js";
 
@@ -44,8 +45,8 @@ const [runsA, runsB] = await Promise.all([pickA, pickB].map(slug =>
 
 ```js
 const now = new Date();
-const thisYear = now.getFullYear();
-const since90 = d3.timeDay.offset(d3.timeDay(now), -90);
+const thisYear = hst.year(now);
+const since90 = hst.timeDay.offset(hst.timeDay(now), -90);
 const route = d => d.end_beach && d.end_beach !== d.start_beach ? `${d.start_beach} → ${d.end_beach}` : d.start_beach;
 
 // The rider's standing best in each achievement category (the same ones the
@@ -76,7 +77,7 @@ function averages(runs) {
 }
 
 function summarize(slug, runs) {
-  const year = runs.filter(d => d.ts.getFullYear() === thisYear);
+  const year = runs.filter(d => hst.year(d.ts) === thisYear);
   const recent = runs.filter(d => d.ts >= since90);
   const best = f => d3.greatest(runs.filter(d => d[f] != null && !isNaN(d[f])), d => d[f]);
   const spots = d3.rollups(runs, v => v.length, route).sort((a, b) => d3.descending(a[1], b[1]));
@@ -91,7 +92,7 @@ function summarize(slug, runs) {
       foilKm: d3.sum(year, d => d.distance_on_foil) / 1000, foilH: d3.sum(year, d => d.duration_on_foil) / 3600},
     recent: {n: recent.length, km: d3.sum(recent, d => d.distance_km),
       foilKm: d3.sum(recent, d => d.distance_on_foil) / 1000, foilH: d3.sum(recent, d => d.duration_on_foil) / 3600,
-      days: new Set(recent.map(d => +d3.timeDay(d.ts))).size},
+      days: new Set(recent.map(d => +hst.timeDay(d.ts))).size},
     longestRun: best("distance_km"),
     records: bestRecords(runs),
     avg: averages(runs),
@@ -133,7 +134,7 @@ function recordRow(c) {
   // Swap the plain values for links to the record runs.
   row.querySelector(".vs-a span").replaceWith(link(A, ra));
   row.querySelector(".vs-b span").replaceWith(link(B, rb));
-  const sub = r => r ? `${route(r.run)} · ${d3.timeFormat("%b %-d, %Y")(r.run.ts)}` : "";
+  const sub = r => r ? `${route(r.run)} · ${hst.timeFormat("%b %-d, %Y")(r.run.ts)}` : "";
   return htl.html`<div>${row}<div class="vs-row vs-sub"><div class="vs-a">${sub(ra)}</div><div></div><div class="vs-b">${sub(rb)}</div></div></div>`;
 }
 
@@ -193,20 +194,20 @@ const n = v => fmt.comma(v);
   <div class="card">
     <h2>Distance by month <span class="nav-age">last 12 months</span></h2>
     ${resize(width => {
-      const start = d3.timeMonth.offset(d3.timeMonth(now), -11);
-      const rows = [A, B].flatMap(r => d3.timeMonths(start, d3.timeMonth.offset(start, 12)).map(month => ({
+      const start = hst.timeMonth.offset(hst.timeMonth(now), -11);
+      const rows = [A, B].flatMap(r => hst.timeMonths(start, hst.timeMonth.offset(start, 12)).map(month => ({
         rider: r.name, month,
         km: d3.sum(r.runs.filter(d => +d.month === +month), d => d.distance_km)
       })));
       return Plot.plot({
         width, height: 220, marginLeft: 40, marginBottom: 24,
-        fx: {tickFormat: d3.timeFormat("%b"), label: null, padding: 0.15},
+        fx: {tickFormat: hst.timeFormat("%b"), label: null, padding: 0.15},
         x: {axis: null, domain: [A.name, B.name], padding: 0.05},
         y: {grid: true, label: "km"},
         color: {domain: [A.name, B.name], range: [colorA, colorB], legend: true},
         marks: [
           Plot.barY(rows, {fx: "month", x: "rider", y: "km", fill: "rider", tip: true,
-            title: d => `${d.rider} · ${d3.timeFormat("%b %Y")(d.month)}\n${d.km.toFixed(0)} km`}),
+            title: d => `${d.rider} · ${hst.timeFormat("%b %Y")(d.month)}\n${d.km.toFixed(0)} km`}),
           Plot.ruleY([0])
         ]
       });
@@ -221,7 +222,7 @@ const n = v => fmt.comma(v);
     ${recordCategories.map(recordRow)}
     ${(() => {
       const row = versusRow("Longest run", A.longestRun?.distance_km, B.longestRun?.distance_km, km1);
-      const sub = r => r ? `${route(r)} · ${d3.timeFormat("%b %-d, %Y")(r.ts)}` : "";
+      const sub = r => r ? `${route(r)} · ${hst.timeFormat("%b %-d, %Y")(r.ts)}` : "";
       return htl.html`<div>${row}<div class="vs-row vs-sub"><div class="vs-a">${sub(A.longestRun)}</div><div></div><div class="vs-b">${sub(B.longestRun)}</div></div></div>`;
     })()}
   </div>
@@ -233,7 +234,7 @@ const n = v => fmt.comma(v);
     ${resize(width => {
       const cum = r => {
         let total = 0;
-        const rows = r.runs.filter(d => d.ts.getFullYear() === thisYear).sort((a, b) => d3.ascending(a.ts, b.ts))
+        const rows = r.runs.filter(d => hst.year(d.ts) === thisYear).sort((a, b) => d3.ascending(a.ts, b.ts))
           .map(d => ({rider: r.name, ts: d.ts, km: total += d.distance_km}));
         return [{rider: r.name, ts: new Date(thisYear, 0, 1), km: 0}, ...rows, ...(rows.length ? [{rider: r.name, ts: now, km: total}] : [])];
       };
@@ -268,16 +269,16 @@ const n = v => fmt.comma(v);
   ${resize(width => {
     // One cell per day: the left half lit if rider A went, the right half if
     // B did. Weeks run across on a wide screen and down on a phone.
-    const end = d3.timeDay(now), start = d3.timeWeek(d3.timeDay.offset(end, -364));
-    const kmBy = runs => d3.rollup(runs, v => d3.sum(v, d => d.distance_km), d => +d3.timeDay(d.ts));
+    const end = hst.timeDay(now), start = hst.timeWeek(hst.timeDay.offset(end, -364));
+    const kmBy = runs => d3.rollup(runs, v => d3.sum(v, d => d.distance_km), d => +hst.timeDay(d.ts));
     const kmA = kmBy(A.runs), kmB = kmBy(B.runs);
-    const days = d3.timeDays(start, d3.timeDay.offset(end, 1)).map(day => ({
-      day, week: d3.timeWeek.count(start, day), dow: day.getDay(), a: kmA.get(+day), b: kmB.get(+day)
+    const days = hst.timeDays(start, hst.timeDay.offset(end, 1)).map(day => ({
+      day, week: hst.timeWeek.count(start, day), dow: hst.weekday(day), a: kmA.get(+day), b: kmB.get(+day)
     }));
     const weeks = d3.max(days, d => d.week) + 1;
     const across = width >= 640;
     const cell = across ? Math.min(22, Math.floor((width - 30) / weeks)) : Math.min(40, Math.floor((width - 50) / 7));
-    const title = d => `${d3.timeFormat("%a %b %-d, %Y")(d.day)}\n${A.name}: ${d.a ? `${d.a.toFixed(1)} km` : "–"}\n${B.name}: ${d.b ? `${d.b.toFixed(1)} km` : "–"}`;
+    const title = d => `${hst.timeFormat("%a %b %-d, %Y")(d.day)}\n${A.name}: ${d.a ? `${d.a.toFixed(1)} km` : "–"}\n${B.name}: ${d.b ? `${d.b.toFixed(1)} km` : "–"}`;
     // Cell edges in week/weekday units; `half` is 0 for A's half, 1 for B's.
     const pos = half => across
       ? {x1: d => d.week + 0.06 + half * 0.44, x2: d => d.week + 0.5 + half * 0.44, y1: d => d.dow + 0.06, y2: d => d.dow + 0.94}
@@ -285,8 +286,8 @@ const n = v => fmt.comma(v);
     const whole = across
       ? {x1: d => d.week + 0.06, x2: d => d.week + 0.94, y1: d => d.dow + 0.06, y2: d => d.dow + 0.94}
       : {y1: d => d.week + 0.06, y2: d => d.week + 0.94, x1: d => d.dow + 0.06, x2: d => d.dow + 0.94};
-    const monthTicks = days.filter(d => d.day.getDate() === 1).map(d => d.week + 0.5);
-    const monthLabel = w => d3.timeFormat("%b")(d3.timeWeek.offset(start, Math.floor(w) + 1));
+    const monthTicks = days.filter(d => hst.dayOfMonth(d.day) === 1).map(d => d.week + 0.5);
+    const monthLabel = w => hst.timeFormat("%b")(hst.timeWeek.offset(start, Math.floor(w) + 1));
     const dowAxis = {domain: [0, 7], ticks: d3.range(7).map(i => i + 0.5), tickFormat: i => "SMTWTFS"[Math.floor(i)], tickSize: 0, label: null};
     const weekAxis = {domain: [0, weeks], ticks: monthTicks, tickFormat: monthLabel, tickSize: 0, label: null};
     return Plot.plot({
@@ -304,8 +305,8 @@ const n = v => fmt.comma(v);
     });
   })}
   <div class="vs-foot">${(() => {
-    const dA = new Set(A.runs.filter(d => d.ts >= d3.timeDay.offset(now, -365)).map(d => +d3.timeDay(d.ts)));
-    const dB = new Set(B.runs.filter(d => d.ts >= d3.timeDay.offset(now, -365)).map(d => +d3.timeDay(d.ts)));
+    const dA = new Set(A.runs.filter(d => d.ts >= hst.timeDay.offset(now, -365)).map(d => +hst.timeDay(d.ts)));
+    const dB = new Set(B.runs.filter(d => d.ts >= hst.timeDay.offset(now, -365)).map(d => +hst.timeDay(d.ts)));
     const both = [...dA].filter(d => dB.has(d)).length;
     return `${dA.size} days ${A.name} · ${dB.size} days ${B.name} · ${both} days both`;
   })()}</div>

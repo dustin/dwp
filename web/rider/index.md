@@ -10,6 +10,7 @@ toc: true
 import {renderChord} from "./components/chord.js";
 import {renderCrashes} from "./components/crash-map.js";
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import * as tl from "./components/timeline.js";
 import {fetchMeta, riderFile, dryLimit, onePaddleUpLimit, runDataURL} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
@@ -141,7 +142,7 @@ function regionBar(field) {
       style=${`flex: ${regionStats.get(r)[field]}; background: ${regionColor(r)}`}></span>`)}</div>`;
 }
 
-const recordDate = d3.timeFormat("%b %-d, %Y");
+const recordDate = hst.timeFormat("%b %-d, %Y");
 function recordCard(title, run, text, field, fmtRegion) {
   const route = run.start_beach === run.end_beach ? run.start_beach : `${run.start_beach} → ${run.end_beach}`;
   const others = regions
@@ -248,7 +249,7 @@ import {SPOTS, STATIONS, fetchExtremes, heightAt, crossings} from "./components/
 // Live bits for the subpage cards; each card still renders if its fetch fails.
 const buoyNow = fetchBuoySnapshot(new Date()).catch(() => null);
 const tidesNow = (async () => {
-  const start = d3.timeDay(new Date()), end = d3.timeDay.offset(start, 1);
+  const start = hst.timeDay(new Date()), end = hst.timeDay.offset(start, 1);
   const stations = [...new Set(SPOTS.map(s => s.station))];
   return Object.fromEntries(await Promise.all(stations.map(async s => [s, await fetchExtremes(s, start, end)])));
 })().catch(() => null);
@@ -292,7 +293,7 @@ function tideRows(ex) {
   ${navCard("foils.html", "Foils", htl.html`
     <div class="nav-lead">${foilColor.domain().length} foils</div>
     <div class="nav-muted">Most used, last 3 months</div>
-    <div class="nav-rows">${d3.rollups(runCsv.filter(d => d.ts >= d3.timeMonth.offset(latestRun.ts, -3)), v => d3.sum(v, d => d.distance_km), d => d.foil)
+    <div class="nav-rows">${d3.rollups(runCsv.filter(d => d.ts >= hst.timeMonth.offset(latestRun.ts, -3)), v => d3.sum(v, d => d.distance_km), d => d.foil)
       .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([f, km]) => htl.html`
       <div class="nav-row"><span class="region-swatch" style=${`background:${foilColor(f)}`}></span>
         <span class="nav-row-name">${f}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}

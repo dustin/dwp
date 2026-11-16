@@ -1,21 +1,13 @@
 import { FileAttachment } from 'observablehq:stdlib';
 import * as d3 from 'npm:d3';
 import * as fmt from './formatters.js';
+import * as hst from './hst.js';
 import { FOIL_THRESHOLD_KPH } from './color.js';
 
-function toWeek(ts) {
-  let week = new Date(ts);
-  week.setHours(0, 0, 0, 0);
-  week.setDate(week.getDate() - week.getDay());
-  return week;
-}
-
-function toMonth(ts) {
-  let month = new Date(ts);
-  month.setHours(0, 0, 0, 0);
-  month.setDate(1);
-  return month;
-}
+// The Hawaii week (from Sunday) and month a run is in, whatever the
+// viewer's time zone.
+const toWeek = ts => hst.timeWeek(ts);
+const toMonth = ts => hst.timeMonth(ts);
 
 export const dryLimit = 0.97;
 

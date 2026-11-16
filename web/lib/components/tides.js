@@ -1,5 +1,6 @@
 import * as Plot from 'npm:@observablehq/plot';
 import * as d3 from 'npm:d3';
+import * as hst from './hst.js';
 import * as fmt from './formatters.js';
 
 // NOAA CO-OPS stations. Kīhei and Lahaina are subordinates of Kahului,
@@ -105,7 +106,7 @@ export function renderTideChart(spot, extremes, { start, end, now, width }) {
     height: 260,
     marginLeft: 36,
     marginTop: 24,
-    x: { type: 'time', domain: [start, end], tickFormat: fmt.timeTick, ticks: d3.timeHour.every(width < 500 ? 6 : 3) },
+    x: { type: 'time', domain: [start, end], tickFormat: fmt.timeTick, ticks: hst.timeHour.every(width < 500 ? 6 : 3) },
     y: { domain: [Math.min(-0.3, d3.min(ex, d => d.height) - 0.4), yMax], label: 'ft', grid: true, tickFormat: d => `${d}′` },
     marks: [
       Plot.areaY(curve, { x: 'time', y: 'height', fill: 'var(--theme-blue, #4269d0)', fillOpacity: 0.12 }),

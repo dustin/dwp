@@ -1,5 +1,6 @@
 import * as fmt from './formatters.js';
 import * as d3 from 'npm:d3';
+import * as hst from './hst.js';
 
 const HEADERS = {
   date: 'Date',
@@ -57,7 +58,7 @@ export function runsTableOptions(beachColor, htl, { columns, linkHref }) {
 // the breakpoint, so rotating a phone or resizing a window just works.
 
 const PAGE_SIZE = 25;
-const dayStamp = d3.timeFormat('%a %Y-%m-%d');
+const dayStamp = hst.timeFormat('%a %Y-%m-%d');
 
 const STYLE = `
 .runs-narrow { display: none; }

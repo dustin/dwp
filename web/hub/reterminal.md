@@ -59,6 +59,7 @@ pager: false
 // ?t=2026-11-08T07:00 (HST) pretends it's then (data is still now's).
 import * as Plot from "npm:@observablehq/plot";
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {compassPoint} from "./components/spectrum.js";
 import {fetchLiveWind, fetchRecentWind, fetchWindForecast, parseHstParam} from "./components/data.js";
 import {hourlyForecast, outlook, sunTimes, hstDay} from "./components/forecast.js";
@@ -143,7 +144,7 @@ const yMax = Math.max(25, d3.max(seen, d => d.wgust) ?? 0, d3.max(ahead, h => h.
 const chart = Plot.plot({
   width: 496, height: alerts.length ? 250 - 34 * Math.min(alerts.length, 2) : 250, marginLeft: 30, clip: true, marginRight: 6, marginBottom: 22, marginTop: 6,
   style: {fontSize: "14px", fontWeight: 700, color: "#000", background: "#fff", fontFamily: "DejaVu Sans, sans-serif"},
-  x: {type: "time", domain: [sun.rise, sun.set], ticks: d3.timeHour.every(2), tickFormat: hh, label: null},
+  x: {type: "time", domain: [sun.rise, sun.set], ticks: hst.timeHour.every(2), tickFormat: hh, label: null},
   y: {domain: [-4, yMax], ticks: [0, 10, 20, 30, 40].filter(t => t <= yMax), label: null, grid: true},
   marks: [
     // Expected class of each forecast hour, as a strip along the bottom.

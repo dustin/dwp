@@ -25,6 +25,7 @@ The wind cards label each reading magic, good, harder, too light or no go. The l
 
 ```js
 import * as fmt from "./components/formatters.js";
+import * as hst from "./components/hst.js";
 import {fetchMeta, riderFile, ridersWith} from "./components/data.js";
 import {WIND_QUALITY, CLASSES, windClass} from "./components/wind-quality.js";
 
@@ -37,7 +38,7 @@ const STATIONS = [
 ];
 const SPEED_STEP = 2;
 // Only recent runs: older ones show skills still being learned more than the wind.
-const SINCE = d3.timeMonth.offset(new Date(), -18);
+const SINCE = hst.timeMonth.offset(new Date(), -18);
 const MIN_RUNS = 3;
 ```
 
