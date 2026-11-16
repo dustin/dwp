@@ -2,7 +2,7 @@
 #
 # The half-hourly buoy job (services.dwp-buoys, buoys.nix; on pitrick):
 # Every Hawaiʻi buoy's readings and spectra (swell/collect), the latest
-# Pauwela report to MQTT, then forecast-ingest and publish. (cam-ingest
+# Pauwela report to MQTT, then forecast-ingest, wind-ingest and publish. (cam-ingest
 # runs with the cam watcher, wherever that is: see cams/hm-module.nix. The
 # e-paper displays render from the published data on their own timer:
 # display/hm-module.nix.)
@@ -42,4 +42,6 @@ duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql"
 
 cd "$here"
 ./forecast-ingest
+# bee1's InfluxDB being away only stalls the lake's wind; publish goes on.
+./wind-ingest || echo "update-buoys: wind-ingest failed, publishing without new wind" >&2
 ./publish  # through publishd, wherever that runs

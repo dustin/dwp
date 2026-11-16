@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Copy new station wind from InfluxDB into the lake's wind table.
+
+    ./wind-ingest
+
+Every weather/+ reading lands in InfluxDB on bee1 (aws1's influxer, which
+spools while bee1 is away). This adds the ones newer than the lake's
+latest, so publish and the bot read the lake, not InfluxDB: bee1 being
+down only means the lake's wind stops moving until it's back.
+
+Each run looks back LOOKBACK from the lake's newest reading, so readings
+that reach InfluxDB a little late still go in, and skips any (site, ts)
+already there. It reads at most a few days per query, as many as it takes
+to catch up. One lake commit per query; it never creates or changes
+tables: wind must already exist (schema.sql, migrate-wind-table.sql).
+
+DWP_INFLUX sets InfluxDB's URL (default http://bee1:8086, database
+influxer). Run it with the buoy job, before ./publish.
+"""
+
+import csv
+import io
+import os
+import sys
+import time
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+
+sys.dont_write_bytecode = True
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from dwp_publish import duckdb, temp_table, sql_lit, PublishError  # noqa: E402
+
+INFLUX = os.environ.get("DWP_INFLUX", "http://bee1:8086").rstrip("/")
+DB = "influxer"
+LOOKBACK = timedelta(hours=6)
+WINDOW = timedelta(days=3)
+FIELDS = ("wavg", "wdir", "wgust", "wlull")
+
+
+def log(msg):
+    print(f"wind-ingest: {msg}", file=sys.stderr, flush=True)
+
+
+def fetch(start, end):
+    """(site, ts, wavg, wdir, wgust, wlull) for start < time <= end."""
+    q = (f"select site, {', '.join(FIELDS)} from wind "
+         f"where time > '{start.isoformat()}' and time <= '{end.isoformat()}'")
+    url = f"{INFLUX}/query?" + urllib.parse.urlencode({"db": DB, "epoch": "ms", "q": q})
+    req = urllib.request.Request(url, headers={"Accept": "application/csv"})
+    for i in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=120) as r:
+                body = r.read().decode()
+            break
+        except OSError as e:
+            if i == 2:
+                raise
+            log(f"{e}; retrying")
+            time.sleep(5 * (i + 1))
+    num = lambda v: float(v) if v not in (None, "") else None
+    return [(r["site"], datetime.fromtimestamp(int(r["time"]) / 1000, timezone.utc),
+             *(num(r.get(f)) for f in FIELDS))
+            for r in csv.DictReader(io.StringIO(body)) if r.get("site")]
+
+
+def latest():
+    if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
+                  "and table_name = 'wind' and table_type = 'BASE TABLE';", json_out=True):
+        raise PublishError("wind isn't a table in the lake yet (run migrate-wind-table.sql)")
+    r = duckdb("select max(ts)::varchar as t from wind;", json_out=True)
+    if not r or r[0]["t"] is None:
+        raise PublishError("the lake's wind table is empty (run migrate-wind-table.sql)")
+    return datetime.fromisoformat(r[0]["t"])
+
+
+def ingest(rows, since):
+    cols = [("site", "VARCHAR"), ("ts", "TIMESTAMPTZ")] + [(f, "DOUBLE") for f in FIELDS]
+    duckdb(temp_table("new_wind", cols, [(s, t.isoformat(), *v) for s, t, *v in rows]) + f"""
+        begin;
+        insert into wind (site, ts, day, {', '.join(FIELDS)})
+        select n.site, n.ts, (n.ts at time zone 'Pacific/Honolulu')::date, {', '.join('n.' + f for f in FIELDS)}
+        from new_wind n
+        where not exists (select 1 from wind w where w.site = n.site and w.ts = n.ts
+                          and w.ts >= {sql_lit(since.isoformat(), 'TIMESTAMPTZ')})
+        order by n.ts;
+        commit;
+    """)
+
+
+def main():
+    try:
+        now = datetime.now(timezone.utc)
+        start = latest() - LOOKBACK
+        total = 0
+        while start < now:
+            end = min(start + WINDOW, now)
+            rows = fetch(start, end)
+            if rows:
+                ingest(rows, start)
+            total += len(rows)
+            start = end
+        log(f"{total} readings read, new ones added")
+    except (PublishError, OSError, ValueError, KeyError) as e:
+        log(str(e) or repr(e))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,5 +1,5 @@
 # The lake tools that work from any host (cam-ingest, forecast-ingest,
-# publish, publishd, update-buoys),
+# wind-ingest, publish, publishd, update-buoys),
 # with what they need on PATH (python3, DuckDB 2.0, rclone, curl, nc), so a service on
 # any host can run them without a checkout. They still find the lake the
 # usual way: LAKE (default ~/.config/lakes/dwp, which nixos-configs' duckq
@@ -15,7 +15,7 @@ stdenvNoCC.mkDerivation {
   src = lib.fileset.toSource {
     root = ./.;
     fileset = lib.fileset.unions [
-      ./cam-ingest ./forecast-ingest ./publish ./publishd ./dwp_publish.py ./dwp_mqtt.py
+      ./cam-ingest ./forecast-ingest ./wind-ingest ./publish ./publishd ./dwp_publish.py ./dwp_mqtt.py
       ./export-lists.sql
       ./update-buoys ./swell/collect ./swell/update.sql ./swell/stdmet.sql ./swell/recent-export.sql
       ./cams/cams.py
@@ -26,7 +26,7 @@ stdenvNoCC.mkDerivation {
     share=$out/share/dwp-db
     mkdir -p $share $out/bin
     cp -r . $share/
-    for t in cam-ingest forecast-ingest publish publishd; do
+    for t in cam-ingest forecast-ingest wind-ingest publish publishd; do
       makeWrapper ${python3}/bin/python3 $out/bin/dwp-$t \
         --add-flags $share/$t \
         --prefix PATH : ${lib.makeBinPath [ duckdb rclone ]} \

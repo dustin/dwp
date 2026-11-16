@@ -235,6 +235,20 @@ CREATE TABLE cam_images(
   file VARCHAR
 );
 
+-- Station wind, every weather/+ reading (kn, direction from, degrees),
+-- copied from bee1's InfluxDB by db/wind-ingest with the buoy job. Was a
+-- view reading InfluxDB itself (migrate-wind-table.sql). day is the Hawaii
+-- day of ts.
+CREATE TABLE wind(
+  site VARCHAR, -- kihei, hookipa, wailea, ...
+  ts TIMESTAMP WITH TIME ZONE,
+  day DATE,
+  wavg DOUBLE,
+  wdir DOUBLE,
+  wgust DOUBLE,
+  wlull DOUBLE
+);
+
 -- Wind forecasts for the stations' cells (db/forecast-ingest), kept so they
 -- can be scored against what the station then saw. site is the station the
 -- cell stands in for (kihei, hookipa); model is Open-Meteo's model name or
