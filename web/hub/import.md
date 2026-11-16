@@ -92,7 +92,8 @@ detail.
 
 ## 2. Send your data
 
-Either way works; pick one.
+Either way works; pick one. If you're in the downwind.pro Matrix room, the
+[bot](./bot) can import them too.
 
 ### Upload
 
