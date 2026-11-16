@@ -233,13 +233,45 @@ def die(msg):
     raise PublishError(msg)
 
 
+# Where the time goes: every duckdb and rclone call, and the Python work
+# between them, as (phase, what, seconds). publish() prints the summary
+# at the end (DWP_PUBLISH_TIMING=0 to leave it out).
+TIMINGS = []
+PHASE = ["manifest"]
+STARTED = time.monotonic()  # when this process began, near enough
+
+
+def note(what, t0):
+    TIMINGS.append((PHASE[0], what, time.monotonic() - t0))
+
+
+def report_timings(total):
+    if os.environ.get("DWP_PUBLISH_TIMING", "1") == "0" or not TIMINGS:
+        return
+    log(f"timing: {total:.1f}s in all")
+    phases = {}
+    for phase, what, secs in TIMINGS:
+        phases.setdefault(phase, [0, 0.0])
+        phases[phase][0] += 1
+        phases[phase][1] += secs
+    accounted = sum(v[1] for v in phases.values())
+    for phase, (n, secs) in phases.items():
+        log(f"timing: {secs:6.1f}s  {phase} ({n} step{'s' if n != 1 else ''})")
+    log(f"timing: {total - accounted:6.1f}s  (everything else: python, temp files, waiting)")
+    for phase, what, secs in TIMINGS:
+        if secs >= 0.5:
+            log(f"timing:   {secs:6.1f}s  {phase}: {what}")
+
+
 # The tracks export's ST_Point(lat, lon) is the pre-2.0 axis order, which
 # DuckDB 2.0 makes ST_Distance_Sphere ask for.
 XY = "load spatial;\nset geometry_always_xy = false;\n"
 
 
-def duckdb(sql, json_out=False, cmd=None):
-    """Run sql against the lake; with json_out, return the result's rows."""
+def duckdb(sql, json_out=False, cmd=None, what=None):
+    """Run sql against the lake; with json_out, return the result's rows.
+    what names the call in the timing summary (default: its first line)."""
+    t0 = time.monotonic()
     args = ["duckdb", "-bail", "--init", "quack-init.sql"]
     if json_out:
         args.append("-json")
@@ -247,6 +279,7 @@ def duckdb(sql, json_out=False, cmd=None):
         args += ["-cmd", cmd]
     r = subprocess.run(args, cwd=LAKE_DIR, input="use lake;\n" + XY + sql,
                        capture_output=True, text=True)
+    note("duckdb " + (what or " ".join(sql.split())[:60]), t0)
     if r.returncode != 0 or "Error:" in r.stderr:
         die(f"duckdb failed:\n{r.stderr}")
     if not json_out:
@@ -372,7 +405,7 @@ class Manifest:
         return {r["key"]: {"sha": r["sha256"], "size": r["size"], "headers": r["headers"],
                            "fp": r["fingerprint"], "uploaded_at": r["t"]}
                 for r in duckdb("select key, sha256, size, headers, fingerprint, "
-                                "epoch(uploaded_at) as t from publish_manifest;", json_out=True)}
+                                "epoch(uploaded_at) as t from publish_manifest;", json_out=True, what="read manifest")}
 
     def record(self, rows):
         """rows: (key, sha256, size, headers, fingerprint), in one lake commit."""
@@ -386,7 +419,7 @@ class Manifest:
             call lake.set_commit_message('dustin', {sql_str(f'publish manifest: {len(rows)} recorded')});
             delete from publish_manifest where key in (select key from recorded);
             insert into publish_manifest by name select * from recorded;
-            commit;""")
+            commit;""", what=f"record {len(rows)} in manifest")
 
     def forget(self, keys):
         if not keys:
@@ -400,7 +433,7 @@ class Manifest:
 
 def has_table(name):
     return bool(duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
-                       f"and table_name = {sql_str(name)};", json_out=True))
+                       f"and table_name = {sql_str(name)};", json_out=True, what=f"has_table {name}"))
 
 
 def fingerprints(t):
@@ -413,7 +446,7 @@ def fingerprints(t):
                {t.recent} as recent
         from {t.frm}
         group by all;
-    """, json_out=True)
+    """, json_out=True, what=f"fingerprint {t.name}")
     out = {}
     for r in rows:
         if t.name == "tracks" and not RIDER.fullmatch(r["k"].split("/")[1][len("rider="):]):
@@ -448,8 +481,10 @@ def export(t, keys, tmp):
                 select {t.key} as __k, {t.cols}, hash(x) as __h
                 from {t.frm}
             ) where __k in (select k from dirty)
-            order by __k, {t.order}, __h;""" + CSV_END)
-    split(big, tmp)
+            order by __k, {t.order}, __h;""" + CSV_END, what=f"export {len(keys)} {t.name}")
+    t0 = time.monotonic()
+    size = split(big, tmp)
+    note(f"split {t.name} ({size >> 10} KB)", t0)
 
 
 def split(big, tmp):
@@ -471,7 +506,9 @@ def split(big, tmp):
             out.write(rest)
     if out:
         out.close()
+    size = os.path.getsize(big)
     os.unlink(big)
+    return size
 
 
 def export_lists(rider, outdir):
@@ -482,7 +519,7 @@ def export_lists(rider, outdir):
         die(f"export-lists.sql no longer writes to {LISTS_DIR}")
     os.makedirs(outdir, exist_ok=True)
     duckdb(sql.replace(out, f'.output "{outdir.rstrip("/")}/'),
-           cmd=f"set variable rider = {sql_str(rider)};")
+           cmd=f"set variable rider = {sql_str(rider)};", what=f"export lists for {rider}")
 
 
 def sha256(path):
@@ -521,7 +558,9 @@ def upload(stage_dir, keys, headers, dry_run):
             "--no-traverse", "--no-check-dest"]
     for h in headers:
         args += ["--header-upload", h]
+    t0 = time.monotonic()
     r = subprocess.run(args)
+    note(f"rclone copy {len(keys)} ({sum(os.path.getsize(os.path.join(stage_dir, k)) for k in keys) >> 10} KB)", t0)
     os.unlink(lst)
     if r.returncode != 0:
         die(f"rclone failed (exit {r.returncode}); this batch isn't recorded, so rerun to retry")
@@ -552,16 +591,24 @@ def export_riders(path):
   select d.rider, r.name, r.hub, r.versus, r.compare, r.together
   from (select rider, min(ts) as first_ts from dwlist where rider is not null group by rider) d
   left join riders r using (rider)
-  order by d.first_ts;""" + CSV_END)
+  order by d.first_ts;""" + CSV_END, what="export riders.csv")
 
 
 def riders():
     return sorted(r["rider"] for r in duckdb(
-        "select distinct rider from dwlist where rider is not null;", json_out=True)
+        "select distinct rider from dwlist where rider is not null;", json_out=True, what="riders")
         if RIDER.fullmatch(r["rider"]))
 
 
 def publish(manifest, dry_run=False):
+    try:
+        _publish(manifest, dry_run)
+    finally:
+        report_timings(time.monotonic() - STARTED)
+
+
+def _publish(manifest, dry_run):
+    PHASE[0] = "manifest"
     have = manifest.all()
     seed = not have
     if seed:
@@ -570,11 +617,12 @@ def publish(manifest, dry_run=False):
     today = datetime.now(ZoneInfo("Pacific/Honolulu")).date()
     # Images cam-ingest uploaded itself have no file; they're done.
     images = {r["key"]: r["file"] for r in duckdb(
-        "select key, file from cam_images where file is not null;", json_out=True)} \
+        "select key, file from cam_images where file is not null;", json_out=True, what="local cam images")} \
         if has_table("cam_images") else {}
 
     # key -> (fingerprint, headers, adopt): what to export this time.
     todo = {}
+    PHASE[0] = "fingerprints"
     for t in TABLES:
         fps = fingerprints(t)
         dirty = {}
@@ -592,11 +640,13 @@ def publish(manifest, dry_run=False):
         os.makedirs(stage_dir)
 
         files = []  # (key, path, fingerprint, headers, adopt)
+        PHASE[0] = "export tables"
         for t, dirty in todo.items():
             export(t, list(dirty), raw)
             files += [(k, os.path.join(raw, k), fp, hdr, adopt)
                       for k, (fp, hdr, adopt) in dirty.items()]
         lists = []
+        PHASE[0] = "export lists"
         for rider in riders():
             d = os.path.join(raw, "lists", rider)
             export_lists(rider, d)
@@ -608,6 +658,7 @@ def publish(manifest, dry_run=False):
         # Images first: the cam_images files point at them. They never
         # change, so one in the manifest is done.
         new, record = [], []
+        PHASE[0] = "cam images"
         for k, src in sorted(images.items()):
             if k in have:
                 continue
@@ -628,7 +679,9 @@ def publish(manifest, dry_run=False):
         invalidate = []
         # Tracks and conditions first, then the lists that point at tracks.
         for batch in (files, lists):
+            PHASE[0] = "upload lists" if batch is lists else "upload files"
             by_headers, record = {}, []
+            t0 = time.monotonic()
             for key, path, fp, hdr, adopt in batch:
                 sha, hjson, old = sha256(path), json.dumps(hdr), have.get(key)
                 if adopt:  # first publish: S3's copy stands
@@ -644,6 +697,7 @@ def publish(manifest, dry_run=False):
                     if old and old["headers"] == hjson and hdr == LONG:
                         invalidate.append(key)
             n = sum(len(v) for v in by_headers.values())
+            note(f"sha256 {len(batch)}, gzip {n}", t0)
             log(f"{len(batch)} {'lists' if batch is lists else 'files'} exported, {n} to upload")
             for hjson, keys in by_headers.items():
                 upload(stage_dir, keys, json.loads(hjson), dry_run)

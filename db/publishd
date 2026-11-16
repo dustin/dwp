@@ -109,6 +109,7 @@ def main():
                 log(f"nothing asked for {args.every:g}s; publishing anyway")
                 first = (None, [])
         ids, argv = [first[0]], first[1]
+        gathered = time.time()
         if not argv:
             # A plain publish serves every plain request that arrives while
             # things settle; the rest (--dry-run, verify, orphans) run alone.
@@ -119,11 +120,13 @@ def main():
                 except queue.Empty:
                     break
                 (ids.append(r[0]) if not r[1] else later.append(r))
+        waited = time.time() - gathered
         code, err, out, secs = publish(argv)
         ok = code == 0
         stamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
         what = " ".join(["publish", *argv])
-        log(f"{what} {'done' if ok else 'failed: ' + str(err)} in {secs:.0f}s for {len(ids)} request(s)")
+        log(f"{what} {'done' if ok else 'failed: ' + str(err)} in {secs:.0f}s for {len(ids)} request(s), "
+            f"after {waited:.0f}s gathering them")
         for i in ids:
             if i is not None:
                 answer(args.mqtt, f"{REPLY_TOPIC}/{i}", {"ok": ok, "code": code, "error": err, "stamp": stamp,
