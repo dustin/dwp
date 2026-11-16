@@ -1,8 +1,8 @@
 -- The dwp lake's session settings, before the lake is attached (lake.nix
 -- adds the ATTACH and, for the server, quack_serve). Mirrors what the
 -- lake needed from the big lake's init.sql: the extensions the lake's
--- views and macros use, and the InfluxDB secret the old `wind` view needed
--- (only migrate-wind-table.sql still reads it; drop it once that has run).
+-- views and macros use. (The InfluxDB Accept-header secret went with the
+-- old `wind` view: migrate-wind-table.sql.)
 INSTALL ducklake; LOAD ducklake;
 INSTALL sqlite; LOAD sqlite;
 INSTALL spatial; LOAD spatial;
@@ -13,12 +13,3 @@ SET autoload_known_extensions = 1;
 SET allow_asterisks_in_http_paths = true;
 SET s3_url_style = 'path';
 SET http_keep_alive = false;
-
--- The old `wind` view read bee1's InfluxDB over HTTP; it answers CSV only
--- when asked. wind is a table now, filled by db/wind-ingest.
-CREATE SECRET http_auth (
-    TYPE http,
-    EXTRA_HTTP_HEADERS MAP {
-        'Accept': 'application/csv'
-    }
-);

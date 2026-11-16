@@ -6,8 +6,8 @@
 --   cd ~/.config/lakes/dwp && duckdb --init quack-init.sql < ~/prog/downwind.pro/db/migrate-wind-table.sql
 --
 -- Needs bee1's InfluxDB up while it runs (the view reads it), and the
--- lake's Accept: application/csv secret (db/lake/init.sql), which nothing
--- needs after this. Publish re-checks every wind day once afterwards (the
+-- Accept: application/csv secret the lake's init used to have (ran
+-- 2026-11-16; init.sql no longer has it). Publish re-checks every wind day once afterwards (the
 -- rows' types may differ from the view's, which changes their
 -- fingerprints); the CSVs only upload where their bytes changed. Run it
 -- once: a second run finds no view and stops.
