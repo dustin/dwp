@@ -103,6 +103,14 @@ jobs:
       - name: Run tests
         run: node tests/dashboard-test.js
 
+      # The hub (downwind.pro: Kīhei, Maliko, buoys, tides, ...) the same way.
+      - name: Test hub
+        run: |
+          npx http-server dist/hub -p 3002 --silent &
+          echo $! > .hub_pid
+          sleep 3
+          SITE=hub BASE_URL=http://localhost:3002 node tests/dashboard-test.js
+
       - name: Upload test artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v7
@@ -114,6 +122,8 @@ jobs:
       - name: Stop server
         if: always()
         run: |
-          if [ -f .server_pid ]; then
-            kill $(cat .server_pid) || true
-          fi
+          for f in .server_pid .hub_pid; do
+            if [ -f $f ]; then
+              kill $(cat $f) || true
+            fi
+          done

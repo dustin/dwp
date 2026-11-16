@@ -7,13 +7,23 @@ import { chromium } from 'playwright';
 import { csvParse } from 'd3-dsv';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+// Which site BASE_URL serves: rider (a rider's dashboard, the default) or
+// hub (downwind.pro itself).
+const SITE = process.env.SITE || 'rider';
 const RUNS_CSV = process.env.RUNS_CSV || 'https://d2qwe1xndvncw9.cloudfront.net/runs/rider%3Ddustin/runs.csv';
 // How many of the newest runs to always test, so a bad recent import shows
 // up right away instead of whenever the random sample happens to hit it.
 const RECENT_RUNS = Number(process.env.RECENT_RUNS || 3);
 
+// The hub's pages that are always tested (its index doesn't link them all).
+const HUB_PAGES = [
+  'kihei.html', 'maliko.html', 'buoy.html', 'buoy/pauwela.html', 'buoy/waimea.html',
+  'wind.html', 'tides.html', 'versus.html?a=dustin&b=walter', 'bot.html', 'import.html',
+];
+
 // Pages that are always tested, in addition to the random sample below.
 async function requiredLinks() {
+  if (SITE === 'hub') return HUB_PAGES.map(p => `${BASE_URL}/${p}`);
   const res = await fetch(RUNS_CSV);
   if (!res.ok) throw new Error(`${RUNS_CSV}: ${res.status}`);
   const rows = csvParse(await res.text());
@@ -145,7 +155,7 @@ async function runTests() {
   const testedUrls = new Set();
 
   // Create output directory for screenshots and HTML
-  const outputDir = path.join(process.cwd(), 'test-output');
+  const outputDir = path.join(process.cwd(), 'test-output', SITE);
   if (!fs.existsSync(outputDir)) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
@@ -236,7 +246,7 @@ async function runTests() {
 
   // Always test buoys, foils, and the most recent runs.
   const required = await requiredLinks();
-  console.log(`Testing ${required.length} required pages (buoy, foils, ${RECENT_RUNS} most recent runs)`);
+  console.log(`Testing ${required.length} required pages` + (SITE === 'hub' ? '' : ` (buoy, foils, ${RECENT_RUNS} most recent runs)`));
   for (const link of required) {
     if (testedUrls.has(link)) continue;
     level2Links.push(...(await testPage(link, 'required')));
