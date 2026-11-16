@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         Waterspeed GPX bulk export
 // @namespace    waterspeed-gpx-export
-// @version      0.2.0
+// @version      0.2.1
 // @description  Collect the GPX file for every activity in the current Waterspeed list and save them as one zip.
-// @homepageURL  https://downwind.pro/waterspeed.html
+// @homepageURL  https://downwind.pro/import.html
 // @downloadURL  https://downwind.pro/waterspeed-gpx-export.user.js
 // @updateURL    https://downwind.pro/waterspeed-gpx-export.user.js
 // @match        https://go.waterspeedapp.com/*

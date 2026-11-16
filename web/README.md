@@ -3,7 +3,7 @@
 Two [Observable Framework](https://observablehq.com/framework/) sites built from one package:
 
 - **rider** (`rider/`, `rider.config.js`): the per-rider dashboard, served for every `<rider>.downwind.pro`. The rider comes from the hostname (`lib/components/data.js`); add `?rider=walter` to view another rider's data anywhere, including locally.
-- **hub** (`hub/`, `hub.config.js`): `downwind.pro` itself, with the landing page (conditions and riders), tides and the MagTag cards. Files in `hub-static/` are copied as-is to the hub's root after the build (Framework would hash their names), e.g. the Waterspeed export userscript linked from `waterspeed.md`.
+- **hub** (`hub/`, `hub.config.js`): `downwind.pro` itself, with the landing page (conditions and riders), tides and the MagTag cards. Files in `hub-static/` are copied as-is to the hub's root after the build (Framework would hash their names), e.g. the Waterspeed export userscript linked from `import.md`.
 
 Shared code lives in `lib/`: `lib/components/` and `lib/data/islands.json` are symlinked into each site as `components/` and `data/islands.json`, so pages import `./components/…` as usual.
 
