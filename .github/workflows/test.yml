@@ -103,13 +103,17 @@ jobs:
       - name: Run tests
         run: node tests/dashboard-test.js
 
-      # The hub (downwind.pro: Kīhei, Maliko, buoys, tides, ...) the same way.
+      # The hub (downwind.pro: Kīhei, Maliko, buoys, tides, ...) the same
+      # way, on the same port: the data host's CORS rule allows
+      # http://localhost:3000 and not other ports.
       - name: Test hub
         run: |
-          npx http-server dist/hub -p 3002 --silent &
+          kill $(cat .server_pid) || true
+          sleep 1
+          npx http-server dist/hub -p 3000 --silent &
           echo $! > .hub_pid
           sleep 3
-          SITE=hub BASE_URL=http://localhost:3002 node tests/dashboard-test.js
+          SITE=hub BASE_URL=http://localhost:3000 node tests/dashboard-test.js
 
       - name: Upload test artifacts on failure
         if: failure()
