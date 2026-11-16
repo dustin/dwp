@@ -1,0 +1,519 @@
+#!/usr/bin/env python3
+"""The downwind run rating, from the weather/+ feed, published retained to
+weather/conditions/rating.
+
+This was the Node-RED flow on bee1 (Weathery Things: Collect, Features,
+Questions, Ask Clef, Check), moved next to the broker on aws1 so the
+rating stays up while home is down. What it does, every --every seconds
+inside --window (Hawaii time):
+
+  1. Reads each station's last 90 minutes from weather/+ (kihei, wailea,
+     hookipa; by each reading's own stamp, so a retained reading replayed
+     on a reconnect isn't new), and the Wailea cam's water motion from
+     weather/conditions/wailea_motion.
+  2. Works out the features: each station's average, gust, direction and
+     1 h trend, the direction's class from the wind quality table
+     (web/lib/data/wind-quality.json, refreshed hourly from GitHub), and
+     how a north Kīhei run finishes at Wailea. In the dark, or when both
+     sides are light, it publishes "no can" without asking anything.
+  3. Asks the jev model (--jev, a clef model on dsstudio) to score each side
+     0-4 from those features, then clamps each score to the caps and floors
+     worked out in step 2. Without --jev, or when it doesn't answer, each
+     score is the middle of its caps and floors and "model" is null.
+
+The payload is what the site, the bot and the displays already read:
+{stamp, rec, kihei, ns, dark?, model}.
+
+    rating [--mqtt HOST[:PORT]] [--topic TOPIC] [--jev URL] [--model NAME]
+           [--every SECONDS] [--window HH:MM-HH:MM] [--once] [--dry-run]
+
+--dry-run prints the features and the rating instead of publishing; --once
+does one round (after --warmup seconds of listening) and exits.
+"""
+
+import argparse
+import json
+import math
+import os
+import socket
+import sys
+import time
+import urllib.request
+from datetime import datetime, timezone
+from decimal import ROUND_HALF_UP, Decimal
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from mqtt_weather import HST, Weather, _packet, _str  # noqa: E402
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+WQ_URL = "https://raw.githubusercontent.com/dustin/dwp/main/web/lib/data/wind-quality.json"
+WQ_FILE = os.path.join(HERE, "..", "web", "lib", "data", "wind-quality.json")
+LIVE_URL = "https://db.downwind.pro/live/wind.json"
+TOPICS = ("weather/+", "weather/conditions/wailea_motion")
+SITES = ("kihei", "wailea", "hookipa")
+
+# Kīhei 12 kn and the north shore 17 kn are the floors (from the table). A
+# station under its floor by more than MARGINAL is LIGHT; by less, MARGINAL.
+MARGINAL = 3
+GO, TIE = 1.5, 0.4  # a side worth going (about Doable), and too close to call
+DARK_SUN = -4  # degrees: about 20 min before sunrise or after sunset
+
+
+def log(msg):
+    print(f"{time.strftime('%F %T')} rating: {msg}", file=sys.stderr, flush=True)
+
+
+def jround(x):
+    """JavaScript's Math.round (halves up), as the Node-RED flow did."""
+    return math.floor(x + 0.5)
+
+
+def fsum(xs):
+    """Left-to-right float sum, as JavaScript's reduce does (Python's sum()
+    compensates since 3.12, which rounds a few averages differently)."""
+    t = 0.0
+    for x in xs:
+        t += x
+    return t
+
+
+def r1(x):
+    """+x.toFixed(1), as the Node-RED flow rounded."""
+    return float(Decimal(x).quantize(Decimal("0.1"), ROUND_HALF_UP)) + 0.0
+
+
+# ---- the wind quality table
+
+class WindQuality:
+    """The table the site uses, refreshed from GitHub at most hourly; the
+    copy in this source until the first fetch, and the last good one after
+    a bad fetch."""
+
+    def __init__(self, url=WQ_URL, every=3600):
+        self.url, self.every, self.at = url, every, 0
+        with open(WQ_FILE) as f:
+            self.table = json.load(f)
+
+    @staticmethod
+    def ok(t):
+        return isinstance(t, dict) and all(
+            isinstance(t.get("stations", {}).get(s), dict) and t["stations"][s].get("floor", 0) > 0
+            and isinstance(t["stations"][s].get("ranges"), list) for s in ("kihei", "hookipa"))
+
+    def stations(self):
+        if self.url and time.time() - self.at > self.every:
+            self.at = time.time()
+            try:
+                with urllib.request.urlopen(self.url, timeout=30) as r:
+                    t = json.load(r)
+                if self.ok(t):
+                    self.table = t
+                else:
+                    log("wind quality table looks wrong; keeping the last one")
+            except (OSError, ValueError) as e:
+                log(f"wind quality table: {e}; keeping the last one")
+        return self.table["stations"]
+
+
+# ---- features (Node-RED's "Features")
+
+LABEL = {"magic": "magic", "good": "good", "hard": "harder", "nogo": "no go"}
+
+
+def stats(readings, now, from_min, to_min):
+    """{avg, gust, dir} over readings between from_min and to_min minutes ago,
+    or None with fewer than two."""
+    rs = [r for r in readings if r["wavg"] is not None
+          and now - r["t"] <= from_min * 60 and now - r["t"] >= to_min * 60]
+    if len(rs) < 2:
+        return None
+
+    def mean(k):
+        v = [r[k] for r in rs if r[k] is not None]
+        return fsum(v) / len(v) if v else None
+
+    # Speed-weighted circular mean, so calm readings don't swing it.
+    d = [r for r in rs if r["wdir"] is not None]
+    sx = fsum(r["wavg"] * math.sin(math.radians(r["wdir"])) for r in d)
+    cx = fsum(r["wavg"] * math.cos(math.radians(r["wdir"])) for r in d)
+    direction = jround((math.degrees(math.atan2(sx, cx)) + 360) % 360) % 360 if d else None
+    gust = mean("wgust")
+    return {"avg": r1(mean("wavg")), "gust": None if gust is None else r1(gust), "dir": direction}
+
+
+def trend(readings, now):
+    a, b = stats(readings, now, 15, 0), stats(readings, now, 60, 45)
+    return r1(a["avg"] - b["avg"]) if a and b else None
+
+
+def dir_class(wq, site, d):
+    """The table's class for a direction: (cls, band). Clockwise from..to
+    ranges, first match wins; anything else is no go."""
+    if d is None:
+        return None, "direction unknown"
+    deg = jround(d) % 360
+    for r in wq[site]["ranges"]:
+        lo, hi = r["from"], r["to"]
+        if (lo <= deg <= hi) if lo <= hi else (deg >= lo or deg <= hi):
+            return r["class"], f"{LABEL.get(r['class'], r['class'])} ({r.get('note', '')})"
+    return "nogo", "no go"
+
+
+# Wailea is the finish of a north Kīhei run.
+DEAD, CAM_FRESH = 6, 30 * 60
+LIVELY = ("textured", "scattered whitecaps", "many whitecaps")
+CARRY_DX, LIVE_DX, LEFT_DX, LEFT_SHARE, CAPS = -2.0, -1.5, -1.0, 0.7, 10
+STRONG_DX, STRONG_CAPS = -6.0, 500
+SOLID, STRONG_WAILEA, BLOWING = 11, 15, 15
+UP_DX = 0
+# Wailea wind from the south round to west (120-269°) is against a north
+# run, at any speed; 270 and up is fine (Dustin, 2026-10-21).
+AGAINST_FROM, AGAINST_TO = 120, 270
+
+
+def against(d):
+    return d is not None and AGAINST_FROM <= d < AGAINST_TO
+
+
+def nw(d):
+    return d is not None and d >= 270
+
+
+def east_of_n(d):
+    return d is not None and 0 < d < 90
+
+
+def wail_band(w):
+    if w["avg"] < DEAD:
+        return "DEAD AIR at the finish"
+    if w["avg"] < 10:
+        return "light at the finish"
+    if w["dir"] is None:
+        return "direction unknown"
+    if against(w["dir"]):
+        return "FROM THE SOUTH OR WEST, against a north Kihei run"
+    return "strong along the route, fine"
+
+
+def fmt_num(x):
+    """A number as the JS template literals printed it (no trailing .0)."""
+    return str(int(x)) if float(x).is_integer() else str(x)
+
+
+def finish(w, cam, motion):
+    """How a north Kīhei run finishes at Wailea: station and cam together.
+    Water running right to left on the cam is energy heading down the coast."""
+    sea = cam and cam.get("sea")
+    measured = bool(motion) and motion.get("dx") is not None
+    left = motion["dx"] if measured and (motion.get("left") or 0) >= LEFT_SHARE else 0
+    caps = (motion and motion.get("whitecaps")) or 0
+    if measured and motion["dx"] > UP_DX:
+        return f"OPPOSED: the Wailea cam shows water moving up the coast (+{fmt_num(motion['dx'])} px/s), against a north run"
+    if w and against(w["dir"]):
+        return f"OPPOSED: Wailea wind is from {w['dir']}°, south or west, against a north run"
+    if w and w["avg"] >= STRONG_WAILEA and nw(w["dir"]):
+        return f"CARRIES STRONGLY: Wailea has {fmt_num(w['avg'])} kn from {w['dir']}°, north of west"
+    if w and w["avg"] >= BLOWING and east_of_n(w["dir"]):
+        return f"DOUBTFUL: Wailea is blowing {fmt_num(w['avg'])} kn from {w['dir']}°, east of north, a rough finish"
+    if left <= STRONG_DX or caps >= STRONG_CAPS:
+        return f"CARRIES STRONGLY: the Wailea cam shows water running hard down the coast ({fmt_num(left)} px/s, {caps} whitecaps)"
+    if w and w["avg"] >= SOLID and nw(w["dir"]):
+        return f"CARRIES: Wailea has {fmt_num(w['avg'])} kn from {w['dir']}°, north of west"
+    if left <= CARRY_DX:
+        return f"CARRIES: the Wailea cam shows water running down the coast ({fmt_num(left)} px/s)"
+    if caps >= CAPS:
+        return f"CARRIES: the Wailea cam shows small whitecaps ({caps})"
+    if left <= LIVE_DX and w and w["avg"] >= DEAD:
+        return f"CARRIES: Wailea has some wind and the cam shows water running down the coast ({fmt_num(left)} px/s)"
+    # The vision read only counts when there's no motion measurement.
+    if not measured and sea in LIVELY:
+        return f"CARRIES: the Wailea cam shows {sea} water"
+    if w and w["avg"] >= 10:
+        return "CARRIES: Wailea has wind"
+    if left <= LEFT_DX:
+        return f"DOUBTFUL: Wailea is light, but the cam shows water running down the coast ({fmt_num(left)} px/s)"
+    if measured:
+        return "DIES: Wailea is light and the cam shows no water running down the coast"
+    if not w:
+        return f"UNKNOWN: no Wailea wind, cam shows {sea}" if sea else "UNKNOWN: no Wailea wind or cam"
+    if w["avg"] < DEAD:
+        return f"DIES: Wailea has dead air{f' and the cam shows {sea} water' if sea else ''}"
+    return f"DOUBTFUL: Wailea is light{f' and the cam shows {sea} water' if sea else ''}"
+
+
+def describe(p, floor):
+    def cls(v, f):
+        return "LIGHT" if v < f - MARGINAL else "MARGINAL" if v < f else "RIDEABLE" if v < f + 5 else "STRONG"
+
+    def s(name, x, f=None):
+        if not x:
+            return f"{name}: no data."
+        c = cls(x["avg"], f) if f else None
+        head = (f"{name}: {c} wind, {fmt_num(x['avg'])} kn avg (floor {fmt_num(f)})" if c
+                else f"{name}: {fmt_num(x['avg'])} kn avg")
+        gust = "" if x.get("gust") is None else f", {fmt_num(x['gust'])} kn gust"
+        d = ("direction irrelevant when light" if c == "LIGHT"
+             else x["band"] if x.get("dir") is None else f"from {x['dir']}°, {x['band']}")
+        t = x.get("trend_1h")
+        tr = "" if t is None else f", 1 h trend {'+' if t > 0 else ''}{fmt_num(t)} kn"
+        return f"{head}{gust}, {d}{tr}."
+
+    return "\n".join([
+        f"Time {p['time_hst']} HST.",
+        s("Kihei station (north end of Kihei)", p["kihei"], floor["kihei"]),
+        s("Wailea station (south end of Kihei, the finish), last 25 min", p["wailea"]),
+        f"North Kihei run finish: {p['finish']}.",
+        s("Hookipa station (north shore)", p["hookipa"], floor["hookipa"]),
+        f"Pauwela buoy: {p['pauwela_buoy'] or 'no data'}.",
+    ])
+
+
+def sun_altitude(t, lat=20.78, lon=-156.46):
+    """The sun's altitude at Kīhei in degrees at epoch t (NOAA's
+    low-precision formulas, good to a fraction of a degree)."""
+    rad = math.pi / 180
+    d = t / 86400 - 10957.5  # days since J2000
+    g = (357.529 + 0.98560028 * d) * rad
+    q = 280.459 + 0.98564736 * d
+    L = (q + 1.915 * math.sin(g) + 0.020 * math.sin(2 * g)) * rad
+    e = (23.439 - 0.00000036 * d) * rad
+    dec = math.asin(math.sin(e) * math.sin(L))
+    ra = math.atan2(math.cos(e) * math.sin(L), math.cos(L)) / rad
+    gmst = math.fmod(280.46061837 + 360.98564736629 * d, 360)
+    ha = (gmst + lon - ra) * rad
+    return math.asin(math.sin(lat * rad) * math.sin(dec)
+                     + math.cos(lat * rad) * math.cos(dec) * math.cos(ha)) / rad
+
+
+def stamp(now):
+    return datetime.fromtimestamp(now, timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def features(wq, readings, extra, motion, cam, now):
+    """("rate", state text, caps, mins) when the model should score it, or
+    ("publish", payload) for a "no can" that needs no model."""
+    floor = {"kihei": wq["kihei"]["floor"], "hookipa": wq["hookipa"]["floor"]}
+    if sun_altitude(now) < DARK_SUN:
+        return "publish", {"stamp": stamp(now), "rec": "no can", "dark": True, "kihei": 0, "ns": 0}
+
+    rd = lambda site: readings.get(site, [])  # noqa: E731
+    # Wailea over the last 25 min (it reports every 10): the finish is what
+    # it's doing now, and a stale Wailea must show as missing.
+    k, w, h = stats(rd("kihei"), now, 60, 0), stats(rd("wailea"), now, 25, 0), stats(rd("hookipa"), now, 60, 0)
+    p = {"time_hst": datetime.fromtimestamp(now, HST).strftime("%H:%M")}
+    if k:
+        c, band = dir_class(wq, "kihei", k["dir"])
+        k = {**k, "trend_1h": trend(rd("kihei"), now), "cls": c, "band": band}
+    if w:
+        w = {**w, "trend_1h": trend(rd("wailea"), now), "band": wail_band(w)}
+    if h:
+        c, band = dir_class(wq, "hookipa", h["dir"])
+        h = {**h, "trend_1h": trend(rd("hookipa"), now), "cls": c, "band": band}
+    hk = extra.get("hookipa", {})
+    p.update(kihei=k, wailea=w, hookipa=h,
+             pauwela_buoy=" / ".join(x for x in (hk.get("aux1"), hk.get("aux2")) if x) or None)
+    cam = cam if cam and now - cam["t"] < CAM_FRESH and cam.get("daylight") is not False else None
+    motion = motion if motion and now - motion["t"] < CAM_FRESH else None
+    fin = p["finish"] = finish(w, cam, motion)
+
+    def light(x, f):
+        return not x or x["avg"] < f - MARGINAL
+
+    if light(k, floor["kihei"]) and light(h, floor["hookipa"]):
+        return "publish", {"stamp": stamp(now), "rec": "no can", "kihei": 0, "ns": 0}
+
+    # The highest score each side can reach: under the floor tops out at
+    # Marginal, a dead or unknown finish at Doable, a harder direction under
+    # 25 kn at Good, an opposed north run at Marginal.
+    def cap(x, f):
+        return 0 if not x else 0 if x["avg"] < f - MARGINAL else 1 if x["avg"] < f else 4
+
+    south = bool(k) and k["dir"] is not None and 150 <= k["dir"] <= 240
+    harder = bool(k) and k["cls"] == "hard" and not south
+    opposed = fin.startswith("OPPOSED") and not south
+    unknown = fin.startswith("UNKNOWN")
+    caps = {
+        "kihei": min(cap(k, floor["kihei"]), 2 if fin.startswith("DIES") or unknown else 4,
+                     3 if harder and k["avg"] < 25 else 4, 1 if opposed else 4),
+        "ns": cap(h, floor["hookipa"]),
+    }
+    # And the lowest: 12+ kn in a rideable direction with a finish that
+    # doesn't die is at least Doable; a north day that carries is at least
+    # Good at 15+ kn gusty in a magic or good direction, and Really good when
+    # it carries strongly; NS 17+ in a good direction is at least Doable.
+    north = bool(k) and not south and k["cls"] in ("magic", "good")
+    gusty = bool(k) and k["gust"] is not None and k["gust"] - k["avg"] >= 4
+    if not (k and k["avg"] >= floor["kihei"] and k["cls"] and k["cls"] != "nogo" and not south):
+        kmin = 0
+    elif opposed:
+        kmin = 0
+    elif fin.startswith("DIES"):
+        kmin = 1
+    elif ((north and k["avg"] >= 15) or (harder and k["avg"] >= 25)) and fin.startswith("CARRIES STRONGLY"):
+        kmin = 4
+    elif north and k["avg"] >= 15 and gusty and fin.startswith("CARRIES"):
+        kmin = 3
+    else:
+        kmin = 2
+    mins = {"kihei": kmin, "ns": 2 if h and h["avg"] >= floor["hookipa"] and h["cls"] == "good" else 0}
+    return "rate", describe(p, floor), caps, mins
+
+
+# ---- the questions (Node-RED's "Questions"), with the floors from the table
+
+def questions(floor):
+    kf, hf = floor["kihei"], floor["hookipa"]
+    kl, hl = kf - MARGINAL, hf - MARGINAL
+    n = fmt_num
+    return {
+        "kihei": {"type": "score", "instructions": "How good is Kihei for a downwinder right now?", "criteria": [
+            f"Not a downwinder: Kihei wind LIGHT (under {n(kl)} kn) from any direction (the direction doesn't matter when it's that light), or direction \"no go\", or no Kihei data.",
+            f"Marginal: Kihei wind MARGINAL ({n(kl)}–{n(kf)} kn); or a south reverse run in a \"harder\" direction (too onshore); or Wailea wind \"FROM THE SOUTH OR WEST\" on a north-wind day; or a day that would be Doable but whose north run finish DIES; or a north run whose finish is OPPOSED (any water moving up the coast at Wailea, or Wailea wind from the south or west).",
+            f"Doable: Kihei {n(kf)}+ kn in a \"harder\" direction; or a south reverse run in a \"good\" direction with {n(kf)}+ kn (reverse days never go higher); or a day that would be Good or Really good but whose north run finish DIES or is DOUBTFUL.",
+            "Good: Kihei 15+ kn with gusts 4+ kn over the average from a \"magic\" or \"good\" north direction, and the north run finish CARRIES or is UNKNOWN.",
+            "Really good: Kihei 15+ kn from a \"magic\" or \"good\" north direction (or 25+ kn from a \"harder\" one), and the north run finish CARRIES STRONGLY.",
+        ]},
+        "ns": {"type": "score", "instructions": "How good is the North Shore for a downwinder right now?", "criteria": [
+            f"Not a downwinder: Hookipa wind LIGHT (under {n(hl)} kn), or direction \"no go\", or no Hookipa data.",
+            f"Marginal: Hookipa wind MARGINAL ({n(hl)}–{n(hf)} kn), or a \"harder\" direction under {n(hf + 3)} kn.",
+            f"Doable: Hookipa {n(hf)}–{n(hf + 3)} kn from a \"good\" direction, or {n(hf + 3)}+ kn from a \"harder\" one.",
+            f"Good: Hookipa {n(hf + 3)}–{n(hf + 8)} kn from a \"good\" direction.",
+            f"Really good: Hookipa {n(hf + 5)}+ kn steady from a \"good\" direction, trend flat or rising. (Over {n(hf + 8)} kn he rode less often; treat {n(hf + 10)}+ as 3.)",
+        ]},
+    }
+
+
+def ask(jev, model, state, qs, timeout=120):
+    """jev's {side: score} for the state, or None (logged) when it fails."""
+    body = json.dumps({"model": model, "state": state, "questions": qs}).encode()
+    req = urllib.request.Request(jev.rstrip("/") + "/v1/systemone", data=body,
+                                 headers={"Content-Type": "application/json"})
+    t0 = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            res = json.load(r)
+        answers = res["answers"]
+        out = {side: float(a["score"]) for side, a in answers.items() if a.get("score") is not None}
+        log(f"{res.get('model') or model}: " + ", ".join(f"{k} {v}" for k, v in out.items())
+            + f" in {time.time() - t0:.1f}s")
+        return out, res.get("model") or model
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        log(f"jev: {e!r}")
+        return None, None
+
+
+def rec(k, n):
+    """Node-RED's "Check": one clear recommendation."""
+    if k < GO and n < GO:
+        return "no can"
+    if abs(k - n) < TIE:
+        return "either; " + ("Kīhei" if k >= n else "north shore") + " slightly better"
+    return "Kīhei" if k > n else "north shore"
+
+
+def rate(scores, caps, mins, model, now):
+    def score(side):
+        v = scores.get(side) if scores else None
+        if v is None:  # no model: the middle of what Features allows
+            v = (mins[side] + caps[side]) / 2
+        return min(max(v, mins[side]), caps[side])
+
+    k, n = score("kihei"), score("ns")
+    return {"stamp": stamp(now), "rec": rec(k, n), "kihei": r1(k), "ns": r1(n), "model": model if scores else None}
+
+
+# ---- MQTT out
+
+def publish(host, port, topic, payload):
+    """One retained QoS 0 message on its own connection."""
+    with socket.create_connection((host, port), timeout=30) as s:
+        s.sendall(_packet(0x10, _str("MQTT") + bytes([4, 0x02]) + (60).to_bytes(2, "big")
+                          + _str(f"dwp-rating-{int(time.time())}")))
+        s.recv(4)  # CONNACK
+        s.sendall(_packet(0x31, _str(topic) + json.dumps(payload, ensure_ascii=False).encode()))
+        s.sendall(b"\xe0\0")  # DISCONNECT
+
+
+# ---- main
+
+def seed(weather):
+    """The last 24 h from live/wind.json, so a restart has its hour of history."""
+    try:
+        with urllib.request.urlopen(LIVE_URL, timeout=30) as r:
+            body = r.read()
+        if body[:2] == b"\x1f\x8b":
+            import gzip
+            body = gzip.decompress(body)
+        stations = json.loads(body).get("stations") or {}
+        for site in SITES:
+            rows = [{"t": datetime.fromisoformat(ts).timestamp(), "wavg": a, "wgust": g, "wlull": lu, "wdir": d}
+                    for ts, a, g, lu, d in (stations.get(site) or {}).get("readings", [])]
+            weather.seed(site, rows)
+        log("seeded from live/wind.json: " + ", ".join(
+            f"{s} {len((stations.get(s) or {}).get('readings', []))}" for s in SITES))
+    except (OSError, ValueError, TypeError) as e:
+        log(f"seeding from live/wind.json failed: {e!r}")
+
+
+def in_window(window, now):
+    lo, hi = window.split("-")
+    hm = datetime.fromtimestamp(now, HST).strftime("%H:%M")
+    return lo <= hm < hi
+
+
+def round_once(args, weather, wq):
+    now = time.time()
+    stations = wq.stations()
+    recent = {site: [r for r in q if now - r["t"] < 90 * 60] for site, q in weather.recent().items()}
+    out = features(stations, recent, {s: weather.info(s) for s in SITES},
+                   weather.water_motion("wailea"), weather.cam("wailea"), now)
+    if out[0] == "publish":
+        payload, state = out[1], None
+    else:
+        _, state, caps, mins = out
+        scores, model = ask(args.jev, args.model, state, questions(
+            {"kihei": stations["kihei"]["floor"], "hookipa": stations["hookipa"]["floor"]})) if args.jev else (None, None)
+        payload = rate(scores, caps, mins, model, now)
+        state += f"\n(caps {caps}, mins {mins})"
+    if args.dry_run:
+        print((state + "\n" if state else "") + json.dumps(payload, ensure_ascii=False), flush=True)
+    else:
+        host, _, port = args.mqtt.partition(":")
+        publish(host, int(port or 1883), args.topic, payload)
+        log(f"{args.topic}: {json.dumps(payload, ensure_ascii=False)}")
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    ap.add_argument("--mqtt", default="localhost", metavar="HOST[:PORT]")
+    ap.add_argument("--topic", default="weather/conditions/rating")
+    ap.add_argument("--jev", help="jev's base URL, e.g. http://dsstudio:11434 (no model without it)")
+    ap.add_argument("--model", default="clef-flash")
+    ap.add_argument("--every", type=int, default=300, help="seconds between ratings")
+    ap.add_argument("--window", default="07:00-17:00", help="HST hours to rate in")
+    ap.add_argument("--warmup", type=int, default=20, help="seconds to listen before the first rating")
+    ap.add_argument("--once", action="store_true")
+    ap.add_argument("--dry-run", action="store_true", help="print instead of publishing")
+    args = ap.parse_args(argv)
+
+    host, _, port = args.mqtt.partition(":")
+    weather = Weather(host, int(port or 1883), topics=TOPICS)
+    seed(weather)
+    weather.start()
+    wq = WindQuality()
+    log(f"rating {args.window} HST every {args.every}s to {args.topic} on {args.mqtt}"
+        + (f", asking {args.model} at {args.jev}" if args.jev else ", without a model"))
+    time.sleep(args.warmup)
+    while True:
+        if args.once or in_window(args.window, time.time()):
+            try:
+                round_once(args, weather, wq)
+            except Exception as e:  # keep rating; the next round may work
+                log(f"round failed: {e!r}")
+        if args.once:
+            return
+        time.sleep(args.every - time.time() % args.every)
+
+
+if __name__ == "__main__":
+    main()
