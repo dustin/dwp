@@ -1,5 +1,5 @@
 // Maui High Surf Advisories and Warnings from the National Weather
-// Service, as bot/surf-alerts keeps them in live/alerts.json (polled every
+// Service, as live/surf-alerts keeps them in live/alerts.json (polled every
 // 10 minutes on aws1). Each alert has event, severity, headline, what,
 // where, when, impacts, description, shores (["north", "east"], [] when
 // unsaid), spots (maliko for north/east shores, kihei for south/west),

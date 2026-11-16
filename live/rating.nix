@@ -1,7 +1,7 @@
-# Home-manager module for the run rating (bot/rating): rates Kīhei and the
+# Home-manager module for the run rating (live/rating): rates Kīhei and the
 # north shore every few minutes from the weather/+ feed and publishes
 # weather/conditions/rating, as a systemd user service (Linux; it runs on
-# aws1, next to the broker). Imported by hm-module.nix. The script comes
+# aws1, next to the broker). Imported by live/hm-module.nix. The script comes
 # from this source, so a dwp bump updates it.
 #
 #   services.dwp-rating = {
@@ -21,7 +21,7 @@ let
     text = ''
       export TZDIR="${pkgs.tzdata}/share/zoneinfo"
       export SSL_CERT_FILE="''${SSL_CERT_FILE:-${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt}"
-      exec python3 ${src}/bot/rating "$@"
+      exec python3 ${src}/live/rating "$@"
     '';
   };
   command = [ (lib.getExe env) "--mqtt" cfg.mqtt "--topic" cfg.topic

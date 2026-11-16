@@ -15,7 +15,7 @@
 #   };
 #
 # bot/matrix-bot, and the db/ commands it runs (add-run, publish,
-# drive-sync), come from this source (bot/, db/ and web/lib/, which the
+# drive-sync), come from this source (bot/, db/, live/mqtt_weather.py and web/lib/, which the
 # import replies' achievements and !forecast read), so a dwp bump updates
 # the bot. Set checkout to run a dwp checkout's instead, where edits take
 # effect on the bot's next restart.
@@ -25,7 +25,7 @@ let
   src = lib.fileset.toSource {
     root = ../.;
     fileset = lib.fileset.difference
-      (lib.fileset.unions [ ../bot ../db ../web/lib ])
+      (lib.fileset.unions [ ../bot ../live/mqtt_weather.py ../db ../web/lib ])
       (lib.fileset.fileFilter (f: f.hasExt "pyc") ../.);
   };
   root = if cfg.checkout == null then "${src}" else cfg.checkout;
@@ -44,7 +44,10 @@ let
   publishEnv = lib.optionalAttrs (cfg.mqtt != "") { DWP_MQTT = cfg.mqtt; };
 in
 {
-  imports = [ ./live-wind.nix ./surf-alerts.nix ./rating.nix ];
+  # The aws1 publishers (live-wind, surf-alerts, rating) live in ../live;
+  # importing them here means a home-manager config that imports this
+  # module gets them too.
+  imports = [ ../live/hm-module.nix ];
 
   options.services.dwp-matrix-bot = with lib; {
     enable = mkEnableOption "the downwind.pro Matrix import bot";

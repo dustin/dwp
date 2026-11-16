@@ -1,5 +1,5 @@
 """Just enough MQTT 3.1.1 (QoS 0) for publishd and its callers: no
-dependencies, so it runs anywhere python3 does. bot/mqtt_weather.py has
+dependencies, so it runs anywhere python3 does. live/mqtt_weather.py has
 its own copy of the framing for the weather feed.
 
     send(host, topic, payload, retain=False)

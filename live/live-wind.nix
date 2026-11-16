@@ -1,6 +1,6 @@
 # Home-manager module for live-wind: keeps live/wind.json in the bucket
 # from the weather/+ feed, as a systemd user service (Linux; it runs on
-# aws1, next to the broker). Imported by hm-module.nix. The script comes
+# aws1, next to the broker). Imported by live/hm-module.nix. The script comes
 # from this source, not a checkout, so a dwp bump updates it.
 #
 #   services.dwp-live-wind = {

@@ -1,7 +1,7 @@
 # Home-manager module for surf-alerts: keeps live/alerts.json in the
 # bucket from the NWS's active Hawaiʻi alerts (Maui High Surf Advisories
 # and Warnings), as a systemd user service (Linux; it runs on aws1).
-# Imported by hm-module.nix.
+# Imported by live/hm-module.nix.
 #
 #   services.dwp-surf-alerts = {
 #     enable = true;
