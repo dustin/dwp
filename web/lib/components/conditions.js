@@ -118,12 +118,25 @@ export function similarRunsCard(similar, now, {station, region, shown = 10, note
 
 const hstDay = t => new Date(t - 10 * 3600e3).toISOString().slice(0, 10);
 
+// Why the latest reading is older than the round: the watcher skips a cam
+// while its station is light ("kihei light"), but measures one with hourly
+// set (cams.py "floor") about once an hour anyway.
+const STATION_NAMES = {kihei: "Kīhei", hookipa: "Hoʻokipa"};
+function skipNote(readings, r, last, hourly) {
+  const station = last.skipped.replace(/ light$/, "");
+  if (hourly && station !== last.skipped)
+    return `Light wind at ${STATION_NAMES[station] ?? station}: measuring about hourly until it picks up.`;
+  const since = readings.find(d => d.skipped && d.ts > r.ts) ?? last;
+  return `Not measuring since ${fmt.clock(since.ts)} (${last.skipped}).`;
+}
+
 // A cam's water motion (db/cams/cam_motion.py): the latest reading, its
 // arrow overlay and the day's dx. dx < 0 is right to left in the picture;
 // left/right name where that goes. mark ({dx, label}) draws a dashed line at
-// a calibrated dx; px/s differ between cams. read is a vision read, if any.
+// a calibrated dx; px/s differ between cams. hourly: the watcher still
+// measures it hourly while it skips (cams.py "floor"). read is a vision read, if any.
 // url is the cam's own live page, which the name links to.
-export function camCard({name, url, readings, left, right, mark}, read, {resize}) {
+export function camCard({name, url, readings, left, right, mark, hourly}, read, {resize}) {
   const title = url ? html`<a href=${url} target="_blank">${name}</a>` : name;
   const measured = readings.filter(d => !d.skipped && d.dx != null);
   const last = readings.at(-1);
@@ -136,7 +149,7 @@ export function camCard({name, url, readings, left, right, mark}, read, {resize}
   return html`<div class="card">
     <h2>${title} <span class="muted" style="font-weight: normal">water motion · ${fmt.minuteStamp(r.ts)}</span></h2>
     <div class="lead">${Math.abs(r.dx).toFixed(1)} <span class="unit">px/s ${toward} · ${Math.round(100 * share)}% of the moving water${r.whitecaps == null ? "" : ` · ${r.whitecaps} whitecap${r.whitecaps === 1 ? "" : "s"}`}</span></div>
-    ${last?.skipped ? html`<div class="muted">Not measuring since ${fmt.clock(last.ts)} (${last.skipped}).</div>` : ""}
+    ${last?.skipped ? html`<div class="muted">${skipNote(readings, r, last, hourly)}</div>` : ""}
     ${read ? html`<div class="muted" style="margin-top: 0.25rem">Vision read ${fmt.clock(new Date(read.stamp))}: ${read.sea}${read.shorebreak ? `, shorebreak ${read.shorebreak}` : ""}. ${read.description ?? ""}</div>` : ""}
     <div class="grid grid-cols-2" style="margin: 0.5rem 0 0">
       <div>${img ? html`<a href=${r.images.frame ?? img} target="_blank"><img class="cam-img" src=${img} alt="${name}: water with motion arrows"></a>` : ""}</div>

@@ -14,7 +14,8 @@ and keeps an arrow overlay per reading as DIR/<stamp>-flow.jpg; db/cam-ingest
 puts both in the lake, db/publish the images in S3.
 It skips a cam's video (publishing {"stamp", "skipped": "<station> light"})
 while the station that cam watches for (its "gate" in cams.py, weather/<gate>)
-reads under 9 kn. An AlertWest panorama cam ("alertwest" in cams.py) has no
+reads under 9 kn, unless its last measured reading in --log is older than
+its "floor" (Wailea and Ulua: hourly), so the pages still get one. An AlertWest panorama cam ("alertwest" in cams.py) has no
 motion and no gate: each round just keeps the crops of its latest panorama
 in its --log dir as <stamp>-<kind>.jpg. Run it every 10 min in daylight
 (launchd/cron); the streams are up 05:00-19:30 HST.
@@ -44,6 +45,7 @@ PANO_WINDOW = 15 * 60  # s
 DATAHOST = "d2qwe1xndvncw9.cloudfront.net"  # the site's published data
 UA = "Mozilla/5.0"  # init 403s without a browser-ish agent
 LIGHT_MIN = 9  # kn; under this a side is LIGHT in the run rating (floor 12 - 3)
+FLOOR_SLACK = 300  # s; rounds drift, so an hourly floor measures after 55 min
 
 
 def get(url, params=None, ctx=None, referer=None):
@@ -213,6 +215,36 @@ def log(d, line):
     os.makedirs(d, exist_ok=True)
     with open(os.path.join(d, "motion.jsonl"), "a") as f:
         f.write(line + "\n")
+
+
+def last_measured(d):
+    """Unix time of the newest measured (not skipped) reading in d's
+    motion.jsonl, or None. Reads only the tail: the file only grows."""
+    path = os.path.join(os.path.expanduser(d), "motion.jsonl")
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, os.SEEK_END)
+            f.seek(max(0, f.tell() - 65536))
+            lines = f.read().decode(errors="replace").splitlines()
+    except OSError:
+        return None
+    for line in reversed(lines):
+        try:
+            r = json.loads(line)
+        except ValueError:
+            continue  # the first, cut line
+        if not r.get("skipped") and r.get("stamp"):
+            return datetime.strptime(r["stamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    return None
+
+
+def due(name, a):
+    """True when the cam's floor says to measure it even in light wind."""
+    floor = CAMS[name].get("floor")
+    if not floor or not a.log:
+        return False
+    t = last_measured(a.log.format(cam=name))
+    return t is None or time.time() - t >= floor - FLOOR_SLACK
 
 
 def measure(name, a):
@@ -396,7 +428,7 @@ def main():
         if a.mqtt and not a.any_time:
             if gate not in lights:
                 lights[gate] = light(a.mqtt, gate)
-            if lights[gate]:
+            if lights[gate] and not due(name, a):
                 # No run worth watching for; say so rather than leave an older
                 # reading standing. (The vision read isn't used: it calls
                 # small, clearly moving water "glassy".)

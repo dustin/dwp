@@ -6,7 +6,9 @@ A cam is either Ozolio ("oid", optional "directory") or a plain HLS playlist
 PEM here for a server that sends only its own certificate).
 
 "gate" is the wind station (weather/<gate>) whose run the cam is for; while
-it reads under 9 kn the cam is skipped. Default kihei.
+it reads under 9 kn the cam is skipped. Default kihei. "floor" (seconds)
+measures the cam anyway once its last measured reading is that old, so its
+card never goes stale in daylight (needs cam-motion's --log, where it looks).
 
 Boxes are (x, y, w, h) in the cam's frame (Ozolio 1920x1080, Brownrice 1280x720):
   water: the band optical flow measures (water_motion.py)
@@ -31,6 +33,7 @@ CAMS = {
         "oid": "CID_XWEE00001592", "directory": "DIR_0DEF00000001",
         "water": (0, 60, 1920, 230), "land": (1500, 520, 300, 120),
         "caps": (0, 50, 1920, 160), "caps_mask": [(0, 150, 260, 70)],
+        "floor": 3600,
     },
     # Wailea Beach Marriott, on the point between Wailea and Ulua beaches,
     # looking northwest at West Maui. Near water left of the reef, above the palm tops.
@@ -38,6 +41,7 @@ CAMS = {
         "oid": "CID_GQRS00000091",
         "water": (0, 370, 1100, 170), "land": (1440, 930, 150, 100),
         "caps": (0, 335, 1550, 170), "caps_mask": [(1120, 445, 430, 60)],
+        "floor": 3600,
     },
     # Makena Surf, above Poʻolenalena Beach, looking northwest up the coast
     # (Brownrice player on makenasurf.org, 720p). Water left of the shorebreak,

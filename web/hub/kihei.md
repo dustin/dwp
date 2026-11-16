@@ -61,8 +61,8 @@ const STATIONS = [
 // Wailea's has the −2 px/s line. left/right say where dx < 0 / > 0 goes.
 const DOWN_COAST = {left: "toward Mākena", right: "toward Kīhei"};
 const CAMS = [
-  {site: "ulua", name: "Ulua cam", url: "https://www.ozolio.com/explore/GQRS00000091", ...DOWN_COAST},
-  {site: "wailea", name: "Grand Wailea cam", url: "https://www.grandwailea.com/grand-wailea-maui-webcam", ...DOWN_COAST, mark: {dx: -2, label: "where the finish usually carries"}},
+  {site: "ulua", name: "Ulua cam", url: "https://www.ozolio.com/explore/GQRS00000091", ...DOWN_COAST, hourly: true},
+  {site: "wailea", name: "Grand Wailea cam", url: "https://www.grandwailea.com/grand-wailea-maui-webcam", ...DOWN_COAST, hourly: true, mark: {dx: -2, label: "where the finish usually carries"}},
   {site: "poolenalena", name: "Poʻolenalena cam", url: "https://makenasurf.org/makena-surf-beach-camera/", left: "offshore", right: "inshore"},
 ];
 // AlertWest's panorama from up the hill above Wailea: crops of its water
