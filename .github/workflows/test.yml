@@ -108,8 +108,9 @@ jobs:
       # http://localhost:3000 and not other ports.
       - name: Test hub
         run: |
-          kill $(cat .server_pid) || true
-          sleep 1
+          # .server_pid is npx's; the http-server it started is its child.
+          pkill -f 'http-server dist/rider' || true
+          sleep 2
           npx http-server dist/hub -p 3000 --silent &
           echo $! > .hub_pid
           sleep 3
