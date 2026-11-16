@@ -107,21 +107,12 @@ SELECT 'replacing ' || count(*) || ' existing run(s): ' ||
        coalesce(string_agg(dwid::VARCHAR, ', '), '(none)') AS reimport_notice
 FROM existing_run;
 
--- A trim on the run being replaced carries over to the new one.
-CREATE TEMP TABLE old_trim AS
-SELECT start_ts, end_ts, reason, added_at FROM run_trims
-WHERE dwid IN (SELECT dwid FROM existing_run)
-ORDER BY added_at DESC LIMIT 1;
+-- A re-import starts clean: the replaced run's trim, synthesized points
+-- (synth_points in schema.sql) and top-speed exclusions go with it, and
+-- nothing carries over to the new run.
 DELETE FROM run_trims WHERE dwid IN (SELECT dwid FROM existing_run);
-
--- So do synthesized points (synth_points in schema.sql), but only those
--- past the new recording's end: the new one may have recorded more.
-CREATE TEMP TABLE old_synth AS
-SELECT * EXCLUDE (dwid) FROM synth_points
-WHERE dwid IN (SELECT dwid FROM existing_run)
-  AND ts > (SELECT end_ts FROM new_run_range);
 DELETE FROM synth_points WHERE dwid IN (SELECT dwid FROM existing_run);
-
+DELETE FROM speed_exclusions WHERE dwid IN (SELECT dwid FROM existing_run);
 DELETE FROM dws WHERE dwid IN (SELECT dwid FROM existing_run);
 DELETE FROM dwlist WHERE id IN (SELECT dwid FROM existing_run);
 
@@ -130,14 +121,6 @@ DROP TABLE new_run_range;
 
 CREATE TEMP TABLE new_run AS
 SELECT gen_random_uuid() AS dwid;
-
-INSERT INTO run_trims
-SELECT (SELECT dwid FROM new_run), start_ts, end_ts, reason, added_at FROM old_trim;
-DROP TABLE old_trim;
-
-INSERT INTO synth_points BY NAME
-SELECT (SELECT dwid FROM new_run) AS dwid, * FROM old_synth;
-DROP TABLE old_synth;
 
 INSERT INTO dwlist (id, rider, sport, board, foil)
 SELECT
