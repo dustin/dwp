@@ -29,8 +29,7 @@ local copy. Wind forecasts (wind_forecast, from
 forecast-ingest) publish the same way under wind_forecast/. publish only
 reads the lake.
 
-The manifest, the lake's publish_manifest table (schema.sql; it was
-~/stuff/dwp-manifest.sqlite on dsstudio until migrate-manifest.sql), records,
+The manifest, the lake's publish_manifest table (schema.sql), records,
 for every object publish has put in S3, the sha256 of its uncompressed CSV, its
 gzipped size, the headers it was uploaded with, and a fingerprint of the lake
 rows it was made from (row count and the sum of the rows' hashes). A publish:
@@ -367,8 +366,7 @@ class Manifest:
 
     def __init__(self):
         if not has_table("publish_manifest"):
-            die("no publish_manifest table in the lake: run migrate-manifest.sql "
-                "(it brings over the old ~/stuff/dwp-manifest.sqlite)")
+            die("no publish_manifest table in the lake (see schema.sql)")
 
     def all(self):
         return {r["key"]: {"sha": r["sha256"], "size": r["size"], "headers": r["headers"],

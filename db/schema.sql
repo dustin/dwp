@@ -44,7 +44,7 @@ CREATE TABLE riders(
 
 CREATE TABLE dwlist(
   id UUID,
-  rider VARCHAR, -- whose run this is: the subdomain, e.g. 'dustin' (migrate-riders.sql)
+  rider VARCHAR, -- whose run this is: the subdomain, e.g. 'dustin'
   ts DOUBLE, -- originally timestamp_from_1970
   date DATE,
   "time" TIME,
@@ -113,8 +113,7 @@ CREATE TABLE run_trims(
 -- on foil. distance is on the same scale as the run's dws.distance
 -- (continuing from its last point). source says where the shape came
 -- from. The dws rows are left alone, and deleting a run's rows here puts
--- it back the way it was recorded. db/synth-end-2026-11-06.sql made the
--- first ones.
+-- it back the way it was recorded.
 CREATE TABLE synth_points(
   dwid UUID,
   tsi DOUBLE,
@@ -236,9 +235,8 @@ CREATE TABLE cam_images(
 );
 
 -- Station wind, every weather/+ reading (kn, direction from, degrees),
--- copied from bee1's InfluxDB by db/wind-ingest with the buoy job. Was a
--- view reading InfluxDB itself (migrate-wind-table.sql). day is the Hawaii
--- day of ts.
+-- copied from bee1's InfluxDB by db/wind-ingest with the buoy job. day is
+-- the Hawaii day of ts.
 CREATE TABLE wind(
   site VARCHAR, -- kihei, hookipa, wailea, ...
   ts TIMESTAMP WITH TIME ZONE,
@@ -270,8 +268,7 @@ CREATE TABLE wind_forecast(
 -- What publish (dwp_publish.py) has put in S3, one row per object: key
 -- under the bucket, sha256 of the uncompressed CSV, size in S3, the JSON
 -- list of headers it went up with, the fingerprint of the lake rows it was
--- made from (null for lists and images), and when. Was
--- ~/stuff/dwp-manifest.sqlite on dsstudio (migrate-manifest.sql).
+-- made from (null for lists and images), and when.
 CREATE TABLE publish_manifest(
   key VARCHAR,
   sha256 VARCHAR,

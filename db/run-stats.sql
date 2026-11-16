@@ -36,8 +36,7 @@ WHERE  l.id = t.dwid AND l.id IN (SELECT dwid FROM restat);
 
 -- Name the start and end beaches: the nearest beach to the first and last
 -- trackpoints, or none (null, an unknown beach) when even that one is
--- over 10 km away, e.g. a run off Hood River. migrate-far-runs.sql
--- backfills this; keep its 10000 in step.
+-- over 10 km away, e.g. a run off Hood River.
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
        end_pos   = x.end_loc
@@ -87,7 +86,7 @@ WHERE  l.id = x.dwid AND l.id IN (SELECT dwid FROM restat);
 -- between the main islands (Kaʻieʻiewaho, ~116 km), so the most any
 -- Hawaiian crossing could be from land. Further than that, the run is
 -- somewhere the coastline doesn't cover (e.g. Hood River).
--- dwp_publish.py's tracks and migrate-far-runs.sql use the same 60000.
+-- dwp_publish.py's tracks use the same 60000.
 UPDATE dwlist AS l
 SET    max_distance = CASE WHEN x.dist <= 60000 THEN x.dist END
 FROM   (select dwid, max(ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon))) as dist

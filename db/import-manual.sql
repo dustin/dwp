@@ -23,7 +23,7 @@ use lake;
 
 begin;
 
-SET VARIABLE rider = 'dustin';   -- whose run this is (migrate-riders.sql)
+SET VARIABLE rider = 'dustin';   -- whose run this is (dwlist.rider)
 
 call lake.set_commit_message('dustin', 'enter DW run by hand (no track)');
 

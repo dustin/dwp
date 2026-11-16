@@ -12,7 +12,7 @@ Each run looks back LOOKBACK from the lake's newest reading, so readings
 that reach InfluxDB a little late still go in, and skips any (site, ts)
 already there. It reads at most a few days per query, as many as it takes
 to catch up. One lake commit per query; it never creates or changes
-tables: wind must already exist (schema.sql, migrate-wind-table.sql).
+tables: wind must already exist (schema.sql).
 
 DWP_INFLUX sets InfluxDB's URL (default http://bee1:8086, database
 influxer). Run it with the buoy job, before ./publish.
@@ -67,10 +67,10 @@ def fetch(start, end):
 def latest():
     if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
                   "and table_name = 'wind' and table_type = 'BASE TABLE';", json_out=True):
-        raise PublishError("wind isn't a table in the lake yet (run migrate-wind-table.sql)")
+        raise PublishError("wind isn't a table in the lake (see schema.sql)")
     r = duckdb("select max(ts)::varchar as t from wind;", json_out=True)
     if not r or r[0]["t"] is None:
-        raise PublishError("the lake's wind table is empty (run migrate-wind-table.sql)")
+        raise PublishError("the lake's wind table is empty")
     return datetime.fromisoformat(r[0]["t"])
 
 

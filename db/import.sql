@@ -8,7 +8,7 @@ SET geometry_always_xy = false;
 begin;
 
 -- The CSV path, rider and foil come from the environment; add-run sets
--- them. DWP_RIDER is whose run this is (migrate-riders.sql); everything
+-- them. DWP_RIDER is whose run this is (dwlist.rider); everything
 -- below that looks at existing runs only looks at that rider's.
 SET VARIABLE rider = CASE
   WHEN coalesce(getenv('DWP_RIDER'), '') = ''
