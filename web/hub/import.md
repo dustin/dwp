@@ -5,18 +5,23 @@ toc: false
 
 # Import your runs
 
-To get your downwind runs on downwind.pro, export them as GPX files from the app
-you track with, then send them to Dustin. Watch recordings are best, since they
+Getting your downwind runs onto downwind.pro takes two steps:
+
+1. [Get your data](#1-get-your-data) out of the app you track with, Waterspeed
+   or Strava.
+2. [Send your data](#2-send-your-data) to Dustin, by upload or a shared Google
+   Drive folder.
+
+Watch recordings are best, since they
 include heart rate. If you have both a watch and a phone recording of a run,
-send both; the watch track is used.
+send both; the watch track is used. Also tell Dustin which board and foil you
+ride, so your runs are labeled right.
 
-Also tell Dustin which board and foil you ride, so your runs are labeled right.
+## 1. Get your data
 
-- [Export from Waterspeed](#export-from-waterspeed)
-- [Export from Strava](#export-from-strava)
-- [Send your files](#send-your-files)
+Use whichever app you record your runs with.
 
-## Export from Waterspeed
+### From Waterspeed
 
 Waterspeed only lets you download one GPX file at a time. This browser script
 walks your Waterspeed activity list and downloads the GPX for every run,
@@ -25,12 +30,12 @@ bundled into zip files of 50.
 It runs on a computer, not a phone. It works in Chrome, Firefox, Edge and other
 desktop browsers that have the Violentmonkey extension.
 
-### 1. Install Violentmonkey
+#### Install Violentmonkey
 
 Add [Violentmonkey](https://violentmonkey.github.io/get-it/) to your browser.
 It's a free, open-source extension that runs small scripts on websites.
 
-### 2. Install the script
+#### Install the script
 
 ```js
 display(html`<p><a class="imp-button" href="/waterspeed-gpx-export.user.js">Install Waterspeed GPX bulk export</a></p>`);
@@ -40,7 +45,7 @@ Violentmonkey opens an install page for it. Click **Confirm installation**.
 The script only runs on go.waterspeedapp.com, and Violentmonkey keeps it up to
 date from this site.
 
-### 3. Export your runs
+#### Export your runs
 
 1. Open [go.waterspeedapp.com](https://go.waterspeedapp.com/) and sign in.
 2. Go to **Activities** and set the filter to what you want exported, for
@@ -60,9 +65,9 @@ put the number of runs already saved in **Skip first**.
 
 If any runs failed, there's a `failed.txt` in the zip listing them.
 
-## Export from Strava
+### From Strava
 
-### Everything at once
+#### Everything at once
 
 Strava can send you an archive of your whole account, with every activity's
 original file.
@@ -77,7 +82,7 @@ original file.
 4. Download the zip and send it as it is. Your downwinders are picked out of it,
    so there's no need to sort through it first.
 
-### A few runs
+#### A few runs
 
 For a handful of runs, open each activity on the
 [Strava website](https://www.strava.com/athlete/training), click the **⋯**
@@ -85,7 +90,9 @@ menu on the left and choose **Export Original** (or **Export GPX** if that's
 all there is). The original file from your watch keeps heart rate and the most
 detail.
 
-## Send your files
+## 2. Send your data
+
+Either way works; pick one.
 
 ### Upload
 
@@ -96,8 +103,8 @@ That's all; nothing else to sign up for.
 ### Google Drive
 
 If you'll keep riding and want new runs to show up without sending files each
-time, put your GPX files in a Google Drive folder and share it with Dustin (view
-access is enough). Once Dustin has it set up, new files you add are imported
+time, put your GPX files in a Google Drive folder and share it with Google user
+**dsallings** (view access is enough). Once Dustin has it set up, new files you add are imported
 from there.
 
 Names like `2026-10-13 Downwind Maliko Harbor watch Or685.gpx` help: date,
