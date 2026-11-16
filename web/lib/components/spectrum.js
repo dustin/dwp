@@ -3,7 +3,7 @@
 // plus overlays for comparing readings.
 //
 // Backed by swell_spectrum -- the raw, append-only per-frequency-bin archive
-// (see db/swell/schema.sql) -- rather than swell_partition's already-banded
+// (see db/schema.sql) -- rather than swell_partition's already-banded
 // components, so these charts show the actual spectral shape.
 //
 // Every chart here draws frequency bins as rects between their real bin

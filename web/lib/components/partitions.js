@@ -4,7 +4,7 @@
 // by period, and colored by direction -- read top-to-bottom-left-to-right
 // for "what showed up, how big, and from where".
 //
-// Built on swell_partition (see db/swell/schema.sql): rank 1 is NDBC's
+// Built on swell_partition (see db/schema.sql): rank 1 is NDBC's
 // whole-sea-state observation; ranks 2+ are the individual spectral
 // components CDIP calls "partitions".
 

@@ -18,9 +18,9 @@
 # swell_partition start with the realtime window. A buoy that's out gets
 # just its archived readings.
 #
-# Runs against the lake in ~/stuff/duck, like add-run; set LAKE to point
-# elsewhere. Never creates tables: swell, swell_spectrum and swell_partition
-# must already exist.
+# Runs against the lake LAKE points at, like add-run. Never creates
+# tables: swell, swell_spectrum and swell_partition must already exist
+# (db/schema.sql).
 
 history=
 if [ "$1" = "--history" ]; then
