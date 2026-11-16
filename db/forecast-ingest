@@ -11,6 +11,12 @@ meta.json; for PacIOOS, when it was fetched). A (site, model, issued) the
 lake already has is skipped, so run it as often as you like; models run
 every 6 hours (PacIOOS once a day, out ~13:30-14:30 HST).
 
+Where the run time is made up (PacIOOS, and a model whose meta.json has
+gone stale), issued is when the run was first seen: a fetch whose hours
+match the newest stored set for that site and model is the same run, so
+only its new hours go in, under that set's issued. Any hour that differs
+means a new run, stored with issued = now.
+
 Backfill: Open-Meteo's Previous Runs API keeps what each model said 1 and 2
 days ahead. Those rows have issued null and lead_days 1 or 2; hours the lake
 already has for that (site, model, lead_days) are skipped.
@@ -34,7 +40,7 @@ from datetime import datetime, timedelta, timezone
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dwp_publish import duckdb, temp_table, PublishError  # noqa: E402
+from dwp_publish import duckdb, temp_table, sql_lit, PublishError  # noqa: E402
 
 # site -> model -> (lat, lon) of the cell to read. Open-Meteo model names
 # are the API's; pacioos_wrf_mo is PacIOOS's 2 km WRF (ERDDAP wrf_mo).
@@ -192,7 +198,7 @@ def backfill(today):
     return rows
 
 
-def ingest(rows, backfilling):
+def ingest(rows, backfilling, now=None):
     if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
                   "and table_name = 'wind_forecast';", json_out=True):
         raise PublishError("no wind_forecast table in the lake (see schema.sql)")
@@ -209,12 +215,34 @@ def ingest(rows, backfilling):
                          ts.isoformat(), round(s, 2), float(round(d)))
                         for site, model, x, ts, s, d in rows])
     if backfilling:
+        same = ""
         fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
                        and w.lead_days = n.lead_days and w.ts = n.ts)"""
     else:
+        # Sets whose issued is now (made up: see the docstring) that match the
+        # newest stored set on every hour they share take that set's issued,
+        # and add only the hours it doesn't have.
+        same = f"""
+        create or replace temp table prev as
+            select w.site, w.model, max(w.issued) as issued
+            from wind_forecast w
+            join (select distinct site, model from {src} where issued = {sql_lit(now.isoformat(), 'TIMESTAMPTZ')}) g
+              using (site, model)
+            group by all;
+        create or replace temp table same as
+            select p.* from prev p
+            where exists (select 1 from {src} n join wind_forecast w
+                            on w.site = n.site and w.model = n.model and w.ts = n.ts and w.issued = p.issued
+                          where n.site = p.site and n.model = p.model)
+              and not exists (select 1 from {src} n join wind_forecast w
+                                on w.site = n.site and w.model = n.model and w.ts = n.ts and w.issued = p.issued
+                              where n.site = p.site and n.model = p.model
+                                and (w.wavg is distinct from n.wavg or w.wdir is distinct from n.wdir));
+        update {src} n set issued = s.issued from same s where n.site = s.site and n.model = s.model;"""
         fresh = """where not exists (select 1 from wind_forecast w where w.site = n.site and w.model = n.model
-                       and w.issued = n.issued)"""
-    duckdb(table + f"""
+                       and w.issued = n.issued
+                       and (w.ts = n.ts or not exists (select 1 from same s where s.site = n.site and s.model = n.model)))"""
+    duckdb(table + same + f"""
         begin;
         call lake.set_commit_message('dustin', 'wind forecasts{" backfill" if backfilling else ""}');
         insert into wind_forecast by name
@@ -232,7 +260,7 @@ def main():
     now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     try:
         rows = backfill(now.date()) if backfilling else live(now)
-        ingest(rows, backfilling)
+        ingest(rows, backfilling, now)
     except PublishError as e:
         log(str(e))
         return 1
