@@ -7,7 +7,6 @@
 #   imports = [ "${inputs.dwp}/bot/hm-module.nix" ];
 #   services.dwp-matrix-bot = {
 #     enable = true;
-#     checkout = "/Users/dustin/prog/dwp";
 #     homeserver = "sallings.org";
 #     rooms = [ "!abc:sallings.org" ];
 #     users."@dustin:sallings.org" = "dustin";
@@ -16,14 +15,23 @@
 #   };
 #
 # bot/matrix-bot, and the db/ commands it runs (add-run, publish,
-# drive-sync), run from the checkout, so edits there take effect on the
-# bot's next restart; only their tools come from the package.
+# drive-sync), come from this source (bot/, db/ and web/lib/, which the
+# import replies' achievements and !forecast read), so a dwp bump updates
+# the bot. Set checkout to run a dwp checkout's instead, where edits take
+# effect on the bot's next restart.
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-matrix-bot;
+  src = lib.fileset.toSource {
+    root = ../.;
+    fileset = lib.fileset.difference
+      (lib.fileset.unions [ ../bot ../db ../web/lib ])
+      (lib.fileset.fileFilter (f: f.hasExt "pyc") ../.);
+  };
+  root = if cfg.checkout == null then "${src}" else cfg.checkout;
   command = [
     "${cfg.package}/bin/dwp-bot-env"
-    "${cfg.checkout}/bot/matrix-bot"
+    "${root}/bot/matrix-bot"
     "--homeserver" cfg.homeserver
     "--token-file" cfg.tokenFile
     "--mqtt" cfg.mqtt
@@ -46,9 +54,10 @@ in
       description = "dwp-bot-env: runs a command with the bot's tools on PATH.";
     };
     checkout = mkOption {
-      type = types.str;
+      type = types.nullOr types.str;
+      default = null;
       example = "/Users/dustin/prog/dwp";
-      description = "A dwp checkout; the bot runs its bot/matrix-bot.";
+      description = "A dwp checkout to run bot/matrix-bot from, instead of this source.";
     };
     homeserver = mkOption { type = types.str; example = "sallings.org"; };
     rooms = mkOption {

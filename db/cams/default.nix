@@ -1,6 +1,6 @@
 # cam-motion: each cam's water motion (cams.py), published over MQTT.
 # Python with OpenCV and numpy from nixpkgs; the scripts come from this
-# directory (copied into the store, unlike matrix-bot, which runs from a checkout).
+# directory (copied into the store, like matrix-bot).
 { lib, stdenvNoCC, python3, makeWrapper, cacert }:
 let
   python = python3.withPackages (ps: [ ps.opencv4 ps.numpy ]);
