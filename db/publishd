@@ -3,20 +3,25 @@
 runs this.
 
     ./publishd [--mqtt HOST[:PORT]] [--settle SECONDS] [--every SECONDS]
+               [--all-every SECONDS]
 
 Every ./publish (any command) and dwp_publish.run() (add-run, the bot,
 drive-sync) sends its arguments to dwp/publish/req on the broker
 (DWP_MQTT, default mqtt) and waits; publishd runs ./publish with them here
 and answers on dwp/publish/reply/<id> with {"ok", "code", "error", "stamp",
 "seconds", "output"}, which the caller prints. One request runs at a time.
-Plain publishes that arrive within --settle seconds (15) of each other,
-or while one is running, are served by one run; --dry-run, verify and
-orphans each get their own. After every plain publish,
+A plain publish starts as soon as it's asked for (--settle seconds after,
+default 0, to gather a burst into one run); plain requests that arrive
+while one runs are served by the next. --dry-run, --all, verify and
+orphans each get a run of their own. After every plain publish,
 dwp/publish/status (retained) holds {"ok", "error", "stamp", "seconds",
 "host"}, and after one that worked dwp/publish/status/ok holds the same,
 for an alert when publishes fail or stop (bee1's babysitter watches it).
 
 With --every, it also publishes after that many seconds without a request.
+Every --all-every seconds (a day) it runs publish --all, the full pass that
+checks every conditions day and every list, not just the recent ones a
+plain publish looks at.
 
 It needs what publish needs: the lake (LAKE's quack-init.sql), rclone with
 the s3 remote (RCLONE_CONFIG), python3 and duckdb.
@@ -92,22 +97,31 @@ def answer(host, topic, msg, retain=False):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mqtt", default=os.environ.get("DWP_MQTT") or "mqtt", help="HOST[:PORT] of the broker")
-    ap.add_argument("--settle", type=float, default=15, help="seconds to gather requests before a publish")
+    ap.add_argument("--settle", type=float, default=0, help="seconds to gather requests before a publish")
     ap.add_argument("--every", type=float, default=0, help="also publish after this many idle seconds (0: never)")
+    ap.add_argument("--all-every", type=float, default=86400,
+                    help="run publish --all (every day and list) this often, between requests (0: never)")
     args = ap.parse_args()
 
     requests = queue.Queue()
     threading.Thread(target=listen, args=(args.mqtt, requests), daemon=True).start()
     later = deque()  # requests taken while gathering that need a run of their own
+    last_all = time.time()
     while True:
         if later:
             first = later.popleft()
         else:
+            waits = [w for w in (args.every, args.all_every and last_all + args.all_every - time.time()) if w]
             try:
-                first = requests.get(timeout=args.every or None)
+                first = requests.get(timeout=max(min(waits), 0.1) if waits else None)
             except queue.Empty:
-                log(f"nothing asked for {args.every:g}s; publishing anyway")
-                first = (None, [])
+                if args.all_every and time.time() >= last_all + args.all_every:
+                    log("time for the full pass; publishing --all")
+                    last_all = time.time()
+                    first = (None, ["--all"])
+                else:
+                    log(f"nothing asked for {args.every:g}s; publishing anyway")
+                    first = (None, [])
         ids, argv = [first[0]], first[1]
         gathered = time.time()
         if not argv:

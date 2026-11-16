@@ -17,7 +17,8 @@ let
   duckdb = if lib.versionAtLeast pkgs.duckdb.version "2" then pkgs.duckdb
     else pkgs.callPackage ../nix/duckdb.nix { inherit (pkgs) duckdb; };
   command = [ (lib.getExe' cfg.package "dwp-publishd") "--mqtt" cfg.mqtt
-              "--settle" (toString cfg.settle) "--every" (toString cfg.every) ];
+              "--settle" (toString cfg.settle) "--every" (toString cfg.every)
+              "--all-every" (toString cfg.allEvery) ];
   env = { LAKE = cfg.lake; }
     // lib.optionalAttrs (cfg.rcloneConfig != null) { RCLONE_CONFIG = cfg.rcloneConfig; };
 in
@@ -35,8 +36,13 @@ in
     };
     settle = mkOption {
       type = types.int;
-      default = 15;
-      description = "Seconds to gather requests into one publish.";
+      default = 0;
+      description = "Seconds to gather requests into one publish (0: start at once).";
+    };
+    allEvery = mkOption {
+      type = types.int;
+      default = 86400;
+      description = "Seconds between full passes (publish --all) when nothing is asked for (0: never).";
     };
     every = mkOption {
       type = types.int;

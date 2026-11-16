@@ -1,6 +1,8 @@
 """Publish runs and conditions to the CDN, uploading only what changed.
 
     ./publish             export and upload whatever changed
+    ./publish --all       ...checking every conditions day and every list,
+                          not just the last 14 days' (nightly, or after a backfill)
     ./publish --dry-run   say what would be uploaded; upload and record nothing
     ./publish verify      check the bucket against the manifest
     ./publish verify --fix   ...and re-upload whatever is missing or wrong
@@ -34,13 +36,17 @@ for every object publish has put in S3, the sha256 of its uncompressed CSV, its
 gzipped size, the headers it was uploaded with, and a fingerprint of the lake
 rows it was made from (row count and the sum of the rows' hashes). A publish:
 
-  1. fingerprints every track and every site-day in one query per table, and
-     picks the ones whose fingerprint differs from the manifest's: new runs,
-     re-imported or edited ones, the day the last ingest added to, a day a
-     backfill rewrote;
-  2. exports just those, plus every rider's four lists and riders.csv
-     (small, and the lists depend on wind and buoy data as well as runs),
-     into a temp dir;
+  1. fingerprints every track and every site-day of the last 14 days
+     (DAYS; ./publish --all does every day, for a backfill of older ones)
+     in one duckdb process, and picks the ones whose fingerprint differs
+     from the manifest's: new runs, re-imported or edited ones, the day the
+     last ingest added to, a day a backfill rewrote. A track's fingerprint
+     is its dws rows, trim and synthesized points; the heatmaps' and each
+     rider's lists' are made from those and the dwlist, riders and
+     conditions rows they read, so a list is only exported when something
+     it shows changed (a new run: its rider's lists and everyone's
+     together.csv; a wind reading: runs.csv of riders who rode that day);
+  2. exports just those, in one more duckdb process, into a temp dir;
   3. skips files whose bytes and headers S3 already has: a day whose cache
      lifetime goes from short to long is re-sent for its headers alone;
   4. gzips the rest, uploads them with rclone (no listing, no HEAD per
@@ -131,10 +137,16 @@ IMAGE_KEEP_DAYS = float(os.environ.get("DWP_IMAGE_KEEP_DAYS") or 14)
 # southwest corner's lat and lon, and the grid's width and height in cells
 # of HEATMAP_CELL degrees (about 22 m).
 HEATMAP_CELL = 0.0002
-HEATMAP_SPOTS = ", ".join([
-    "('maliko', 'Maui North Shore', 20.880, -156.500, 875, 400)",
-    "('kihei', 'Kihei', 20.640, -156.495, 300, 800)",
-])
+HEATMAP_SPOTS = [
+    ("maliko", "Maui North Shore", 20.880, -156.500, 875, 400),
+    ("kihei", "Kihei", 20.640, -156.495, 300, 800),
+]
+HEATMAP_VALUES = ", ".join(f"('{s}', '{r}', {lat}, {lon}, {nx}, {ny})"
+                           for s, r, lat, lon, nx, ny in HEATMAP_SPOTS)
+# Site-days of conditions fingerprinted on a plain publish: the last DAYS
+# (Hawaii) days. Older days only change in a backfill; ./publish --all
+# fingerprints them all.
+DAYS = 14
 
 
 class Table:
@@ -144,6 +156,9 @@ class Table:
     object; cols is what goes in the file; order (columns of cols) sorts it,
     ties broken by the row's hash so the bytes don't change between exports;
     recent marks keys the first publish re-sends instead of adopting S3's copy.
+    fp_sql(cutoff) is the query fingerprinting every key (or those from
+    cutoff on), and filter(keys) a predicate on x narrowing an export to
+    keys, pushed down to the table (an "in" on the key alone isn't).
     """
 
     def __init__(self, name, frm, key, cols, order, recent, day=None, headers=GZ_CSV):
@@ -156,6 +171,59 @@ class Table:
         day = re.search(r"/day=([0-9-]+)/", key).group(1)
         return SHORT if day >= (today - timedelta(days=1)).isoformat() else LONG
 
+    def fp_sql(self, cutoff):
+        where = f"where ({self.day})::date >= DATE '{cutoff}'" if cutoff and self.day else ""
+        return f"""select {self.key} as k,
+                     count(*)::varchar || ':' || sum(hash(x))::varchar as fp,
+                     {self.recent} as recent
+              from {self.frm} {where} group by all"""
+
+    def filter(self, keys):
+        days = sorted(re.search(r"/day=([0-9-]+)/", k).group(1) for k in keys)
+        return f"where ({self.day})::date between DATE '{days[0]}' and DATE '{days[-1]}'"
+
+
+class Tracks(Table):
+    """The tracks: fingerprinted from what makes them (each run's dws rows,
+    trim and synthesized points, and its rider) rather than through
+    run_points, whose window function would sort every point of every run;
+    the rows also carry the run's rider, id, date and region for the lists'
+    fingerprints."""
+
+    def fp_sql(self, cutoff):
+        return """
+            with p as (select dwid, count(*) as n, sum(hash(d))::varchar as h, max(ts) as mx
+                       from dws d group by dwid),
+                 s as (select dwid, count(*)::varchar || ':' || sum(hash(s))::varchar as h
+                       from synth_points s group by dwid),
+                 t as (select dwid, hash(start_ts, end_ts)::varchar as h from run_trims)
+            select 'runs/rider=' || l.rider || '/dwid=' || l.id || '/data.csv' as k,
+                   p.n::varchar || ':' || p.h || ':' || coalesce(t.h, '') || ':' || coalesce(s.h, '') as fp,
+                   p.mx > current_timestamp - interval 14 days as recent,
+                   l.rider as rider, l.id::varchar as dwid, l.date::varchar as date, b.region as region
+            from dwlist l
+            join p on p.dwid = l.id
+            left join t on t.dwid = l.id
+            left join s on s.dwid = l.id
+            left join beaches b on b.id = l.start_pos
+            where l.rider is not null"""
+
+    def filter(self, keys):
+        ids = [re.search(r"/dwid=([^/]+)/", k).group(1) for k in keys]
+        return "and x.dwid in (" + ", ".join(f"'{i}'::uuid" for i in ids) + ")"  # frm has a where
+
+
+class Heatmap(Table):
+    """The trail heatmaps, one per spot: fingerprinted in Python from the
+    tracks of the hub riders' runs in the spot's region (see
+    heatmap_fingerprints), so the query only runs to export a changed one."""
+
+    def fp_sql(self, cutoff):
+        return None
+
+    def filter(self, keys):
+        return ""
+
 
 def conditions(table, day="x.day", cols="x.* exclude (site, day)", order="ts"):
     return Table(table, f"{table} x",
@@ -166,7 +234,7 @@ def conditions(table, day="x.day", cols="x.* exclude (site, day)", order="ts"):
 
 
 TABLES = [
-    Table("tracks",
+    Tracks("tracks",
           # Only the points within the run's trim (run_points in schema.sql).
           "run_points x join dwlist l on x.dwid = l.id where l.rider is not null",
           # The rider is in the key, and so in the fingerprint.
@@ -193,8 +261,8 @@ TABLES = [
     # the midpoint back to the one before it count, so a fast stretch
     # doesn't skip cells. HEATMAP_SPOTS in web/lib/components/trail-heatmap.js
     # must match the grids here.
-    Table("heatmap", f"""(
-        with spots(spot, region, lat0, lon0, nx, ny) as (values {HEATMAP_SPOTS}),
+    Heatmap("heatmap", f"""(
+        with spots(spot, region, lat0, lon0, nx, ny) as (values {HEATMAP_VALUES}),
         p as (
           select s.spot, s.lat0, s.lon0, s.nx, s.ny, x.dwid, x.lat, x.lon,
                  lag(x.lat) over w as plat, lag(x.lon) over w as plon
@@ -269,8 +337,9 @@ XY = "load spatial;\nset geometry_always_xy = false;\n"
 
 
 def duckdb(sql, json_out=False, cmd=None, what=None):
-    """Run sql against the lake; with json_out, return the result's rows.
-    what names the call in the timing summary (default: its first line)."""
+    """Run sql against the lake; with json_out, return the last result's
+    rows. what names the call in the timing summary (default: its first
+    line). queries() runs several at once."""
     t0 = time.monotonic()
     args = ["duckdb", "-bail", "--init", "quack-init.sql"]
     if json_out:
@@ -285,10 +354,43 @@ def duckdb(sql, json_out=False, cmd=None, what=None):
     if not json_out:
         return None
     out = r.stdout.strip()
+    if json_out == "all":
+        return out
     try:
         return last_json(out)
     except json.JSONDecodeError:
         die(f"duckdb printed something other than JSON:\n{out[:2000]}\n--- stderr:\n{r.stderr[:2000]}")
+
+
+def queries(named, what):
+    """Run the queries named (label -> select) in one duckdb process;
+    label -> its rows. Each goes up as one row holding its rows as JSON,
+    so the results come back apart however the CLI prints them."""
+    sql = "".join(
+        f"select {sql_str(k)} as q, coalesce(json_group_array(to_json(x)), '[]')::varchar as j "
+        f"from ({v.strip().rstrip(';')}) x;\n" for k, v in named.items())
+    out = {}
+    for rows in all_json(duckdb(sql, json_out="all", what=what)):
+        for r in rows:
+            if isinstance(r, dict) and set(r) == {"q", "j"}:
+                out[r["q"]] = json.loads(r["j"])
+    missing = set(named) - set(out)
+    if missing:
+        die(f"duckdb gave no result for {', '.join(sorted(missing))}")
+    return out
+
+
+def all_json(out):
+    """Every JSON array in duckdb's output, in order."""
+    out = re.sub(r"WARNING:.*?\n\s*\n", "", out, flags=re.S)
+    dec, i, found = json.JSONDecoder(), 0, []
+    while (i := out.find("[", i)) >= 0:
+        try:
+            rows, i = dec.raw_decode(out, i)
+            found.append(rows)
+        except json.JSONDecodeError:
+            i += 1
+    return found
 
 
 def last_json(out):
@@ -397,15 +499,15 @@ class Manifest:
     """What publish has put in S3: the lake's publish_manifest table
     (schema.sql), so publish can run from any host."""
 
-    def __init__(self):
-        if not has_table("publish_manifest"):
-            die("no publish_manifest table in the lake (see schema.sql)")
+    SQL = "select key, sha256, size, headers, fingerprint, epoch(uploaded_at) as t from publish_manifest"
+
+    @staticmethod
+    def rows(rows):
+        return {r["key"]: {"sha": r["sha256"], "size": r["size"], "headers": r["headers"],
+                           "fp": r["fingerprint"], "uploaded_at": r["t"]} for r in rows}
 
     def all(self):
-        return {r["key"]: {"sha": r["sha256"], "size": r["size"], "headers": r["headers"],
-                           "fp": r["fingerprint"], "uploaded_at": r["t"]}
-                for r in duckdb("select key, sha256, size, headers, fingerprint, "
-                                "epoch(uploaded_at) as t from publish_manifest;", json_out=True, what="read manifest")}
+        return self.rows(duckdb(self.SQL + ";", json_out=True, what="read manifest"))
 
     def record(self, rows):
         """rows: (key, sha256, size, headers, fingerprint), in one lake commit."""
@@ -431,29 +533,99 @@ class Manifest:
             commit;""")
 
 
-def has_table(name):
-    return bool(duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
-                       f"and table_name = {sql_str(name)};", json_out=True, what=f"has_table {name}"))
-
-
-def fingerprints(t):
-    """key -> (fingerprint, recent) for every object t makes."""
-    if t.name.startswith("cam_") and not has_table(t.name):
-        return {}  # cam-ingest hasn't run on this lake yet
-    rows = duckdb(f"""
-        select {t.key} as k,
-               count(*)::varchar || ':' || sum(hash(x))::varchar as fp,
-               {t.recent} as recent
-        from {t.frm}
-        group by all;
-    """, json_out=True, what=f"fingerprint {t.name}")
+def fingerprint_rows(rows, name):
+    """key -> (fingerprint, recent) from a fp_sql result."""
     out = {}
     for r in rows:
-        if t.name == "tracks" and not RIDER.fullmatch(r["k"].split("/")[1][len("rider="):]):
+        if name == "tracks" and not RIDER.fullmatch(r["rider"] or ""):
             log(f"skipping {r['k']}: odd rider")
             continue
         out[r["k"]] = (r["fp"], bool(r["recent"]))
     return out
+
+
+def digest(*parts):
+    """A fingerprint of parts (strings, or lists of them, order ignored)."""
+    h = hashlib.sha256()
+    for p in parts:
+        for x in (sorted(p) if isinstance(p, (list, set)) else [p]):
+            h.update(str(x).encode() + b"\0")
+    return h.hexdigest()[:32]
+
+
+def heatmap_fingerprints(tracks, hub):
+    """key -> (fingerprint, recent) for each heatmap spot, from the tracks'
+    fingerprint rows: the tracks of hub riders' runs in its region."""
+    out = {}
+    for spot, region, *_ in HEATMAP_SPOTS:
+        fps = [f"{r['dwid']}:{r['fp']}" for r in tracks if r["region"] == region and hub(r["rider"])]
+        out[f"heatmap/spot={spot}/data.csv"] = (digest(fps), True)
+    return out
+
+
+def list_fingerprints(riders_rows, runs, tracks):
+    """key -> fingerprint for every rider's lists and runs/riders.csv: the
+    rider's runs (dwlist rows and tracks), and for together.csv and
+    riders.csv everyone's runs and the riders table. A list also reads
+    wind and buoy rows (export-lists.sql), but those don't change what it
+    shows once the run is in; --all exports every list for the rare day
+    they do."""
+    riders_fp = digest([json.dumps(r, sort_keys=True) for r in riders_rows])
+    all_runs = digest([r["h"] for r in runs])
+    by_rider, tracks_by_rider = {}, {}
+    for r in runs:
+        by_rider.setdefault(r["rider"], []).append(r["h"])
+    for r in tracks:
+        tracks_by_rider.setdefault(r["rider"], []).append(f"{r['dwid']}:{r['fp']}")
+    out = {"runs/riders.csv": digest(riders_fp, all_runs)}
+    for rider, hs in by_rider.items():
+        if not RIDER.fullmatch(rider):
+            continue
+        own = digest(hs, tracks_by_rider.get(rider, []))
+        for n in LISTS:
+            out[f"runs/rider={rider}/{n}.csv"] = digest(all_runs, riders_fp) if n == "together" else own
+    return out
+
+
+def gather(cutoff):
+    """Everything a publish reads before exporting, in one duckdb process:
+    the manifest (keys of site-days before cutoff left out), the local
+    cam images, the riders and dwlist, and every table's
+    fingerprints (the heatmaps' and lists' made here from the rest)."""
+    q = {
+        "manifest": Manifest.SQL + (
+            f" where coalesce(nullif(regexp_extract(key, '/day=([0-9-]+)/', 1), ''), '9999') >= '{cutoff}'"
+            if cutoff else ""),
+        "manifest_count": "select count(*) as n from publish_manifest",
+        "images": "select key, file from cam_images where file is not null",
+        "riders": "select rider, name, hub, versus, compare, together from riders order by rider",
+        "runs": """select l.rider, l.id::varchar as id, l.date::varchar as date, hash(l)::varchar as h,
+                          b.region as region
+                   from dwlist l left join beaches b on b.id = l.start_pos
+                   where l.rider is not null""",
+    }
+    for t in TABLES:
+        if (sql := t.fp_sql(cutoff)) is not None:
+            q["fp " + t.name] = sql
+    got = queries(q, what=f"manifest, {len(q) - 5} fingerprints")
+    fps = {t.name: fingerprint_rows(got["fp " + t.name], t.name) for t in TABLES if "fp " + t.name in got}
+    riders_rows = got["riders"]
+    hub_of = {r["rider"]: r["hub"] for r in riders_rows}
+
+    def hub(rider):
+        return hub_of.get(rider) is not False
+
+    fps["heatmap"] = heatmap_fingerprints(got["fp tracks"], hub)
+    lists = list_fingerprints(riders_rows, got["runs"], got["fp tracks"])
+    return (Manifest.rows(got["manifest"]), got["manifest_count"][0]["n"],
+            {r["key"]: r["file"] for r in got["images"]}, fps, lists)
+
+
+def fingerprints(t):
+    """key -> (fingerprint, recent) for every object t makes (orphans)."""
+    if t.fp_sql(None) is None:
+        return {f"heatmap/spot={s}/data.csv": ("", True) for s, *_ in HEATMAP_SPOTS}
+    return fingerprint_rows(duckdb(t.fp_sql(None) + ";", json_out=True, what=f"fingerprint {t.name}"), t.name)
 
 
 def to_csv(path):
@@ -469,22 +641,18 @@ def to_csv(path):
 CSV_END = "\n.output\n.mode duckbox\n"
 
 
-def export(t, keys, tmp):
-    """Write tmp/<key> (uncompressed) for each of keys, in one pass over t."""
-    if not keys:
-        return
-    big = os.path.join(tmp, t.name + ".csv")
-    # One sorted file for all of them, then split by its first column: a
-    # partitioned COPY doesn't keep the order within each file.
-    duckdb(temp_table("dirty", [("k", "VARCHAR")], [(k,) for k in keys]) + "\n" + to_csv(big) + f"""
+def export_sql(t, keys, big):
+    """CLI script writing the rows of keys to the file big, one sorted
+    file for all of them (a partitioned COPY doesn't keep the order
+    within each file); split() then cuts it up by key."""
+    dirty = f"dirty_{t.name}"
+    return (temp_table(dirty, [("k", "VARCHAR")], [(k,) for k in keys]) + "\n" + to_csv(big) + f"""
             select * exclude (__h) from (
                 select {t.key} as __k, {t.cols}, hash(x) as __h
                 from {t.frm}
-            ) where __k in (select k from dirty)
-            order by __k, {t.order}, __h;""" + CSV_END, what=f"export {len(keys)} {t.name}")
-    t0 = time.monotonic()
-    size = split(big, tmp)
-    note(f"split {t.name} ({size >> 10} KB)", t0)
+                {t.filter(keys)}
+            ) where __k in (select k from {dirty})
+            order by __k, {t.order}, __h;""" + CSV_END)
 
 
 def split(big, tmp):
@@ -511,15 +679,54 @@ def split(big, tmp):
     return size
 
 
-def export_lists(rider, outdir):
-    with open(os.path.join(DB_DIR, "export-lists.sql")) as f:
-        sql = f.read()
-    out = f'.output "{LISTS_DIR}'
-    if out not in sql:
+def lists_sql_parts():
+    """export-lists.sql as (preamble, {list name: its statements}): each
+    list sits between .output "dwlists/<name>.csv" and a bare .output."""
+    sql = read_sql("export-lists.sql")
+    mark = f'.output "{LISTS_DIR}'
+    if mark not in sql:
         die(f"export-lists.sql no longer writes to {LISTS_DIR}")
+    pre, *chunks = sql.split(mark)
+    parts = {}
+    for c in chunks:
+        name, _, body = c.partition('.csv"\n')
+        body, sep, _ = body.rpartition("\n.output")
+        if not sep:
+            die(f"export-lists.sql: no .output after {name}")
+        parts[name] = body
+    if set(parts) != set(LISTS):
+        die(f"export-lists.sql makes {sorted(parts)}, not {LISTS}")
+    return pre, parts
+
+
+def lists_sql(wanted, outdir):
+    """CLI script exporting the lists wanted ({rider: [names]}) to
+    outdir/<rider>/<name>.csv."""
+    pre, parts = lists_sql_parts()
+    out = []
+    for rider, names in wanted.items():
+        d = os.path.join(outdir, rider)
+        os.makedirs(d, exist_ok=True)
+        if '"' in d or "\n" in d:
+            die(f"odd export path {d!r}")
+        out.append(f"set variable rider = {sql_str(rider)};\n")
+        if len(out) == 1:
+            out.append(pre)  # its rider check wants the variable set first
+        for n in names:
+            out.append(f'.output "{d}/{n}.csv"\n{parts[n]}\n.output\n')
+    return "".join(out)
+
+
+def export_lists(rider, outdir):
+    """All of one rider's lists to outdir/<name>.csv (the bot's achievements
+    read runs.csv this way)."""
+    pre, parts = lists_sql_parts()
     os.makedirs(outdir, exist_ok=True)
-    duckdb(sql.replace(out, f'.output "{outdir.rstrip("/")}/'),
-           cmd=f"set variable rider = {sql_str(rider)};", what=f"export lists for {rider}")
+    if '"' in outdir or "\n" in outdir:
+        die(f"odd export path {outdir!r}")
+    duckdb(f"set variable rider = {sql_str(rider)};\n" + pre
+           + "".join(f'.output "{outdir.rstrip("/")}/{n}.csv"\n{parts[n]}\n.output\n' for n in LISTS),
+           what=f"export lists for {rider}")
 
 
 def sha256(path):
@@ -583,15 +790,15 @@ def list_bucket():
     return out
 
 
-def export_riders(path):
-    """runs/riders.csv: every rider with runs, oldest first, with their
-    riders row (blank where they have none)."""
+def riders_sql(path):
+    """CLI script writing runs/riders.csv to path: every rider with runs,
+    oldest first, with their riders row (blank where they have none)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    duckdb(to_csv(path) + """
+    return to_csv(path) + """
   select d.rider, r.name, r.hub, r.versus, r.compare, r.together
   from (select rider, min(ts) as first_ts from dwlist where rider is not null group by rider) d
   left join riders r using (rider)
-  order by d.first_ts;""" + CSV_END, what="export riders.csv")
+  order by d.first_ts;""" + CSV_END
 
 
 def riders():
@@ -600,60 +807,78 @@ def riders():
         if RIDER.fullmatch(r["rider"]))
 
 
-def publish(manifest, dry_run=False):
+def publish(manifest, dry_run=False, everything=False):
     try:
-        _publish(manifest, dry_run)
+        _publish(manifest, dry_run, everything)
     finally:
         report_timings(time.monotonic() - STARTED)
 
 
-def _publish(manifest, dry_run):
-    PHASE[0] = "manifest"
-    have = manifest.all()
-    seed = not have
+def _publish(manifest, dry_run, everything):
+    today = datetime.now(ZoneInfo("Pacific/Honolulu")).date()
+    cutoff = None if everything else (today - timedelta(days=DAYS)).isoformat()
+    PHASE[0] = "fingerprints"
+    have, total, images, fps, list_fps = gather(cutoff)
+    seed = not total
     if seed:
         log("no manifest yet: adopting what's already in the bucket")
+        if cutoff:
+            everything, cutoff = True, None
+            have, total, images, fps, list_fps = gather(cutoff)
     in_s3 = list_bucket() if seed else {}
-    today = datetime.now(ZoneInfo("Pacific/Honolulu")).date()
-    # Images cam-ingest uploaded itself have no file; they're done.
-    images = {r["key"]: r["file"] for r in duckdb(
-        "select key, file from cam_images where file is not null;", json_out=True, what="local cam images")} \
-        if has_table("cam_images") else {}
 
     # key -> (fingerprint, headers, adopt): what to export this time.
     todo = {}
-    PHASE[0] = "fingerprints"
     for t in TABLES:
-        fps = fingerprints(t)
         dirty = {}
-        for k, (fp, recent) in fps.items():
+        for k, (fp, recent) in fps[t.name].items():
             hdr = t.headers(k, today)
             old = have.get(k)
             if seed or not old or old["fp"] != fp or old["headers"] != json.dumps(hdr):
                 dirty[k] = (fp, hdr, seed and k in in_s3 and not recent)
-        log(f"{t.name}: {len(fps)} in the lake, {len(dirty)} to export")
+        log(f"{t.name}: {len(fps[t.name])} in the lake, {len(dirty)} to export")
         todo[t] = dirty
+    wanted = {}  # rider -> list names to export
+    for k, fp in list_fps.items():
+        old = have.get(k)
+        if everything or not old or old["fp"] != fp or old["headers"] != json.dumps(SHORT):
+            m = re.fullmatch(r"runs/rider=([^/]+)/(\w+)\.csv", k)
+            if m:
+                wanted.setdefault(m.group(1), []).append(m.group(2))
+            else:
+                wanted[""] = ["riders"]
+    log(f"lists: {len(list_fps)} in the lake, {sum(map(len, wanted.values()))} to export")
 
     with tempfile.TemporaryDirectory(prefix="dwp-publish-") as tmp:
         raw, stage_dir = os.path.join(tmp, "raw"), os.path.join(tmp, "stage")
         os.makedirs(raw)
         os.makedirs(stage_dir)
 
-        files = []  # (key, path, fingerprint, headers, adopt)
-        PHASE[0] = "export tables"
+        # One duckdb process exports every table's dirty keys and every
+        # wanted list.
+        PHASE[0] = "export"
+        script, files, lists, bigs = [], [], [], []
         for t, dirty in todo.items():
-            export(t, list(dirty), raw)
-            files += [(k, os.path.join(raw, k), fp, hdr, adopt)
-                      for k, (fp, hdr, adopt) in dirty.items()]
-        lists = []
-        PHASE[0] = "export lists"
-        for rider in riders():
-            d = os.path.join(raw, "lists", rider)
-            export_lists(rider, d)
-            lists += [(f"runs/rider={rider}/{n}.csv", os.path.join(d, n + ".csv"), None, SHORT, False)
-                      for n in LISTS]
-        export_riders(os.path.join(raw, "lists", "riders.csv"))
-        lists.append(("runs/riders.csv", os.path.join(raw, "lists", "riders.csv"), None, SHORT, False))
+            if dirty:
+                big = os.path.join(tmp, t.name + ".csv")
+                script.append(export_sql(t, list(dirty), big))
+                bigs.append((t, big))
+            files += [(k, os.path.join(raw, k), fp, hdr, adopt) for k, (fp, hdr, adopt) in dirty.items()]
+        lists_dir = os.path.join(raw, "lists")
+        if riders_lists := {r: ns for r, ns in wanted.items() if r}:
+            script.append(lists_sql(riders_lists, lists_dir))
+            lists += [(f"runs/rider={r}/{n}.csv", os.path.join(lists_dir, r, n + ".csv"), list_fps[f"runs/rider={r}/{n}.csv"], SHORT, False)
+                      for r, ns in riders_lists.items() for n in ns]
+        if "" in wanted:
+            path = os.path.join(lists_dir, "riders.csv")
+            script.append(riders_sql(path))
+            lists.append(("runs/riders.csv", path, list_fps["runs/riders.csv"], SHORT, False))
+        if script:
+            duckdb("\n".join(script), what=f"export {len(files)} files, {len(lists)} lists")
+        for t, big in bigs:
+            t0 = time.monotonic()
+            size = split(big, raw)
+            note(f"split {t.name} ({size >> 10} KB)", t0)
 
         # Images first: the cam_images files point at them. They never
         # change, so one in the manifest is done.
@@ -670,19 +895,21 @@ def _publish(manifest, dry_run):
                 dst = stage_file(stage_dir, k, src)
                 new.append(k)
                 record.append((k, sha256(dst), os.path.getsize(dst), json.dumps(IMAGE), None))
-        log(f"{len(images)} cam images, {len(new)} to upload")
+        if images:
+            log(f"{len(images)} cam images, {len(new)} to upload")
         upload(stage_dir, new, IMAGE, dry_run)
-        if not dry_run:
-            manifest.record(record)
-            prune_images(images, have)
 
         invalidate = []
-        # Tracks and conditions first, then the lists that point at tracks.
+        # Tracks and conditions first, then the lists that point at tracks;
+        # all recorded together once everything is up.
         for batch in (files, lists):
             PHASE[0] = "upload lists" if batch is lists else "upload files"
-            by_headers, record = {}, []
+            by_headers = {}
             t0 = time.monotonic()
             for key, path, fp, hdr, adopt in batch:
+                if not os.path.exists(path):
+                    log(f"nothing exported for {key} (no rows)")
+                    continue
                 sha, hjson, old = sha256(path), json.dumps(hdr), have.get(key)
                 if adopt:  # first publish: S3's copy stands
                     record.append((key, sha, in_s3[key], hjson, fp))
@@ -701,8 +928,10 @@ def _publish(manifest, dry_run):
             log(f"{len(batch)} {'lists' if batch is lists else 'files'} exported, {n} to upload")
             for hjson, keys in by_headers.items():
                 upload(stage_dir, keys, json.loads(hjson), dry_run)
-            if not dry_run:
-                manifest.record(record)
+        PHASE[0] = "manifest"
+        if not dry_run:
+            manifest.record(record)
+            prune_images(images, have)
 
     if invalidate:
         log(f"{len(invalidate)} long-cached objects changed; invalidate them in CloudFront:")
@@ -848,6 +1077,9 @@ def main(argv=None):
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("command", nargs="?", default="publish", choices=["publish", "verify", "orphans"])
     ap.add_argument("--dry-run", action="store_true", help="upload nothing, record nothing")
+    ap.add_argument("--all", action="store_true",
+                    help=f"check every conditions day and every list, not the last {DAYS} days' "
+                         "(for a backfill, or a nightly pass)")
     ap.add_argument("--fix", action="store_true", help="verify: re-upload what's wrong")
     ap.add_argument("--delete", action="store_true", help="orphans: delete them from S3")
     ap.add_argument("--force", action="store_true", help="orphans --delete: even over 5%% of the bucket")
@@ -863,7 +1095,7 @@ def main(argv=None):
         with locked():
             m = Manifest()
             if args.command == "publish":
-                publish(m, dry_run=args.dry_run)
+                publish(m, dry_run=args.dry_run, everything=args.all)
                 return 0
             if args.command == "verify":
                 return verify(m, args.fix)
