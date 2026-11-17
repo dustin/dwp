@@ -52,6 +52,8 @@ import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchWindForecast, fetchSwellPartitionWindow, fetchSwellSpectrumWindow, fetchBuoySnapshot, runBuoySnapshots} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, similarBuoyRuns, BUOY_LIMITS, camCard} from "./components/conditions.js";
+import {tideCardData, tideCard} from "./components/tides.js";
+const tide = tideCardData("Kaʻa");
 import {snapshotCard} from "./components/buoy-snapshot.js";
 import {directionColor, renderSpectrumHistogram, renderMiniRose} from "./components/spectrum.js";
 import {partitionReading, spectralPartitions} from "./components/spectral-partitions.js";
@@ -179,6 +181,8 @@ function buoyCard(readings, {snap = null, site = "pauwela", name = "Pauwela buoy
   const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
   return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
 })()}</div>
+
+<div class="grid grid-cols-1 spot-col">${tideCard(tide, {resize, html})}</div>
 
 <div class="grid grid-cols-1 spot-col">${camCard(harborCam, null, {resize})}</div>
 

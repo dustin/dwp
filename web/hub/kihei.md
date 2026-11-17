@@ -49,6 +49,8 @@ import * as fmt from "./components/formatters.js";
 import {fetchMeta, riderFile, ridersWith, fetchRecentWind, fetchLiveWind, fetchCamReadings, fetchCamImages, fetchWindForecast} from "./components/data.js";
 import {forecastCard, finishCard} from "./components/forecast.js";
 import {ratingCard, stationCard, similarRuns, similarRunsCard, camCard, panoCard} from "./components/conditions.js";
+import {tideCardData, tideCard} from "./components/tides.js";
+const tide = tideCardData("Kaipukaihina");
 
 const RIDER_NAMES = (await ridersWith("hub")).map(r => [r.rider, r.name]);
 // Top and bottom of a north run.
@@ -132,6 +134,8 @@ const top = stations[0].rows.at(-1);
   const xDomain = [new Date(Date.now() - HOURS * 3600e3), new Date()];
   return stations.map(s => stationCard(s, yMax, xDomain, {resize, hours: HOURS}));
 })()}</div>
+
+<div class="grid grid-cols-1 kihei-col">${tideCard(tide, {resize, html})}</div>
 
 <div class="grid grid-cols-1 kihei-col">${cams.map(c => camCard(c, vision[c.site], {resize}))}</div>
 

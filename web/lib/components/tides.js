@@ -154,3 +154,28 @@ export function nowSummary(spot, extremes, now) {
   }
   return s;
 }
+
+// Today's tide for one spot, as a card for the conditions pages: the
+// spot's chart from HST midnight to midnight with now marked, linking to
+// the tides page for the rest. `resize` is Framework's builtin (page code only).
+export async function tideCardData(spotName, now = new Date()) {
+  const spot = SPOTS.find(s => s.name === spotName);
+  const start = hst.timeDay(now), end = hst.timeDay.offset(start, 1);
+  const extremes = await fetchExtremes(spot.station, start, end).catch(() => null);
+  return { spot, extremes, start, end, now };
+}
+
+export function tideCard({ spot, extremes, start, end, now }, { resize, html, href = 'tides.html' }) {
+  if (!extremes?.length) {
+    return html`<div class="card"><h2>Tide at ${spot.name}</h2><div class="muted">Tide predictions unavailable.</div></div>`;
+  }
+  const next = extremes.find(e => e.time > now);
+  return html`<div class="card">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:0 1em">
+      <h2>Tide at ${spot.name}</h2>
+      <span style="font-weight:600">${fmt.clock(now)} ${nowSummary(spot, extremes, now)}</span>
+    </div>
+    ${resize(width => renderTideChart(spot, extremes, { start, end, now, width }))}
+    <div class="muted">${next ? `Next ${next.high ? 'high' : 'low'} ${fmt.clock(next.time)} ${ft(next.height)} · ` : ''}${STATIONS[spot.station].name} predictions, ft above MLLW · <a href=${href}>all spots →</a></div>
+  </div>`;
+}
