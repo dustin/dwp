@@ -266,12 +266,61 @@ export function compareTrackViewer(
       // Past the end of a rider's track the cursor stays on its last point.
       const done = sameClock && elapsed > points[points.length - 1].elapsed + 5000 ? ' · finished' : '';
       return html`<span style=${`color: ${colors[i]}`}>${who}<b>${d.speed == null ? '–' : d.speed.toFixed(1)}</b> km/h
-        · <b>${d.hr ?? '–'}</b> bpm · <b>${(d.distance / 1000).toFixed(2)}</b> km${done}</span>`;
+        · <b>${d.hr ?? '–'}</b> bpm · <b>${(d.distance / 1000).toFixed(2)}</b> km${done}${gapsOf(i, elapsed)}</span>`;
     });
     readout.replaceChildren(...lines.filter(Boolean));
+    drawGap(elapsed);
     details.textContent = sameClock
       ? `${fmt.time(new Date(t0 * 1000 + elapsed))} · ${fmt.seconds(elapsed / 1000)} since the first start`
       : `${fmt.seconds(elapsed / 1000)} elapsed`;
+  }
+
+  // On the together map, how far (straight line) each rider is from the
+  // others at this moment. Riders who haven't started yet are left out.
+  const onTrack = (i, elapsed) => {
+    const points = tracks[i];
+    return !approximate[i] && points.length && elapsed >= points[0].elapsed - 5000 ? points[selected[i]] : null;
+  };
+  const fmtGap = m => (m < 1000 ? `${Math.round(m / 10) * 10} m` : `${(m / 1000).toFixed(1)} km`);
+  // Hovering a gap (or tapping it, which pins it) draws it on the map as
+  // a dashed line between the two riders, following them as time moves.
+  let hoverGap = null;
+  let pinnedGap = null;
+  const gapKey = (i, j) => (i < j ? `${i}-${j}` : `${j}-${i}`);
+  function drawGap(elapsed) {
+    const key = hoverGap ?? pinnedGap;
+    const [i, j] = key ? key.split('-').map(Number) : [];
+    const a = key && onTrack(i, elapsed);
+    const b = key && onTrack(j, elapsed);
+    map?.getSource('gap')?.setData(a && b ? lineFeature([a.lon, a.lat], [b.lon, b.lat]) : emptyCollection);
+    readout.querySelectorAll('.track-gap').forEach(el => el.classList.toggle('active', el.dataset.key === key));
+  }
+  function gapsOf(i, elapsed) {
+    if (!sameClock || !names || tracks.length < 2) return '';
+    const a = onTrack(i, elapsed);
+    if (!a) return '';
+    const gaps = tracks.flatMap((_, j) => {
+      const b = j === i ? null : onTrack(j, elapsed);
+      if (!b) return [];
+      const key = gapKey(i, j);
+      const el = html`<span class="track-gap" data-key=${key} style=${`color: ${colors[j]}`} title=${`Distance to ${names[j]}`}>+${fmtGap(d3.geoDistance([a.lon, a.lat], [b.lon, b.lat]) * 6371009)}</span>`;
+      el.addEventListener('pointerenter', event => {
+        if (event.pointerType !== 'mouse') return;
+        hoverGap = key;
+        drawGap(current);
+      });
+      el.addEventListener('pointerleave', event => {
+        if (event.pointerType !== 'mouse') return;
+        hoverGap = null;
+        drawGap(current);
+      });
+      el.addEventListener('click', () => {
+        pinnedGap = pinnedGap === key ? null : key;
+        drawGap(current);
+      });
+      return [el];
+    });
+    return gaps.length ? html`<span class="track-gaps"> · ${gaps.flatMap((g, k) => (k ? [' ', g] : [g]))}</span>` : '';
   }
 
   function init() {
@@ -325,6 +374,13 @@ export function compareTrackViewer(
         source: 'trail',
         layout: { 'line-cap': 'round' },
         paint: { 'line-color': ['get', 'color'], 'line-width': 5, 'line-opacity': ['get', 'o'] },
+      });
+      map.addSource('gap', { type: 'geojson', data: emptyCollection });
+      map.addLayer({
+        id: 'gap',
+        type: 'line',
+        source: 'gap',
+        paint: { 'line-color': '#fff', 'line-width': 2.5, 'line-dasharray': [2, 2] },
       });
       map.addSource('cursor', { type: 'geojson', data: emptyCollection });
       map.addLayer({

@@ -60,6 +60,9 @@ pager: false
   .track-readout-compare { flex-direction: column; gap: 2px; }
   .track-readout-compare b { font-size: 15px; }
   .track-strip { touch-action: none; cursor: ew-resize; height: 64px; }
+  .track-gaps { font-size: 13px; }
+  .track-gap { white-space: nowrap; opacity: .8; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+  .track-gap.active { opacity: 1; font-weight: 600; text-decoration-style: solid; }
   .track-scrub { display: flex; align-items: stretch; gap: 6px; }
   .track-scrub .track-strip { flex: 1; min-width: 0; }
   .track-step {
