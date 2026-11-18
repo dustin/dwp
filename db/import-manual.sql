@@ -26,8 +26,6 @@ begin;
 
 SET VARIABLE rider = 'dustin';   -- whose run this is (dwlist.rider)
 
-call lake.set_commit_message('dustin', 'enter DW run by hand (no track)');
-
 -- Max HR normally comes from the track, so dwlist has had nowhere to keep it.
 ALTER TABLE dwlist ADD COLUMN IF NOT EXISTS max_hr DOUBLE;
 

@@ -17,8 +17,6 @@ load httpfs;
 
 begin;
 
-call lake.set_commit_message('dustin', 'adding ' || getvariable('site') || ' buoy readings');
-
 create or replace temp table incoming_stdmet as
 with lines as (
   -- Some old archives end their header with \n and their data lines with

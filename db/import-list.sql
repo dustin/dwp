@@ -4,8 +4,6 @@ use lake;
 
 begin;
 
-call lake.set_commit_message('dustin', 'dw list merging');
-
 merge into dwlist as l
   using (
     select

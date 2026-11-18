@@ -36,7 +36,6 @@ import argparse
 import json
 import os
 import re
-import socket
 import sys
 import tempfile
 import time
@@ -152,8 +151,7 @@ def ingest(dirs, dry_run):
 
     # The temp tables go in before the transaction, which writes only the lake.
     temps, stmts = ["set TimeZone = 'UTC';"], [
-        "begin;",
-        f"call lake.set_commit_message('dustin', {sql_str('cam readings and images from ' + socket.gethostname())});"]
+        "begin;"]
     if motion:
         temps.append(temp_table("new_motion",
                                 [("site", "VARCHAR"), ("ts", "TIMESTAMPTZ"), ("day", "DATE")]

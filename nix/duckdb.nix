@@ -1,7 +1,7 @@
 # DuckDB 2.0 (LTS), built with nixpkgs' own derivation until nixpkgs
-# catches up (nixpkgs-unstable is still on 1.5.5). The lake is on 2.0 and
-# DuckLake 1.1 now, which 1.5 can't open, so every flake here uses this
-# via ./overlay.nix. A copy of nixos-configs pkgs/duckdb.nix; drop both
+# catches up (nixpkgs-unstable is still on 1.5.5). The lake is a DuckDB
+# 2.0 file served over quack, neither of which 1.5 can use, so every flake
+# here uses this via ./overlay.nix. A copy of nixos-configs pkgs/duckdb.nix; drop both
 # once nixpkgs ships 2.x.
 #
 # nixpkgs' unit-test exclusion list is written for 1.5, so the install

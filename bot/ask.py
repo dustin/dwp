@@ -377,16 +377,14 @@ def check_set(fields, resolve_gear):
 
 
 def apply_sql(rider, changes, request):
-    """One lake commit setting, for each (ids, fields) in changes, fields on
-    rider's runs ids."""
-    msg = f"matrix-bot ask ({rider}): {request}"[:200]
+    """One lake transaction setting, for each (ids, fields) in changes,
+    fields on rider's runs ids. request is unused (it was the DuckLake
+    commit message)."""
     updates = "".join(
         f"update dwlist set {', '.join(f'{k} = {sql_str(v)}' for k, v in fields.items())} "
         f"where rider = {sql_str(rider)} and id::varchar in ({', '.join(sql_str(i) for i in ids)}); "
         for ids, fields in changes)
-    return ("use lake; begin; "
-            f"call lake.set_commit_message('dustin', {sql_str(msg)}); "
-            f"{updates}commit;")
+    return f"use lake; begin; {updates}commit;"
 
 
 def answered_runs(path, rows, me=None, most=5):

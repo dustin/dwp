@@ -1,9 +1,6 @@
 -- The dwp lake's session settings, before the lake is attached (lake.nix
--- adds the ATTACH and, for the server, quack_serve). Mirrors what the
--- lake needed from the big lake's init.sql: the extensions the lake's
--- views and macros use.
-INSTALL ducklake; LOAD ducklake;
-INSTALL sqlite; LOAD sqlite;
+-- adds the ATTACH and, for the server, quack_serve): the extensions the
+-- lake's views and macros use.
 INSTALL spatial; LOAD spatial;
 INSTALL httpfs; LOAD httpfs;
 

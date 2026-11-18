@@ -1,6 +1,6 @@
 # Home-manager module for the dwp lake's server: a DuckDB session with the
-# dwp DuckLake (SQLite catalog + Parquet files in one directory) attached
-# as `lake`, served over Quack, DuckDB 2.0's remote protocol, so every dwp
+# dwp lake (one plain DuckDB file, DIR/lake.duckdb) attached as `lake`,
+# served over Quack, DuckDB 2.0's remote protocol, so every dwp
 # tool reaches it the usual way (LAKE's quack-init.sql), from any host.
 #
 #   services.dwp-lake = {
@@ -12,10 +12,16 @@
 # in front of it (`tailscale serve`). A systemd user service on Linux, a
 # launchd agent on macOS.
 #
-# DIR holds lake.sqlite3 and lake/ (the catalog's data_path, relative) and
-# a .lake-name file reading `dwp`: the server won't start without it, so it
-# can't serve some other lake's directory by mistake. lake/ must be this
-# lake's alone, since maintenance deletes files the catalog doesn't list.
+# DIR holds lake.duckdb and a .lake-name file reading `dwp`: the server
+# won't start without it, so it can't serve some other lake's directory by
+# mistake. The server is the file's only writer: DuckDB locks it, so
+# everything else goes through quack (or dwp-lake-local with the server
+# stopped).
+#
+# Until 2026-11 the lake was a DuckLake (DIR/lake.sqlite3 catalog + DIR/lake/
+# Parquet). dwp-lake-migrate copies that into DIR/lake.duckdb once, with the
+# server stopped, and leaves the DuckLake files alone; delete them once the
+# new lake has been fine for a while.
 #
 # Also a nightly dwp-lake-maintenance (maintenance.sql) through the server,
 # optionally a nightly dwp-lake-backup (backup.*),
@@ -23,7 +29,7 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-lake;
-  # The lake is on DuckDB 2.0; use ../../nix/duckdb.nix's until pkgs has it.
+  # The lake file is DuckDB 2.0's format; use ../../nix/duckdb.nix's until pkgs has it.
   duckdb = if lib.versionAtLeast pkgs.duckdb.version "2" then pkgs.duckdb
     else pkgs.callPackage ../../nix/duckdb.nix { inherit (pkgs) duckdb; };
 
@@ -33,14 +39,13 @@ let
     SET memory_limit = '${cfg.memoryLimit}';
     SET threads = ${toString cfg.threads};
     SET temp_directory = '${cfg.dir}/.tmp';
-    ATTACH 'ducklake:sqlite:${cfg.dir}/lake.sqlite3' AS lake
-      (DATA_PATH '${cfg.dir}/lake/', OVERRIDE_DATA_PATH true);
+    ATTACH '${cfg.dir}/lake.duckdb' AS lake;
     USE lake;
     .output
   '';
 
-  # Prints a CREATE SECRET for the lake's data files in S3
-  # (s3://lake.west.spy.net/files/...), with the default profile's key from
+  # Prints a CREATE SECRET for S3 (the old DuckLake's data files in
+  # s3://lake.west.spy.net/files/..., and anything views read there), with the default profile's key from
   # the AWS credentials file (the aws extension's credential chain wants a
   # ~/.aws/config too). Same region as the big lake's secret. Nothing
   # without the file.
@@ -67,8 +72,12 @@ let
         echo "dwp-lake: $dir/.lake-name doesn't say dwp; not serving it" >&2
         exit 1
       fi
-      if [ -L "$dir/lake" ] || [ ! -d "$dir/lake" ] || [ ! -f "$dir/lake.sqlite3" ]; then
-        echo "dwp-lake: $dir needs lake.sqlite3 and its own lake/ directory (not a link)" >&2
+      if [ ! -f "$dir/lake.duckdb" ]; then
+        if [ -f "$dir/lake.sqlite3" ]; then
+          echo "dwp-lake: $dir has the old DuckLake but no lake.duckdb; run dwp-lake-migrate" >&2
+        else
+          echo "dwp-lake: no $dir/lake.duckdb" >&2
+        fi
         exit 1
       fi
 
@@ -110,6 +119,73 @@ let
       trap 'rm -f "$init"' EXIT
       { cat ${sessionSql}; printf '.output /dev/null\n'; s3_secret; printf '.output\n'; } > "$init"
       duckdb -init "$init" "$@"
+    '';
+  };
+
+  # One-off: the old DuckLake (lake.sqlite3 + lake/) copied into
+  # lake.duckdb, every schema, table, view and macro (COPY FROM DATABASE,
+  # as the backup's full copy does), with each table's row count checked
+  # before the new file takes the name. Run it with dwp-lake stopped;
+  # it does nothing once lake.duckdb exists.
+  migrate = pkgs.writeShellApplication {
+    name = "dwp-lake-migrate";
+    runtimeInputs = [ duckdb pkgs.coreutils pkgs.gnused pkgs.gnugrep ];
+    text = s3Secret + ''
+      dir=${lib.escapeShellArg cfg.dir}
+      cd "$dir"
+      if [ -e lake.duckdb ]; then
+        echo "dwp-lake-migrate: $dir/lake.duckdb already exists; nothing to do"
+        exit 0
+      fi
+      if [ ! -f lake.sqlite3 ] || [ ! -d lake ]; then
+        echo "dwp-lake-migrate: no DuckLake (lake.sqlite3 and lake/) in $dir" >&2
+        exit 1
+      fi
+      rm -f lake.duckdb.tmp lake.duckdb.tmp.wal tables.tmp
+      init=$(umask 077; mktemp)
+      trap 'rm -f "$init" tables.tmp' EXIT
+      {
+        printf '.output /dev/null\n'
+        cat ${./init.sql}
+        printf 'INSTALL ducklake; LOAD ducklake; INSTALL sqlite; LOAD sqlite;\n'
+        printf 'SET memory_limit = %s; SET threads = %s;\n' \
+          ${lib.escapeShellArg "'${cfg.memoryLimit}'"} ${toString cfg.threads}
+        printf "SET temp_directory = '%s/.tmp';\n" "$dir"
+        s3_secret
+        printf "ATTACH 'ducklake:sqlite:%s/lake.sqlite3' AS old (DATA_PATH '%s/lake/', OVERRIDE_DATA_PATH true);\n" "$dir" "$dir"
+        printf "ATTACH '%s/lake.duckdb.tmp' AS new;\n" "$dir"
+        printf '.output\n'
+      } > "$init"
+      mkdir -p .tmp
+
+      echo "copying the DuckLake into lake.duckdb.tmp"
+      duckdb -bail -init "$init" -c 'COPY FROM DATABASE old TO new; CHECKPOINT new;'
+
+      # Every table's rows, old against new; error() stops at the first
+      # that differs.
+      duckdb -bail -init "$init" -list -noheader -c "
+        select schema_name || '.' || table_name from duckdb_tables()
+         where database_name = 'old' order by 1" > tables.tmp
+      sql=""
+      while IFS=. read -r s t; do
+        sql+="select t, if(n = m, 'ok', error(t || ': ' || n || ' rows in the DuckLake, ' || m || ' copied')) from (select '$s.$t' as t, (select count(*) from old.\"$s\".\"$t\") as n, (select count(*) from new.\"$s\".\"$t\") as m);"$'\n'
+      done < <(grep -E '^[a-z_][a-z0-9_]*\.[a-z_][a-z0-9_]*$' tables.tmp)
+      if [ -z "$sql" ]; then
+        echo "dwp-lake-migrate: no tables found in the DuckLake" >&2
+        exit 1
+      fi
+      echo "checking $(grep -c . <<< "$sql") tables"
+      duckdb -bail -init "$init" -list -noheader <<< "$sql"
+      duckdb -bail -init "$init" -list -noheader -c "
+        select 'views: ' || (select count(*) from duckdb_views() where database_name = 'old' and not internal)
+          || ' old, ' || (select count(*) from duckdb_views() where database_name = 'new' and not internal) || ' new'"
+
+      if [ -e lake.duckdb.tmp.wal ]; then
+        echo "dwp-lake-migrate: lake.duckdb.tmp.wal left over; not using the copy" >&2
+        exit 1
+      fi
+      mv lake.duckdb.tmp lake.duckdb
+      echo "dwp-lake-migrate: $dir/lake.duckdb is the lake now; lake.sqlite3 and lake/ are untouched (delete them later)"
     '';
   };
 
@@ -191,7 +267,7 @@ in
     dir = mkOption {
       type = types.str;
       default = "${config.home.homeDirectory}/lakes/dwp";
-      description = "The lake: lake.sqlite3, lake/ and .lake-name.";
+      description = "The lake: lake.duckdb and .lake-name.";
     };
     listen = mkOption {
       type = types.str;
@@ -238,7 +314,7 @@ in
       dir = mkOption {
         type = types.str;
         default = "${config.home.homeDirectory}/lakes/dwp-bak";
-        description = "Where lake/<table>.parquet and lake.db.xz are kept. Never inside DIR/lake.";
+        description = "Where lake/<table>.parquet and lake.db.xz are kept.";
       };
       remote = mkOption {
         type = types.str;
@@ -254,7 +330,7 @@ in
   };
 
   config = lib.mkIf cfg.enable (lib.mkMerge [
-    { home.packages = [ maintenance local ] ++ lib.optional cfg.backup.enable backup; }
+    { home.packages = [ maintenance local migrate ] ++ lib.optional cfg.backup.enable backup; }
 
     (lib.mkIf pkgs.stdenv.hostPlatform.isLinux {
       systemd.user.services.dwp-lake = {

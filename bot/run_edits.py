@@ -57,7 +57,6 @@ def set_gear(mx, room, event_id, rider, kind, name, dwid=None):
         return
     mx.react(room, event_id, "👀")
     sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', 'matrix-bot: {kind} of {r['id']}'); "
            f"update dwlist set {kind} = {sql_str(value)} where id = '{r['id']}'; commit;")
     ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
@@ -99,7 +98,6 @@ def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
                   "and not exists (select 1 from speed_exclusions e "
                   "where e.dwid = d.dwid and e.ts = d.ts) order by ts limit 1; ")
     sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', 'matrix-bot: top speed of {dwid}'); "
            + change +
            "update dwlist as l set max_speed_kmh = t.max_speed_kmh from run_top_speed t "
            f"where l.id = t.dwid and l.id = '{dwid}'; commit;")
@@ -203,7 +201,6 @@ def lake_change(what, dwid, change, dwids):
     """Run change on the lake, recompute runs dwids' stats in the same
     transaction, then re-export; (ok, output)."""
     sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', 'matrix-bot: {what} of {dwid}'); "
            + change + dwp_publish.run_stats_sql(dwids) + "\ncommit;")
     ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
     if ok:
@@ -312,7 +309,6 @@ def delete_run(mx, room, event_id, dwid, rider, sender):
     track file in S3 is left for !publish orphans --delete)."""
     mx.react(room, event_id, "👀")
     sql = ("use lake; begin; "
-           f"call lake.set_commit_message('dustin', {sql_str(f'matrix-bot: delete {dwid} (!delete by {sender})')}); "
            f"delete from speed_exclusions where dwid = '{dwid}'; "
            f"delete from run_trims where dwid = '{dwid}'; "
            f"delete from dws where dwid = '{dwid}'; "

@@ -5,7 +5,7 @@
 # usual way: LAKE (default ~/.config/lakes/dwp, which nixos-configs' duckq
 # renders, else ~/stuff/duck) holding quack-init.sql.
 #
-# duckdb must be 2.0 (the lake is on 2.0 / DuckLake 1.1); cams/hm-module.nix
+# duckdb must be 2.0 (the lake and quack are 2.0); cams/hm-module.nix
 # passes ../nix/duckdb.nix's when pkgs' is older.
 { lib, stdenvNoCC, python3, duckdb, rclone, curl, netcat-openbsd, coreutils, gnused, gnugrep, tzdata, cacert, makeWrapper }:
 

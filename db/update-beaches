@@ -176,7 +176,6 @@ def apply(has_region, adds, changes, deletes, runs, tmp):
         where l.id = x.dwid and (l.start_pos is distinct from x.s or l.end_pos is distinct from x.e);""" if runs else ""
     duckdb(f"""load spatial;
         begin;
-        call lake.set_commit_message('dustin', 'beaches from KML');
         update beaches as b set name = x.name, geom = ST_GeomFromText(x.wkt){set_region}
         from (select * from {src} where op = 'change') x
         where b.id = x.id::uuid;

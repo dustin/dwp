@@ -536,7 +536,6 @@ class Manifest:
                 ("fingerprint", "VARCHAR"), ("uploaded_at", "TIMESTAMPTZ")]
         duckdb(temp_table("recorded", cols, [r + (now,) for r in rows]) + f"""
             begin;
-            call lake.set_commit_message('dustin', {sql_str(f'publish manifest: {len(rows)} recorded')});
             delete from publish_manifest where key in (select key from recorded);
             insert into publish_manifest by name select * from recorded;
             commit;""", what=f"record {len(rows)} in manifest")
@@ -546,7 +545,6 @@ class Manifest:
             return
         duckdb(temp_table("forgotten", [("key", "VARCHAR")], [(k,) for k in keys]) + f"""
             begin;
-            call lake.set_commit_message('dustin', {sql_str(f'publish manifest: {len(keys)} forgotten')});
             delete from publish_manifest where key in (select key from forgotten);
             commit;""")
 

@@ -15,7 +15,6 @@ SET VARIABLE rider = CASE
     THEN error('set DWP_RIDER to the rider, e.g. DWP_RIDER=dustin')
   ELSE getenv('DWP_RIDER')
 END;
-call lake.set_commit_message('dustin', 'import DW run from filtered csv');
 SET VARIABLE csv_path = coalesce(nullif(getenv('DWP_CSV'), ''), '/tmp/activity.csv');
 SET VARIABLE tz = 'Pacific/Honolulu';
 -- DWP_BOARD if given, else the board on the rider's latest run.
