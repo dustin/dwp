@@ -60,6 +60,23 @@ pager: false
   .track-readout-compare { flex-direction: column; gap: 2px; }
   .track-readout-compare b { font-size: 15px; }
   .track-strip { touch-action: none; cursor: ew-resize; height: 64px; }
+  .track-scrub { display: flex; align-items: stretch; gap: 6px; }
+  .track-scrub .track-strip { flex: 1; min-width: 0; }
+  .track-step {
+    width: 40px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #fff;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .track-step:active { background: rgba(255, 255, 255, 0.3); }
   .track-strip svg { display: block; }
   .track-note { color: #bbb; font-size: 13px; padding: 4px 0; }
   .track-details { color: #bbb; font-size: 12px; margin: -2px 0 6px; font-variant-numeric: tabular-nums; }

@@ -100,6 +100,7 @@ function compareStrip(pointsArr, { onSelect, colors = RUN_COLORS }) {
 
   return {
     el,
+    maxElapsed,
     moveTo(elapsed) {
       cursorAt = elapsed;
       draw();
@@ -154,6 +155,47 @@ export function compareTrackViewer(
     windButton.setAttribute('aria-pressed', String(!windBox.hidden));
   });
   const chart = anyChart ? compareStrip(tracks, { onSelect: elapsed => select(elapsed), colors }) : null;
+  // Fine steps beside the strip, which is too coarse on a phone: a tap is
+  // one second, holding keeps stepping and speeds up. Arrow keys do the
+  // same on a computer (Shift for 10 s).
+  let current = 0;
+  const stepBy = ms => select(Math.max(0, Math.min(chart.maxElapsed, current + ms)));
+  const stepButton = dir => {
+    const b = html`<button class="track-step" type="button" aria-label=${dir < 0 ? 'Back one second' : 'Forward one second'}>${dir < 0 ? '‹' : '›'}</button>`;
+    let timer = null;
+    const stop = () => {
+      clearTimeout(timer);
+      timer = null;
+    };
+    b.addEventListener('pointerdown', event => {
+      event.preventDefault();
+      b.setPointerCapture(event.pointerId);
+      stepBy(dir * 1000);
+      let n = 0;
+      const again = () => {
+        n++;
+        stepBy(dir * (n < 10 ? 1000 : n < 30 ? 2000 : 5000));
+        timer = setTimeout(again, 100);
+      };
+      timer = setTimeout(again, 400);
+    });
+    for (const type of ['pointerup', 'pointercancel', 'lostpointercapture']) b.addEventListener(type, stop);
+    b.addEventListener('contextmenu', event => event.preventDefault());
+    b.addEventListener('click', event => {
+      if (event.detail === 0) stepBy(dir * 1000);
+    });
+    return b;
+  };
+  const scrubRow = chart ? html`<div class="track-scrub">${stepButton(-1)}${chart.el}${stepButton(1)}</div>` : null;
+  const onKey = event => {
+    if (!chart || event.target.closest?.('input, textarea')) return;
+    const dir = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+    if (!dir) return;
+    event.preventDefault();
+    stepBy(dir * (event.shiftKey ? 10000 : 1000));
+  };
+  window.addEventListener('keydown', onKey);
+  invalidation?.then(() => window.removeEventListener('keydown', onKey));
 
   const root = html`<div class="track-app">
     ${mapEl}
@@ -172,7 +214,7 @@ export function compareTrackViewer(
       ${readout}
       ${details}
       ${chart
-        ? chart.el
+        ? scrubRow
         : html`<div class="track-note">No GPS track for ${approximate.every(Boolean) ? 'either run' : 'this run'}: the gray line is an approximate route between the beaches.</div>`}
     </footer>
   </div>`;
@@ -190,6 +232,7 @@ export function compareTrackViewer(
   let selected = [0, 0];
   function select(elapsed, { keepInfo = false } = {}) {
     if (!keepInfo) info.remove();
+    current = elapsed;
     selected = tracks.map(points => {
       if (!points.length) return 0;
       return Math.max(0, Math.min(points.length - 1, d3.bisector(d => d.elapsed).center(points, elapsed)));
