@@ -8,10 +8,10 @@
 --
 -- Defaults to the Pauwela buoy (NDBC station 51205). Override station/site
 -- without editing the file via -cmd, e.g.:
---   duckdb mydb.duckdb \
+--   cd "$LAKE" && duckdb --init quack-init.sql \
 --     -cmd "set variable station = '51201';" \
 --     -cmd "set variable site = 'waimea';" \
---     < swell/update.sql
+--     < .../db/swell/update.sql
 --
 -- Source (per station):
 --   https://www.ndbc.noaa.gov/data/realtime2/<station>.txt
@@ -25,10 +25,10 @@
 -- derivation below; swell/backfill.sh wraps it. Optionally bounded with
 -- since/until (timestamptz, inclusive; give an offset, or it's read in the
 -- session's time zone):
---   duckdb mydb.duckdb \
+--   cd "$LAKE" && duckdb --init quack-init.sql \
 --     -cmd "set variable mode = 'backfill';" \
 --     -cmd "set variable since = '2026-07-22'::timestamptz;" \
---     < swell/update.sql
+--     < .../db/swell/update.sql
 
 set variable station = coalesce(getvariable('station'), '51205');
 set variable site = coalesce(getvariable('site'), 'pauwela');

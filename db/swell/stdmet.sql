@@ -7,10 +7,10 @@
 -- and yearly archives (99/999 for missing), and the archives before 2005,
 -- which have no minute column. Readings the swell table already has for
 -- the site are left alone, so overlapping files are fine:
---   duckdb mydb.duckdb \
+--   cd "$LAKE" && duckdb --init quack-init.sql \
 --     -cmd "set variable site = 'waimea';" \
 --     -cmd "set variable files = ['https://www.ndbc.noaa.gov/data/realtime2/51201.txt'];" \
---     < swell/stdmet.sql
+--     < .../db/swell/stdmet.sql
 
 install httpfs;
 load httpfs;
