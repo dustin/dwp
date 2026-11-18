@@ -145,7 +145,7 @@ import sources  # noqa: E402
 import ask  # noqa: E402
 import forecast  # noqa: E402
 import importing  # noqa: E402
-from common import HST, DB_DIR, RUN_ID, escape, latest, log, query, run, runs, sql_str, summary, tail  # noqa: E402
+from common import HST, DWP_DB_DIR, RUN_ID, escape, latest, log, query, run, runs, sql_str, summary, tail  # noqa: E402
 from run_edits import GEAR, TRIM_AT, delete_run, glitch, resolve_gear, set_gear, split, trim, unsplit  # noqa: E402
 from importing import SYNC_LOCK, announce, download_url, import_gpx, import_zip, new_runs  # noqa: E402
 
@@ -1563,7 +1563,7 @@ class Bot:
         snap = tempfile.mkdtemp(dir=self.tmp)
         whose = " and ".join(f"{r}'s" for r in riders) + " runs"
         try:
-            ask.snapshot(DB_DIR, riders, snap)
+            ask.snapshot(DWP_DB_DIR, riders, snap)
             context = ask.context(snap, me, riders, [r["name"] for r in query(
                 "select name from beaches order by name")])
             p, rows = ask.plan(a.ollama, a.ask_model, question, context, snap)
@@ -1672,7 +1672,7 @@ class Bot:
         # Reactions on the preview show how far it got: 👀 applying, 💾 in
         # the database, 🌐 published (❌ where it stopped).
         self.mx.react(room, pid, "👀")
-        ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=DB_DIR)
+        ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=DWP_DB_DIR)
         if ok:
             self.mx.react(room, pid, "💾")
             try:

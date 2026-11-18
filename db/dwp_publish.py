@@ -107,7 +107,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
+DWP_DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 # Every publish goes through the publish service (publishd), over the
 # broker DWP_MQTT (default mqtt); publishd sets DWP_PUBLISH_LOCAL for the
 # ./publish it runs, and ./publish --local runs here when it's down.
@@ -364,7 +364,7 @@ def duckdb(sql, json_out=False, cmd=None, what=None):
         args.append("-json")
     if cmd:
         args += ["-cmd", cmd]
-    r = subprocess.run(args, cwd=DB_DIR, input="use dwp;\n" + XY + sql,
+    r = subprocess.run(args, cwd=DWP_DB_DIR, input="use dwp;\n" + XY + sql,
                        capture_output=True, text=True)
     note("duckdb " + (what or " ".join(sql.split())[:60]), t0)
     if r.returncode != 0 or "Error:" in r.stderr:

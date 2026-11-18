@@ -20,7 +20,7 @@ sys.dont_write_bytecode = True
 sys.path.insert(0, DB_DIR)  # dwp_publish, shared with publish and add-run
 import dwp_publish  # noqa: E402
 
-DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
+DWP_DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 
 
 def log(msg):
@@ -39,7 +39,7 @@ def run(cmd, env=None, cwd=DB_DIR):
 def query(sql):
     """Rows of a query against the database, as dicts."""
     r = subprocess.run(["duckdb", "--init", "quack-init.sql", "-json", "-c", "use dwp; " + sql],
-                       cwd=DB_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                       cwd=DWP_DB_DIR, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                        text=True)
     # The init file's statements print their own result sets first; the
     # query's rows are the last JSON array.

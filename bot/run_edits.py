@@ -9,7 +9,7 @@ import re
 import uuid
 from datetime import datetime
 
-from common import HST, DB_DIR, escape, latest, query, run, sql_str, summary, tail
+from common import HST, DWP_DB_DIR, escape, latest, query, run, sql_str, summary, tail
 import dwp_publish  # db/, which common puts on the path
 
 
@@ -58,7 +58,7 @@ def set_gear(mx, room, event_id, rider, kind, name, dwid=None):
     mx.react(room, event_id, "👀")
     sql = ("use dwp; begin; "
            f"update dwlist set {kind} = {sql_str(value)} where id = '{r['id']}'; commit;")
-    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DWP_DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -101,7 +101,7 @@ def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
            + change +
            "update dwlist as l set max_speed_kmh = t.max_speed_kmh from run_top_speed t "
            f"where l.id = t.dwid and l.id = '{dwid}'; commit;")
-    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DWP_DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -202,7 +202,7 @@ def db_change(what, dwid, change, dwids):
     transaction, then re-export; (ok, output)."""
     sql = ("use dwp; begin; "
            + change + dwp_publish.run_stats_sql(dwids) + "\ncommit;")
-    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DWP_DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -313,7 +313,7 @@ def delete_run(mx, room, event_id, dwid, rider, sender):
            f"delete from run_trims where dwid = '{dwid}'; "
            f"delete from dws where dwid = '{dwid}'; "
            f"delete from dwlist where id = '{dwid}'; commit;")
-    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DWP_DB_DIR)
     if ok:
         try:
             dwp_publish.run()

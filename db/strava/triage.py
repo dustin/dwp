@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 csv.field_size_limit(sys.maxsize)  # coastline WKT is megabytes
 DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
+DWP_DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
@@ -298,7 +298,7 @@ def existing_runs(rider):
     q = (f"use dwp; select ts, ts + duration_sec from dwlist "
          f"where rider = '{rider}' and ts is not null and duration_sec is not null")
     out = subprocess.run(["duckdb", "--init", "quack-init.sql", "-noheader", "-csv", "-c", q],
-                         cwd=DB_DIR, check=True, capture_output=True, text=True).stdout
+                         cwd=DWP_DB_DIR, check=True, capture_output=True, text=True).stdout
     return [tuple(map(float, line.split(","))) for line in out.splitlines()
             if line and line[0].isdigit()]
 
@@ -337,7 +337,7 @@ def import_run(gpx_path, rider, board, foil, tmp):
         return False
     env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil, DWP_RIDER=rider,
                DWP_BOARD=board, DWP_NEW_FOIL="1")
-    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DB_DIR, env=env,
+    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DWP_DB_DIR, env=env,
                        input=dwp_publish.import_sql(env), text=True)
     return r.returncode == 0
 

@@ -31,7 +31,7 @@ import tempfile
 import time
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
+DWP_DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 
 # Keep __pycache__ out of gpxconvert.
 sys.dont_write_bytecode = True
@@ -84,7 +84,7 @@ def main(argv=None):
         env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
                    DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
-        run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DB_DIR, env=env,
+        run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DWP_DB_DIR, env=env,
             input=dwp_publish.import_sql(env))
         t2 = time.monotonic()
     # The bot reads this line for its timings.
