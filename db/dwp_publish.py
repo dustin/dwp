@@ -133,16 +133,22 @@ IMAGE = ["Content-Type: image/jpeg", "Cache-Control: public, max-age=31536000, i
 IMAGE_KEEP_DAYS = float(os.environ.get("DWP_IMAGE_KEEP_DAYS") or 14)
 
 
-# The heatmap grids (see the heatmap table below): spot, region, the
-# southwest corner's lat and lon, and the grid's width and height in cells
-# of HEATMAP_CELL degrees (about 22 m).
+# The trail heatmaps (see the heatmap table below) count runs per cell of
+# one grid over the whole globe: cell (i, j) is the HEATMAP_CELL degrees
+# (about 22 m) square whose southwest corner is at lon i * HEATMAP_CELL -
+# 180, lat j * HEATMAP_CELL - 90. A rider's overview uses
+# HEATMAP_OVERVIEW_CELL (about 400 m) the same way. The pages work out
+# where the cells are from these (web/lib/components/trail-heatmap.js).
 HEATMAP_CELL = 0.0002
-HEATMAP_SPOTS = [
-    ("maliko", "Maui North Shore", 20.880, -156.500, 875, 400),
-    ("kihei", "Kihei", 20.640, -156.495, 300, 800),
-]
-HEATMAP_VALUES = ", ".join(f"('{s}', '{r}', {lat}, {lon}, {nx}, {ny})"
-                           for s, r, lat, lon, nx, ny in HEATMAP_SPOTS)
+HEATMAP_OVERVIEW_CELL = 0.004
+
+
+def region_slug(region):
+    """'Maui North Shore' -> 'maui-north-shore', like REGION_SLUG_SQL."""
+    return re.sub(r"[^a-z0-9]+", "-", region.lower()).strip("-")
+
+
+REGION_SLUG_SQL = "trim(regexp_replace(lower({}), '[^a-z0-9]+', '-', 'g'), '-')"
 # Site-days of conditions fingerprinted on a plain publish: the last DAYS
 # (Hawaii) days. Older days only change in a backfill; ./publish --all
 # fingerprints them all.
@@ -214,9 +220,9 @@ class Tracks(Table):
 
 
 class Heatmap(Table):
-    """The trail heatmaps, one per spot: fingerprinted in Python from the
-    tracks of the hub riders' runs in the spot's region (see
-    heatmap_fingerprints), so the query only runs to export a changed one."""
+    """The trail heatmaps: fingerprinted in Python from the tracks they're
+    made of (see heatmap_fingerprints), so the query only runs to export a
+    changed one."""
 
     def fp_sql(self, cutoff):
         return None
@@ -255,37 +261,49 @@ TABLES = [
     conditions("wind_forecast", order="ts, model, issued, lead_days"),
     # file is where the image is on this machine; not published.
     conditions("cam_images", cols="x.* exclude (site, day, file)", order="ts, kind"),
-    # Trail heatmaps for the Maliko and Kihei pages: how many runs (by
-    # every rider on the hub, as riders.hub says) passed through each cell of a grid over the spot, as cell
-    # column i and row j from the grid's southwest corner. Each point and
-    # the midpoint back to the one before it count, so a fast stretch
-    # doesn't skip cells. HEATMAP_SPOTS in web/lib/components/trail-heatmap.js
-    # must match the grids here.
+    # Trail heatmaps: how many runs passed through each cell of the
+    # HEATMAP_CELL grid. Each point and the midpoint back to the one before
+    # it count, so a fast stretch doesn't skip cells. Runs with no region
+    # (far from any beach) are left out.
+    #   heatmap/region=<slug>/data.csv: every hub rider's runs in the region
+    #     (the Maliko and Kihei pages, and "everyone's" on rider pages);
+    #   runs/rider=<rider>/heatmap/region=<slug>/data.csv: the rider's;
+    #   runs/rider=<rider>/heatmap/overview.csv: all the rider's runs, on
+    #     the coarser HEATMAP_OVERVIEW_CELL grid.
     Heatmap("heatmap", f"""(
-        with spots(spot, region, lat0, lon0, nx, ny) as (values {HEATMAP_VALUES}),
-        p as (
-          select s.spot, s.lat0, s.lon0, s.nx, s.ny, x.dwid, x.lat, x.lon,
+        with p as (
+          select l.rider, coalesce(r.hub, true) as hub, {REGION_SLUG_SQL.format("l.region")} as region,
+                 x.dwid, x.lat, x.lon,
                  lag(x.lat) over w as plat, lag(x.lon) over w as plon
           from run_points x
           join dwlist_resolved l on x.dwid = l.id
-          join spots s on s.region = l.region
           left join riders r on r.rider = l.rider
-          where coalesce(r.hub, true) and l.rider is not null and not x.synthetic and x.lat is not null
+          where regexp_full_match(l.rider, '{RIDER.pattern}') and l.region is not null
+            and not x.synthetic and x.lat is not null
           window w as (partition by x.dwid order by x.ts)
         ),
-        c as (
-          select spot, nx, ny, dwid,
-                 floor((unnest([lon, (lon + coalesce(plon, lon)) / 2]) - lon0) / {HEATMAP_CELL})::int as i,
-                 floor((unnest([lat, (lat + coalesce(plat, lat)) / 2]) - lat0) / {HEATMAP_CELL})::int as j
+        q as (
+          select rider, hub, region, dwid,
+                 unnest([lon, (lon + coalesce(plon, lon)) / 2]) as lon,
+                 unnest([lat, (lat + coalesce(plat, lat)) / 2]) as lat
           from p
+        ),
+        c as (
+          select *, floor((lon + 180) / {HEATMAP_CELL})::int as i, floor((lat + 90) / {HEATMAP_CELL})::int as j
+          from q
         )
-        select spot, i, j, count(distinct dwid) as runs
-        from c
-        where i between 0 and nx - 1 and j between 0 and ny - 1
-        group by spot, i, j
+        select 'heatmap/region=' || region || '/data.csv' as k, i, j, count(distinct dwid) as runs
+        from c where hub group by all
+        union all
+        select 'runs/rider=' || rider || '/heatmap/region=' || region || '/data.csv', i, j, count(distinct dwid)
+        from c group by all
+        union all
+        select 'runs/rider=' || rider || '/heatmap/overview.csv',
+               floor((lon + 180) / {HEATMAP_OVERVIEW_CELL})::int, floor((lat + 90) / {HEATMAP_OVERVIEW_CELL})::int,
+               count(distinct dwid)
+        from q group by all
     ) x""",
-          "'heatmap/spot=' || x.spot || '/data.csv'",
-          "x.i, x.j, x.runs", "j, i", "true", headers=SHORT),
+          "x.k", "x.i, x.j, x.runs", "j, i", "true", headers=SHORT),
 ]
 
 
@@ -554,13 +572,20 @@ def digest(*parts):
 
 
 def heatmap_fingerprints(tracks, hub):
-    """key -> (fingerprint, recent) for each heatmap spot, from the tracks'
-    fingerprint rows: the tracks of hub riders' runs in its region."""
-    out = {}
-    for spot, region, *_ in HEATMAP_SPOTS:
-        fps = [f"{r['dwid']}:{r['fp']}" for r in tracks if r["region"] == region and hub(r["rider"])]
-        out[f"heatmap/spot={spot}/data.csv"] = (digest(fps), True)
-    return out
+    """key -> (fingerprint, recent) for every heatmap (see the heatmap
+    table), from the tracks' fingerprint rows of the runs it counts."""
+    parts = {}
+    for r in tracks:
+        if not r["region"] or not RIDER.fullmatch(r["rider"] or ""):
+            continue
+        fp, region = f"{r['dwid']}:{r['fp']}", region_slug(r["region"])
+        base = f"runs/rider={r['rider']}/heatmap"
+        keys = [f"{base}/region={region}/data.csv", f"{base}/overview.csv"]
+        if hub(r["rider"]):
+            keys.append(f"heatmap/region={region}/data.csv")
+        for k in keys:
+            parts.setdefault(k, []).append(fp)
+    return {k: (digest(fps), True) for k, fps in parts.items()}
 
 
 def list_fingerprints(riders_rows, runs, tracks):
@@ -623,8 +648,10 @@ def gather(cutoff):
 
 def fingerprints(t):
     """key -> (fingerprint, recent) for every object t makes (orphans)."""
-    if t.fp_sql(None) is None:
-        return {f"heatmap/spot={s}/data.csv": ("", True) for s, *_ in HEATMAP_SPOTS}
+    if t.fp_sql(None) is None:  # the heatmaps: every key gather() would make
+        tracks = duckdb(TABLES[0].fp_sql(None) + ";", json_out=True, what="fingerprint tracks")
+        hub_of = {r["rider"]: r["hub"] for r in duckdb("select rider, hub from riders;", json_out=True)}
+        return heatmap_fingerprints(tracks, lambda rider: hub_of.get(rider) is not False)
     return fingerprint_rows(duckdb(t.fp_sql(None) + ";", json_out=True, what=f"fingerprint {t.name}"), t.name)
 
 

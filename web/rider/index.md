@@ -761,6 +761,16 @@ Below is a density map of recent crashes to identify hot spots.
 
 <div class="card">${lazyResize(width => renderCrashes(width, someCrashes), {height: 600})}</div>
 
+## Where I Ride
+
+```js
+import {rider} from "./components/data.js";
+import {fetchRiderHeatmap, riderHeatmapCard} from "./components/trail-heatmap.js";
+const riderHeat = await fetchRiderHeatmap(rider);
+```
+
+${riderHeatmapCard(riderHeat, runCsv, {resize})}
+
 ## Starts and Ends
 
 This shows where I start and end my runs.
