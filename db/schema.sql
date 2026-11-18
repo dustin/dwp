@@ -245,7 +245,7 @@ CREATE TABLE swell(
   day DATE,
   wave_height DOUBLE,
   wave_period DOUBLE,
-  wave_direction INTEGER,
+  wave_direction SMALLINT,
   water_temp DOUBLE
 );
 
