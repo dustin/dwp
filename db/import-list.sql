@@ -1,6 +1,6 @@
 -- Update the list from a Waterspeed export (Dustin's runs only)
 
-use lake;
+use dwp;
 
 begin;
 

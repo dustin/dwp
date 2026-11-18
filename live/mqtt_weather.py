@@ -1,6 +1,6 @@
 """Live wind from the weather/+ MQTT feed, for matrix-bot.
 
-The lake's wind table is filled about every half hour; the station feed on
+The database's wind table is filled about every half hour; the station feed on
 the LAN broker is a reading a minute or so. Weather.start() subscribes to
 weather/+ in a background thread and keeps each station's last few hours,
 so !conditions and the bot's status can say what it's doing right now.
@@ -240,7 +240,7 @@ class Weather:
         self.changed.set()
 
     def seed(self, site, rows):
-        """Older readings (from the lake) under whatever the feed has."""
+        """Older readings (from the database) under whatever the feed has."""
         cutoff = time.time() - KEEP
         with self.lock:
             q = self.readings.setdefault(site, deque())

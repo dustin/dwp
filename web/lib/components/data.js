@@ -349,7 +349,7 @@ export const WAILEA_CAM = {lat: 20.6858, lon: -156.4425};
 const CAM_PASS_M = 3000;
 const CAM_WINDOW_MS = 45 * 60 * 1000;
 
-// autoType doesn't take the lake's "2026-10-12 22:28:00+00" stamps.
+// autoType doesn't take the database's "2026-10-12 22:28:00+00" stamps.
 const camRow = row => ({...d3.autoType({...row, ts: ''}), ts: new Date(row.ts)});
 
 // The Wailea cam's reading for a Kihei run, from cam_motion and cam_images

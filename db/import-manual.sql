@@ -1,10 +1,10 @@
 -- Enter a run by hand when there's no GPS track for it (the watch app failed
 -- to capture or export it), from the workout summary.
 --
--- Fill in the variables below and run it against the lake (LAKE is the
--- directory holding quack-init.sql, e.g. ~/.config/lakes/dwp):
+-- Fill in the variables below and run it against the database (DWP_DB is the
+-- directory holding quack-init.sql, e.g. ~/.config/duckq/dwp):
 --
---   cd "$LAKE" && duckdb --init quack-init.sql < .../db/import-manual.sql
+--   cd "$DWP_DB" && duckdb --init quack-init.sql < .../db/import-manual.sql
 --
 -- then ./publish to export and upload it.
 --
@@ -20,7 +20,7 @@
 -- times replaces an earlier hand-entered row too, but it refuses to touch a
 -- run that has a track.
 
-use lake;
+use dwp;
 
 begin;
 

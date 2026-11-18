@@ -8,9 +8,9 @@
 # (services.dwp-wailea-motion was its name when it only watched Wailea.)
 #
 # With ingest.enable, each round then runs cam-ingest (../cam-ingest) on
-# the same host: the round's readings go into the lake and its images to
+# the same host: the round's readings go into the database and its images to
 # S3 from here, so any host can be the one watching the cams. It needs the
-# lake (ingest.lake holding quack-init.sql) and an rclone config with the
+# database (ingest.db holding quack-init.sql) and an rclone config with the
 # s3 remote (ingest.rcloneConfig).
 { config, lib, pkgs, ... }:
 let
@@ -18,14 +18,14 @@ let
   motion = [ (lib.getExe cfg.package) "--mqtt" cfg.mqtt ]
     ++ lib.concatMap (c: [ "--cam" c ]) cfg.cams
     ++ lib.optionals (cfg.logDir != null) [ "--log" cfg.logDir ];
-  # The lake is on DuckDB 2.0; use ../../nix/duckdb.nix's until pkgs has it.
+  # The database is on DuckDB 2.0; use ../../nix/duckdb.nix's until pkgs has it.
   duckdb = if lib.versionAtLeast pkgs.duckdb.version "2" then pkgs.duckdb
     else pkgs.callPackage ../../nix/duckdb.nix { inherit (pkgs) duckdb; };
   round = pkgs.writeShellScript "dwp-cam-round" (''
     status=0
     ${lib.escapeShellArgs motion} || status=$?
   '' + lib.optionalString cfg.ingest.enable ''
-    export LAKE=${lib.escapeShellArg cfg.ingest.lake}
+    export DWP_DB=${lib.escapeShellArg cfg.ingest.db}
     ${lib.optionalString (cfg.ingest.rcloneConfig != null)
       "export RCLONE_CONFIG=${lib.escapeShellArg cfg.ingest.rcloneConfig}"}
     ${lib.getExe' cfg.ingest.package "dwp-cam-ingest"} --log ${lib.escapeShellArg cfg.logDir} || status=$?
@@ -67,15 +67,15 @@ in
       description = "Where to keep motion.jsonl and an arrow overlay per reading, {cam} being the cam's name (null for none).";
     };
     ingest = {
-      enable = mkEnableOption "cam-ingest after each round: readings to the lake, images to S3, from this host";
+      enable = mkEnableOption "cam-ingest after each round: readings to the database, images to S3, from this host";
       package = mkOption {
         type = types.package;
         default = pkgs.callPackage ../tools.nix { inherit duckdb; };
       };
-      lake = mkOption {
+      db = mkOption {
         type = types.str;
-        default = "${config.home.homeDirectory}/.config/lakes/dwp";
-        description = "LAKE for cam-ingest: a directory whose quack-init.sql connects to the lake.";
+        default = "${config.home.homeDirectory}/.config/duckq/dwp";
+        description = "DWP_DB for cam-ingest: a directory whose quack-init.sql connects to the database.";
       };
       rcloneConfig = mkOption {
         type = types.nullOr types.str;

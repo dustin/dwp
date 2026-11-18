@@ -6,8 +6,8 @@
     ./publish --dry-run   say what would be uploaded; upload and record nothing
     ./publish verify      check the bucket against the manifest
     ./publish verify --fix   ...and re-upload whatever is missing or wrong
-    ./publish orphans     list objects the lake no longer makes (from the S3
-                          inventory in the lake, so about a day behind)
+    ./publish orphans     list objects the database no longer makes (from the S3
+                          inventory in the database, so about a day behind)
     ./publish orphans --delete   ...and delete them from S3
 
 Each of these asks the publish service (./publishd, wherever it runs) to
@@ -15,7 +15,7 @@ do it, over MQTT (DWP_MQTT, default mqtt), and prints what it printed;
 so does run(), which add-run, the bot and drive-sync call. Add --local to
 run it here instead, for when publishd is down.
 
-Everything under s3:db.downwind.pro/ that comes from the lake goes through
+Everything under s3:db.downwind.pro/ that comes from the database goes through
 here: each run's track and each rider's lists under runs/, and one file per
 site and day under wind/, swell/, swell_partition/ and swell_spectrum/.
 
@@ -29,11 +29,11 @@ change). Once such an image has been in S3 since an earlier publish and its
 local copy is over 14 days old (DWP_IMAGE_KEEP_DAYS), publish deletes the
 local copy. Wind forecasts (wind_forecast, from
 forecast-ingest) publish the same way under wind_forecast/. publish only
-reads the lake.
+reads the database.
 
-The manifest, the lake's publish_manifest table (schema.sql), records,
+The manifest, the database's publish_manifest table (schema.sql), records,
 for every object publish has put in S3, the sha256 of its uncompressed CSV, its
-gzipped size, the headers it was uploaded with, and a fingerprint of the lake
+gzipped size, the headers it was uploaded with, and a fingerprint of the database
 rows it was made from (row count and the sum of the rows' hashes). A publish:
 
   1. fingerprints every track and every site-day of the last 14 days
@@ -77,10 +77,10 @@ copies are the ones in doubt). Everything S3 lacks is uploaded, and so are
 the lists. Try it with --dry-run first.
 
 orphans reads the bucket inventory (s3.latest_files, about a day behind) and
-lists objects under publish's prefixes that no run or site-day in the lake
+lists objects under publish's prefixes that no run or site-day in the database
 makes any more, such as the old track of a re-imported run. --delete
 removes them from S3 (and the manifest), but refuses if they're over 5% of
-the inventory, which smells like a lake read gone wrong rather than real
+the inventory, which smells like a database read gone wrong rather than real
 orphans; --force overrides that. It also lists objects the manifest says were uploaded over two days
 ago that the inventory doesn't have, a check verify --fix can then repair.
 
@@ -107,7 +107,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
-LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
+DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 # Every publish goes through the publish service (publishd), over the
 # broker DWP_MQTT (default mqtt); publishd sets DWP_PUBLISH_LOCAL for the
 # ./publish it runs, and ./publish --local runs here when it's down.
@@ -156,7 +156,7 @@ DAYS = 14
 
 
 class Table:
-    """One lake table published as one CSV per key.
+    """One table published as one CSV per key.
 
     frm is the FROM clause, with the table's rows as x. key names each row's
     object; cols is what goes in the file; order (columns of cols) sorts it,
@@ -355,7 +355,7 @@ XY = "load spatial;\nset geometry_always_xy = false;\n"
 
 
 def duckdb(sql, json_out=False, cmd=None, what=None):
-    """Run sql against the lake; with json_out, return the last result's
+    """Run sql against the database; with json_out, return the last result's
     rows. what names the call in the timing summary (default: its first
     line). queries() runs several at once."""
     t0 = time.monotonic()
@@ -364,7 +364,7 @@ def duckdb(sql, json_out=False, cmd=None, what=None):
         args.append("-json")
     if cmd:
         args += ["-cmd", cmd]
-    r = subprocess.run(args, cwd=LAKE_DIR, input="use lake;\n" + XY + sql,
+    r = subprocess.run(args, cwd=DB_DIR, input="use dwp;\n" + XY + sql,
                        capture_output=True, text=True)
     note("duckdb " + (what or " ".join(sql.split())[:60]), t0)
     if r.returncode != 0 or "Error:" in r.stderr:
@@ -448,7 +448,7 @@ def temp_table(name, cols, rows, chunk=1000):
     """Statements making temp table name, columns cols ([(name, type)]),
     holding rows (tuples in cols' order), all as literals in the SQL.
 
-    Through quack every statement runs on the lake's host, so a
+    Through quack every statement runs on the database's host, so a
     read_csv() or read_json() of a local file reads that host's disk, not
     this one's. Sending the rows themselves works from anywhere."""
     out = [f"create or replace temp table {name} ("
@@ -484,7 +484,7 @@ def import_sql(env):
     sql = read_sql("import.sql").replace("-- @run-stats.sql", read_sql("run-stats.sql"))
     sql = re.sub(r"getenv\('(DWP_\w+)'\)", lambda m: sql_str(env.get(m.group(1), "")), sql)
     # The filtered CSV goes in as rows too: read_csv_auto() would read the
-    # lake host's disk.
+    # database host's disk.
     csv_path = env.get("DWP_CSV")
     if csv_path:
         read = "FROM read_csv_auto(getvariable('csv_path'));"
@@ -506,7 +506,7 @@ IMPORT_CSV_COLS = ["time_utc", "lat_filtered", "lon_filtered", "hr",
 
 def run_stats_sql(dwids):
     """Statements recomputing the stats of runs dwids (run-stats.sql), to
-    go inside a transaction on the lake."""
+    go inside a transaction on the database."""
     ids = ", ".join(f"({sql_str(d)}::uuid)" for d in dwids)
     return ("load spatial; set geometry_always_xy = false; "
             f"create temp table restat as select * from (values {ids}) v(dwid);\n"
@@ -514,7 +514,7 @@ def run_stats_sql(dwids):
 
 
 class Manifest:
-    """What publish has put in S3: the lake's publish_manifest table
+    """What publish has put in S3: the database's publish_manifest table
     (schema.sql), so publish can run from any host."""
 
     SQL = "select key, sha256, size, headers, fingerprint, epoch(uploaded_at) as t from publish_manifest"
@@ -528,7 +528,7 @@ class Manifest:
         return self.rows(duckdb(self.SQL + ";", json_out=True, what="read manifest"))
 
     def record(self, rows):
-        """rows: (key, sha256, size, headers, fingerprint), in one lake commit."""
+        """rows: (key, sha256, size, headers, fingerprint), in one transaction."""
         if not rows:
             return
         now = datetime.now(ZoneInfo("UTC")).isoformat()
@@ -656,7 +656,7 @@ def fingerprints(t):
 def to_csv(path):
     """CLI commands sending the next query's result to the local file path
     as CSV (header, NULL as empty), like COPY ... TO (format csv) would.
-    Through quack, COPY writes on the lake's host; the CLI's .output is
+    Through quack, COPY writes on the database's host; the CLI's .output is
     this one. End the query with CSV_END."""
     if '"' in path or "\n" in path:
         die(f"odd export path {path!r}")
@@ -861,7 +861,7 @@ def _publish(manifest, dry_run, everything):
             old = have.get(k)
             if seed or not old or old["fp"] != fp or old["headers"] != json.dumps(hdr):
                 dirty[k] = (fp, hdr, seed and k in in_s3 and not recent)
-        log(f"{t.name}: {len(fps[t.name])} in the lake, {len(dirty)} to export")
+        log(f"{t.name}: {len(fps[t.name])} in the database, {len(dirty)} to export")
         todo[t] = dirty
     wanted = {}  # rider -> list names to export
     for k, fp in list_fps.items():
@@ -872,7 +872,7 @@ def _publish(manifest, dry_run, everything):
                 wanted.setdefault(m.group(1), []).append(m.group(2))
             else:
                 wanted[""] = ["riders"]
-    log(f"lists: {len(list_fps)} in the lake, {sum(map(len, wanted.values()))} to export")
+    log(f"lists: {len(list_fps)} in the database, {sum(map(len, wanted.values()))} to export")
 
     with tempfile.TemporaryDirectory(prefix="dwp-publish-") as tmp:
         raw, stage_dir = os.path.join(tmp, "raw"), os.path.join(tmp, "stage")

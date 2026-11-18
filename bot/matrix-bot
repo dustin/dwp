@@ -59,7 +59,7 @@ from the room each time) can act for any rider and publish:
     first half) joins it back up with the run starting where it ends. A run
     link or (room admins) a rider works as with !glitch.
   * "!delete <run link>" shows the run and asks for a 👍 (or "!delete <run
-    link> yes") from its rider or a room admin, which deletes it from the lake for good (its record, trackpoints,
+    link> yes") from its rider or a room admin, which deletes it from the database for good (its record, trackpoints,
     trims and speed exclusions, in one commit) and re-publishes, so it
     leaves the run lists. Its track file stays in S3, unlinked, until
     "!publish orphans --delete". Riders delete their own runs; room admins
@@ -74,7 +74,7 @@ from the room each time) can act for any rider and publish:
     its trend over the last hour, Kihei's tides, and each buoy's swells
     with an image of its spectrum and direction rose. Wind and tides come
     live from the weather/+ feed on --mqtt (default host mqtt) when it's
-    up, on top of the lake's half-hourly wind. The bot also keeps
+    up, on top of the database's half-hourly wind. The bot also keeps
     live/wind.json in the bucket (each station's last 24 hours, for the
     hub's live wind cards) replaced at most every 30 seconds as readings
     arrive.
@@ -106,7 +106,7 @@ old files nor misses ones sent while it was down. Use an unencrypted
 room: it doesn't speak E2EE.
 
 This file is the Matrix client, the commands and the conditions. Beside
-it: common.py (db/ commands, lake queries, run summaries), importing.py
+it: common.py (db/ commands, database queries, run summaries), importing.py
 (GPX and zip imports, sync announcements), run_edits.py (!foil, !board,
 !glitch, !trim, !split, !unsplit, !delete), ask.py, forecast.py,
 run_alerts.py, sources.py and ../live/mqtt_weather.py.
@@ -145,7 +145,7 @@ import sources  # noqa: E402
 import ask  # noqa: E402
 import forecast  # noqa: E402
 import importing  # noqa: E402
-from common import HST, LAKE_DIR, RUN_ID, escape, latest, log, query, run, runs, sql_str, summary, tail  # noqa: E402
+from common import HST, DB_DIR, RUN_ID, escape, latest, log, query, run, runs, sql_str, summary, tail  # noqa: E402
 from run_edits import GEAR, TRIM_AT, delete_run, glitch, resolve_gear, set_gear, split, trim, unsplit  # noqa: E402
 from importing import SYNC_LOCK, announce, download_url, import_gpx, import_zip, new_runs  # noqa: E402
 
@@ -506,7 +506,7 @@ LIVE_HEADERS = ["Content-Encoding: gzip", "Content-Type: application/json",
 
 
 def seed_weather(weather):
-    """The lake's last day of wind under the live feed, so a restart
+    """The database's last day of wind under the live feed, so a restart
     doesn't start the live object over empty."""
     by = {}
     for r in query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
@@ -514,7 +514,7 @@ def seed_weather(weather):
         by.setdefault(r.pop("site"), []).append(r)
     for site, rows in by.items():
         weather.seed(site, rows)
-    log(f"seeded live wind from the lake: {', '.join(f'{s} {len(r)}' for s, r in by.items())}")
+    log(f"seeded live wind from the database: {', '.join(f'{s} {len(r)}' for s, r in by.items())}")
 
 
 def write_live(weather, dry_run=False):
@@ -538,7 +538,7 @@ def write_live(weather, dry_run=False):
 
 
 def recent_wind():
-    """{site: readings in the last day, oldest first}: the lake's, then the
+    """{site: readings in the last day, oldest first}: the database's, then the
     live feed's newer ones on top."""
     rows = query("select site, epoch(ts) as t, wavg, wdir, wgust, wlull from wind "
                  "where ts > now() - interval 1 day and wavg is not null order by ts")
@@ -592,12 +592,12 @@ def tide_line():
 
 
 # The buoys a room's conditions (pinned message, !conditions) show unless
-# it picks its own with !alerts buoys; the lake has more.
+# it picks its own with !alerts buoys; the database has more.
 BOT_BUOYS = ("pauwela", "waimea")
 
 
 def buoy_sites():
-    """Every buoy in the lake with a reading in the last day, sorted."""
+    """Every buoy in the database with a reading in the last day, sorted."""
     return [r["site"] for r in query("select distinct site from swell_partition "
                                      "where ts > now() - interval 1 day order by site")]
 
@@ -1172,7 +1172,7 @@ class Bot:
         newest = {}
         rows = query("select max(epoch(ts)) as t from swell_partition "
                      "where site = 'pauwela' and ts > now() - interval 7 day")
-        if rows:  # none at all means the lake couldn't be read: no telling
+        if rows:  # none at all means the database couldn't be read: no telling
             newest["pauwela"] = rows[0]["t"]
         if WEATHER:
             live = WEATHER.recent()
@@ -1563,7 +1563,7 @@ class Bot:
         snap = tempfile.mkdtemp(dir=self.tmp)
         whose = " and ".join(f"{r}'s" for r in riders) + " runs"
         try:
-            ask.snapshot(LAKE_DIR, riders, snap)
+            ask.snapshot(DB_DIR, riders, snap)
             context = ask.context(snap, me, riders, [r["name"] for r in query(
                 "select name from beaches order by name")])
             p, rows = ask.plan(a.ollama, a.ask_model, question, context, snap)
@@ -1670,9 +1670,9 @@ class Bot:
             return
         del self.asks[pid]
         # Reactions on the preview show how far it got: 👀 applying, 💾 in
-        # the lake, 🌐 published (❌ where it stopped).
+        # the database, 🌐 published (❌ where it stopped).
         self.mx.react(room, pid, "👀")
-        ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=LAKE_DIR)
+        ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", change["sql"]], cwd=DB_DIR)
         if ok:
             self.mx.react(room, pid, "💾")
             try:
@@ -1708,7 +1708,7 @@ class Bot:
         return (None if words else rider), None
 
     def riders(self):
-        """Every rider: the users' and any others with runs in the lake."""
+        """Every rider: the users' and any others with runs in the database."""
         return set(self.args.users.values()) | {
             row["rider"] for row in query(
                 "select rider from riders union select distinct rider from dwlist "

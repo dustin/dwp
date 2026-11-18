@@ -1,12 +1,12 @@
 # Home-manager module for the half-hourly buoy job (./update-buoys): every
-# Hawaiʻi buoy's readings and spectra into the lake, the latest Pauwela
+# Hawaiʻi buoy's readings and spectra into the database, the latest Pauwela
 # report to MQTT (ocean/buoy-update), then forecast-ingest and a publish
 # (through publishd). A systemd user timer at :10 and :40 (Linux; on
-# pitrick, next to the lake).
+# pitrick, next to the database).
 #
 #   services.dwp-buoys.enable = true;
 #
-# It needs the lake (lake holding quack-init.sql) like every lake tool, and
+# It needs the database (db holding quack-init.sql) like every dwp tool, and
 # the broker as "mqtt".
 { config, lib, pkgs, ... }:
 let
@@ -21,10 +21,10 @@ in
       type = types.package;
       default = pkgs.callPackage ./tools.nix { inherit duckdb; };
     };
-    lake = mkOption {
+    db = mkOption {
       type = types.str;
-      default = "${config.home.homeDirectory}/.config/lakes/dwp";
-      description = "LAKE: a directory whose quack-init.sql connects to the lake.";
+      default = "${config.home.homeDirectory}/.config/duckq/dwp";
+      description = "DWP_DB: a directory whose quack-init.sql connects to the database.";
     };
     onCalendar = mkOption {
       type = types.str;
@@ -39,7 +39,7 @@ in
       Service = {
         Type = "oneshot";
         ExecStart = lib.getExe' cfg.package "dwp-update-buoys";
-        Environment = [ "LAKE=${cfg.lake}" ];
+        Environment = [ "DWP_DB=${cfg.db}" ];
         TimeoutStartSec = "25min";
       };
     };

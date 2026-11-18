@@ -8,7 +8,7 @@ against what the stations then saw.
 Live: for every site and model in CELLS, the forecast for the next 7 days
 goes into wind_forecast with issued = that model's run time (Open-Meteo's
 meta.json; for PacIOOS, when it was fetched). A (site, model, issued) the
-lake already has is skipped, so run it as often as you like; models run
+database already has is skipped, so run it as often as you like; models run
 every 6 hours (PacIOOS once a day, out ~13:30-14:30 HST).
 
 Where the run time is made up (PacIOOS, and a model whose meta.json has
@@ -18,12 +18,12 @@ only its new hours go in, under that set's issued. Any hour that differs
 means a new run, stored with issued = now.
 
 Backfill: Open-Meteo's Previous Runs API keeps what each model said 1 and 2
-days ahead. Those rows have issued null and lead_days 1 or 2; hours the lake
+days ahead. Those rows have issued null and lead_days 1 or 2; hours the database
 already has for that (site, model, lead_days) are skipped.
 
 The cells are the ones that best matched each station's afternoon wind
 over 2024-2026 (/mnt/project-files/pacioos/model-comparison.md in the
-downwind.pro project). One lake commit; it never creates or changes tables:
+downwind.pro project). One transaction; it never creates or changes tables:
 wind_forecast must already exist (schema.sql).
 
 Run it with the conditions job (before ./publish), from db's nix dev shell.
@@ -199,14 +199,14 @@ def backfill(today):
 
 
 def ingest(rows, backfilling, now=None):
-    if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
+    if not duckdb("select 1 from information_schema.tables where table_catalog = 'dwp' "
                   "and table_name = 'wind_forecast';", json_out=True):
-        raise PublishError("no wind_forecast table in the lake (see schema.sql)")
+        raise PublishError("no wind_forecast table in the database (see schema.sql)")
     if not rows:
         log("nothing fetched")
         return
     # The rows go in the SQL itself: through quack, a read_csv() of a
-    # local file would read the lake host's disk.
+    # local file would read the database host's disk.
     src = "new_forecast"
     table = temp_table(src, [("site", "VARCHAR"), ("model", "VARCHAR"), ("issued", "TIMESTAMPTZ"),
                              ("lead_days", "INTEGER"), ("ts", "TIMESTAMPTZ"),

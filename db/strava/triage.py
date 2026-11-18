@@ -35,7 +35,7 @@ from zoneinfo import ZoneInfo
 
 csv.field_size_limit(sys.maxsize)  # coastline WKT is megabytes
 DB_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-LAKE_DIR = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
+DB_DIR = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.join(DB_DIR, "gpxconvert"))
@@ -292,13 +292,13 @@ def write_gpx(pts, t0, t1, path):
 
 
 def existing_runs(rider):
-    """(start, end) epoch seconds of the rider's runs already in the lake."""
+    """(start, end) epoch seconds of the rider's runs already in the database."""
     if not rider.replace("-", "").isalnum():
         die(f"odd rider name: {rider}")
-    q = (f"use lake; select ts, ts + duration_sec from dwlist "
+    q = (f"use dwp; select ts, ts + duration_sec from dwlist "
          f"where rider = '{rider}' and ts is not null and duration_sec is not null")
     out = subprocess.run(["duckdb", "--init", "quack-init.sql", "-noheader", "-csv", "-c", q],
-                         cwd=LAKE_DIR, check=True, capture_output=True, text=True).stdout
+                         cwd=DB_DIR, check=True, capture_output=True, text=True).stdout
     return [tuple(map(float, line.split(","))) for line in out.splitlines()
             if line and line[0].isdigit()]
 
@@ -337,7 +337,7 @@ def import_run(gpx_path, rider, board, foil, tmp):
         return False
     env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=foil, DWP_RIDER=rider,
                DWP_BOARD=board, DWP_NEW_FOIL="1")
-    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=LAKE_DIR, env=env,
+    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DB_DIR, env=env,
                        input=dwp_publish.import_sql(env), text=True)
     return r.returncode == 0
 
@@ -346,7 +346,7 @@ def import_sessions(todo, tracks, rider, board, foil, retries=3):
     """Trim and import each picked row in todo; returns the ones that failed.
 
     A failed import is retried `retries` times with a growing pause (the
-    lake is sometimes briefly unavailable) before moving on."""
+    database is sometimes briefly unavailable) before moving on."""
     failed = []
     with tempfile.TemporaryDirectory(prefix="dwp-strava-") as tmp:
         for i, r in enumerate(todo, 1):

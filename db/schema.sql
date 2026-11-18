@@ -342,7 +342,7 @@ CREATE TABLE wind_forecast(
 
 -- What publish (dwp_publish.py) has put in S3, one row per object: key
 -- under the bucket, sha256 of the uncompressed CSV, size in S3, the JSON
--- list of headers it went up with, the fingerprint of the lake rows it was
+-- list of headers it went up with, the fingerprint of the database rows it was
 -- made from (null for lists and images), and when.
 CREATE TABLE publish_manifest(
   key VARCHAR,

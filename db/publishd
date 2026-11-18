@@ -23,7 +23,7 @@ Every --all-every seconds (a day) it runs publish --all, the full pass that
 checks every conditions day and every list, not just the recent ones a
 plain publish looks at.
 
-It needs what publish needs: the lake (LAKE's quack-init.sql), rclone with
+It needs what publish needs: the database (DWP_DB's quack-init.sql), rclone with
 the s3 remote (RCLONE_CONFIG), python3 and duckdb.
 """
 

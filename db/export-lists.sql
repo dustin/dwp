@@ -7,11 +7,11 @@
 --   duckdb --init quack-init.sql -cmd "set variable rider = 'dustin';" < export-lists.sql
 --
 -- It writes CSVs to dwlists/ (publish swaps in a temp dir) with the CLI's
--- .output, so on whichever host runs it, not the lake's (where COPY ... TO
+-- .output, so on whichever host runs it, not the database's (where COPY ... TO
 -- would write through quack), and publish uploads the files to
 -- runs/rider=<rider>/ on the CDN.
 
-use lake;
+use dwp;
 .mode csv
 .separator "," "\n"
 .headers on

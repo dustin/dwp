@@ -28,7 +28,7 @@ const WIND_SITES = [["kihei", "Kīhei"], ["hookipa", "Hoʻokipa"]];
 const WIND_PAGES = {kihei: "kihei.html", hookipa: "maliko.html"};
 
 // Each station's last 6 hours: live/wind.json when the bot's feed is
-// fresh, else the lake's half-hourly export. Refetched every minute while
+// fresh, else the database's half-hourly export. Refetched every minute while
 // the page is visible, so the cards keep up on their own.
 const LIVE_STALE = 15 * 60e3;
 // Which side of Node-RED's run rating each station's card shows, and the

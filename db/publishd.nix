@@ -9,17 +9,17 @@
 #   };
 #
 # A launchd agent on macOS, a systemd user service on Linux; it needs the
-# lake (lake holding quack-init.sql) like every lake tool.
+# database (db holding quack-init.sql) like every dwp tool.
 { config, lib, pkgs, ... }:
 let
   cfg = config.services.dwp-publishd;
-  # The lake is on DuckDB 2.0; use ../nix/duckdb.nix's until pkgs has it.
+  # The database is on DuckDB 2.0; use ../nix/duckdb.nix's until pkgs has it.
   duckdb = if lib.versionAtLeast pkgs.duckdb.version "2" then pkgs.duckdb
     else pkgs.callPackage ../nix/duckdb.nix { inherit (pkgs) duckdb; };
   command = [ (lib.getExe' cfg.package "dwp-publishd") "--mqtt" cfg.mqtt
               "--settle" (toString cfg.settle) "--every" (toString cfg.every)
               "--all-every" (toString cfg.allEvery) ];
-  env = { LAKE = cfg.lake; }
+  env = { DWP_DB = cfg.db; }
     // lib.optionalAttrs (cfg.rcloneConfig != null) { RCLONE_CONFIG = cfg.rcloneConfig; };
 in
 {
@@ -49,10 +49,10 @@ in
       default = 0;
       description = "Also publish after this many seconds without a request (0: never).";
     };
-    lake = mkOption {
+    db = mkOption {
       type = types.str;
-      default = "${config.home.homeDirectory}/.config/lakes/dwp";
-      description = "LAKE: a directory whose quack-init.sql connects to the lake.";
+      default = "${config.home.homeDirectory}/.config/duckq/dwp";
+      description = "DWP_DB: a directory whose quack-init.sql connects to the database.";
     };
     rcloneConfig = mkOption {
       type = types.nullOr types.str;

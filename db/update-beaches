@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Make the lake's beaches match a KML file (e.g. one exported from Google My Maps).
+"""Make the database's beaches match a KML file (e.g. one exported from Google My Maps).
 
     ./update-beaches beaches.kml             show what changes, ask, apply
     ./update-beaches beaches.kml --dry-run   just show what would change
     ./update-beaches beaches.kml --yes       apply without asking
 
-Each Placemark is a beach, matched to the lake by name. A beach keeps its id
+Each Placemark is a beach, matched to the database by name. A beach keeps its id
 (runs point at it through dwlist.start_pos and end_pos), so:
 
   - a known name gets the KML's geometry;
@@ -18,10 +18,10 @@ Each Placemark is a beach, matched to the lake by name. A beach keeps its id
 Region: a beach's KML folder is its region (folders are regions; a beach
 moved to another folder changes region). A beach in no folder keeps the
 region it has, or if it's new takes --region, else the region of the
-nearest beach the lake already has.
+nearest beach the database already has.
 
 Placemarks can be points, lines, polygons or multi-geometries; coordinates
-are stored lon/lat as the KML has them. One lake commit. It never creates
+are stored lon/lat as the KML has them. One transaction. It never creates
 or changes tables: beaches must already exist (schema.sql).
 
 Then every run with a track gets its start and end beach again, the
@@ -46,12 +46,12 @@ from kml import placemarks  # noqa: E402
 
 
 def plan(csv_path, region, relabel):
-    """What makes the lake match the KML: (has_region, adds, changes, deletes, kept, runs)."""
+    """What makes the database match the KML: (has_region, adds, changes, deletes, kept, runs)."""
     cols = {r["column_name"] for r in duckdb(
         "select column_name from information_schema.columns "
-        "where table_catalog = 'lake' and table_name = 'beaches';", json_out=True)}
+        "where table_catalog = 'dwp' and table_name = 'beaches';", json_out=True)}
     if not {"id", "name", "geom"} <= cols:
-        raise PublishError("no beaches table with id, name and geom in the lake (see schema.sql)")
+        raise PublishError("no beaches table with id, name and geom in the database (see schema.sql)")
     has_region = "region" in cols
     src = kml_src(csv_path)
     # Both sides through ST_AsText, so equal shapes compare equal as text.
@@ -141,7 +141,7 @@ def show(has_region, adds, changes, deletes, kept, runs):
     for d in deletes:
         print(f"- {d['name']}")
     for k in kept:
-        print(f"! {k['name']}: not in the KML, but {k['runs']} run(s) use it; left in the lake")
+        print(f"! {k['name']}: not in the KML, but {k['runs']} run(s) use it; left in the database")
     if not (adds or changes or deletes):
         print("beaches already match the KML")
     for r in runs:

@@ -4,15 +4,15 @@
 matrix-bot's "!ask" sends the words to a local model (Ollama), which turns
 them into JSON (see SYSTEM): a question becomes one DuckDB SELECT, a change
 becomes a SELECT picking the runs plus the fields to set. Neither touches
-the lake directly:
+the database directly:
 
   * Every SELECT runs in its own in-memory duckdb with only the asking
-    rider's runs in it (table runs, copied out of the lake first) and
+    rider's runs in it (table runs, copied out of the database first) and
     external access turned off, so it can't see anyone else's runs or read
     or write any file, whatever the model wrote.
   * A change only proposes: the bot shows the runs it picked, before and
-    after, and a room admin's ✅ on that message applies it, as one lake
-    commit that updates those ids for that rider and the EDITABLE fields
+    after, and a room admin's ✅ on that message applies it, as one
+    transaction that updates those ids for that rider and the EDITABLE fields
     only (see apply_sql).
 
 Only the Python standard library, like db/.
@@ -289,20 +289,20 @@ def one_select(sql):
     return s
 
 
-def snapshot(lake_dir, riders, path, duckdb="duckdb"):
+def snapshot(db_dir, riders, path, duckdb="duckdb"):
     """Copy riders' runs, and which of them went together, out of the
-    lake into the directory path (runs.parquet, together.parquet).
+    database into the directory path (runs.parquet, together.parquet).
 
-    Through quack every statement runs on the lake's host, so a COPY TO
+    Through quack every statement runs on the database's host, so a COPY TO
     would write that host's disk. The CLI's .output writes here instead,
-    so the rows come back as CSV, and a local duckdb (no lake) turns them
+    so the rows come back as CSV, and a local duckdb (no database) turns them
     into the Parquet files sandboxed() reads."""
     who = ", ".join(map(sql_str, riders))
-    script = "use lake;\n.mode csv\n.headers on\n.nullvalue ''\n"
+    script = "use dwp;\n.mode csv\n.headers on\n.nullvalue ''\n"
     for q, name in ((SNAPSHOT_SQL, "runs"), (TOGETHER_SQL, "together")):
         script += f'.output "{os.path.join(path, name)}.csv"\n{q.format(riders=who)};\n'
     script += ".output\n"
-    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=lake_dir, input=script,
+    r = subprocess.run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=db_dir, input=script,
                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     if r.returncode != 0:
         raise AskError(f"couldn't read the runs: {r.stdout.strip()[-300:]}")
@@ -377,14 +377,13 @@ def check_set(fields, resolve_gear):
 
 
 def apply_sql(rider, changes, request):
-    """One lake transaction setting, for each (ids, fields) in changes,
-    fields on rider's runs ids. request is unused (it was the DuckLake
-    commit message)."""
+    """One transaction setting, for each (ids, fields) in changes,
+    fields on rider's runs ids. request is unused."""
     updates = "".join(
         f"update dwlist set {', '.join(f'{k} = {sql_str(v)}' for k, v in fields.items())} "
         f"where rider = {sql_str(rider)} and id::varchar in ({', '.join(sql_str(i) for i in ids)}); "
         for ids, fields in changes)
-    return f"use lake; begin; {updates}commit;"
+    return f"use dwp; begin; {updates}commit;"
 
 
 def answered_runs(path, rows, me=None, most=5):
@@ -477,7 +476,7 @@ def context(path, me, riders, beaches):
 
 
 def main():
-    """Try a question against the lake without the bot, writing nothing:
+    """Try a question against the database without the bot, writing nothing:
     bot/ask.py [--model M] [--ollama URL] walter 'the 2 runs with an unknown foil were the ART 999'
     bot/ask.py dustin,walter 'when did walter and I first go together?' (the first rider asks)"""
     import argparse
@@ -488,10 +487,10 @@ def main():
     ap.add_argument("riders")
     ap.add_argument("question", nargs="+")
     a = ap.parse_args()
-    lake = os.environ.get("LAKE") or next((d for d in map(os.path.expanduser, ("~/.config/lakes/dwp", "~/stuff/duck")) if os.path.exists(os.path.join(d, "quack-init.sql"))), os.path.expanduser("~/stuff/duck"))
+    db = os.environ.get("DWP_DB") or os.path.expanduser("~/.config/duckq/dwp")
     question, riders = " ".join(a.question), a.riders.split(",")
     with tempfile.TemporaryDirectory() as tmp:
-        snapshot(lake, riders, tmp)
+        snapshot(db, riders, tmp)
         beaches = [r["v"] for r in sandboxed(
             tmp, "select distinct start_beach as v from runs union select end_beach from runs")
             if r["v"] is not None]

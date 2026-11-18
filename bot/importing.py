@@ -41,11 +41,11 @@ def add_run_cmd(path, foil, board, rider, publish=True):
     return cmd + ([] if publish else ["--no-publish"])
 
 
-COMMITTED = re.compile(r"add-run: committed parse=([\d.]+)s lake=([\d.]+)s")
+COMMITTED = re.compile(r"add-run: committed parse=([\d.]+)s db=([\d.]+)s")
 
 
 def import_times(out):
-    """(parse, lake) seconds from add-run's output, (0, 0) if it didn't say."""
+    """(parse, db) seconds from add-run's output, (0, 0) if it didn't say."""
     m = COMMITTED.search(out)
     return (float(m.group(1)), float(m.group(2))) if m else (0.0, 0.0)
 
@@ -158,7 +158,7 @@ def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
     head = f"Importing {len(files)} GPX files as {rider}'s runs"
     status = mx.notice(room, head + "…", reply_to=event_id)
     progress = (lambda text: mx.edit(room, status, text)) if status else (lambda text: None)
-    failed, unknown, parse, lake = [], 0, 0.0, 0.0
+    failed, unknown, parse, db = [], 0, 0.0, 0.0
     waited = time.monotonic()
     with SYNC_LOCK:
         start = time.monotonic()
@@ -171,11 +171,11 @@ def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
             if not ok and foil == "-" and foil_lookup_failed(out):
                 # nothing ridden from that beach yet: fix the foil later
                 p, l = import_times(out)
-                parse, lake = parse + p, lake + l
+                parse, db = parse + p, db + l
                 ok, out = run(add_run_cmd(f, "new unknown", board, rider, publish=False))
                 unknown += ok
             p, l = import_times(out)
-            parse, lake = parse + p, lake + l
+            parse, db = parse + p, db + l
             if not ok:
                 failed.append((name, tail(out, 1)))
             if time.monotonic() - shown > 15 and i < len(files):  # edits are cheap, not free
@@ -187,18 +187,18 @@ def import_files(mx, room, event_id, files, foil, board, rider, fetched=None):
         took = time.monotonic() - start
         published = pub_time = None
         if done:
-            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake. "
+            progress(f"💾 {rider}: {done} of {len(files)} runs saved to the database. "
                      "Publishing…")
             pub_time, published = publish_timed()
-            progress(f"💾 {rider}: {done} of {len(files)} runs committed to the lake. "
+            progress(f"💾 {rider}: {done} of {len(files)} runs saved to the database. "
                      + ("❌ publish failed." if published else "📤 published."))
         else:
-            progress(f"❌ {rider}: nothing committed to the lake")
+            progress(f"❌ {rider}: nothing saved to the database")
     lines = [f"{'✅' if done else '❌'} {rider}: imported {done} of {len(files)} GPX files"]
     profile(mx, f"{rider}: {done} of {len(files)} GPX files in "
                 f"{secs(took + (pub_time or 0) + (fetched or 0))}: "
                 + (f"download {secs(fetched)} · " if fetched is not None else "")
-                + f"parse {secs(parse)} · lake {secs(lake)} (import {secs(took)} wall)"
+                + f"parse {secs(parse)} · db {secs(db)} (import {secs(took)} wall)"
                 + (f" · publish {secs(pub_time)}" if pub_time is not None else "")
                 + (f" · waited {secs(start - waited)} for a sync" if start - waited > 1 else ""))
     if unknown:
@@ -239,13 +239,13 @@ def import_gpx(mx, room, event_id, path, foil, rider):
                       html=f"❌ add-run failed:<pre><code>{escape(tail(out))}</code></pre>"
                            f"{escape(again)}")
         return False
-    parse, lake = import_times(out)
-    status = mx.notice(room, "💾 committed to the lake. Publishing…", reply_to=event_id)
+    parse, db = import_times(out)
+    status = mx.notice(room, "💾 saved to the database. Publishing…", reply_to=event_id)
     pub_time, failed = publish_timed()
-    profile(mx, f"{rider}: 1 GPX: parse {secs(parse)} · lake {secs(lake)} · "
+    profile(mx, f"{rider}: 1 GPX: parse {secs(parse)} · db {secs(db)} · "
                 f"publish {secs(pub_time)}")
-    done = (f"❌ publish failed: {failed}\nThe run is in the lake; !publish tries again."
-            if failed else "💾 committed to the lake · 📤 published")
+    done = (f"❌ publish failed: {failed}\nThe run is in the database; !publish tries again."
+            if failed else "💾 saved to the database · 📤 published")
     if status:
         mx.edit(room, status, done)
     elif failed:

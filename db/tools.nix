@@ -1,11 +1,11 @@
-# The lake tools that work from any host (cam-ingest, forecast-ingest,
+# The database tools that work from any host (cam-ingest, forecast-ingest,
 # wind-ingest, publish, publishd, update-buoys),
 # with what they need on PATH (python3, DuckDB 2.0, rclone, curl, nc), so a service on
-# any host can run them without a checkout. They still find the lake the
-# usual way: LAKE (default ~/.config/lakes/dwp, which nixos-configs' duckq
-# renders, else ~/stuff/duck) holding quack-init.sql.
+# any host can run them without a checkout. They still find the database the
+# usual way: DWP_DB (default ~/.config/duckq/dwp, which nixos-configs' duckq
+# renders) holding quack-init.sql.
 #
-# duckdb must be 2.0 (the lake and quack are 2.0); cams/hm-module.nix
+# duckdb must be 2.0 (the database and quack are 2.0); cams/hm-module.nix
 # passes ../nix/duckdb.nix's when pkgs' is older.
 { lib, stdenvNoCC, python3, duckdb, rclone, curl, netcat-openbsd, coreutils, gnused, gnugrep, tzdata, cacert, makeWrapper }:
 

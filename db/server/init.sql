@@ -1,6 +1,6 @@
--- The dwp lake's session settings, before the lake is attached (lake.nix
--- adds the ATTACH and, for the server, quack_serve): the extensions the
--- lake's views and macros use.
+-- The dwp database's session settings, before the file is attached
+-- (hm-module.nix adds the ATTACH and, for the server, quack_serve): the
+-- extensions its views and macros use.
 INSTALL spatial; LOAD spatial;
 INSTALL httpfs; LOAD httpfs;
 

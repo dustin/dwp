@@ -2,7 +2,7 @@
 for matrix-bot.
 
 Each source has a newest-reading time (the bot works it out: the live feed
-for wind, the run rating and the cams, the lake for buoys), how old that can
+for wind, the run rating and the cams, the database for buoys), how old that can
 get before the source counts as offline, and the HST hours when it's
 expected to be reporting, so nights and the cams' dark hours aren't outages.
 Watch.see() takes {key: newest epoch, or None for nothing at all, or a

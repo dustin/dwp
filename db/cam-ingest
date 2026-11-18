@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Add the cam watchers' new readings and images to the lake, and put the
+"""Add the cam watchers' new readings and images to the database, and put the
 images in S3.
 
     ./cam-ingest [--log DIR] [--dry-run]
 
 Run it on the host that runs the cam watcher (db/cams/cam_motion.py), right
 after it: cams/hm-module.nix does. It works from any host that reaches the
-lake (LAKE's quack-init.sql), since it reads nothing but its own files and
-sends the lake the rows themselves: through quack, a read_json() of a local
-path would read the lake host's disk instead.
+database (DWP_DB's quack-init.sql), since it reads nothing but its own files and
+sends the database the rows themselves: through quack, a read_json() of a local
+path would read the database host's disk instead.
 
 Each cam's folder is the watcher's --log dir, DIR with {cam} as the cam's
 name (default ~/.cache/{cam}-motion, or DWP_CAM_LOG; DWP_<CAM>_CAM still
@@ -16,17 +16,17 @@ names one cam's folder outright): a motion.jsonl, one reading per line, and
 images named <stamp>-<kind>.jpg (a bare <stamp>.jpg is an older arrow
 overlay, kind flow).
 
-  * Readings newer than the lake's newest for that site go into cam_motion;
+  * Readings newer than the database's newest for that site go into cam_motion;
     a field with no column there is left out (with a warning) until
     schema.sql gets one.
-  * Images the lake doesn't know go to S3 (DWP_DEST, the rclone remote
+  * Images the database doesn't know go to S3 (DWP_DEST, the rclone remote
     publish uses) at cams/site=<site>/day=<Hawaii day>/<stamp>-<kind>.jpg,
     cached a year, and then into cam_images with that key and file null,
     meaning publish has nothing to upload for them.
-  * Local images the lake knows are deleted once over DWP_IMAGE_KEEP_DAYS
+  * Local images the database knows are deleted once over DWP_IMAGE_KEEP_DAYS
     (14) days old.
 
-Uploads come first and the rows go in with one lake commit, so a failure
+Uploads come first and the rows go in with one transaction, so a failure
 anywhere means the next run redoes it (an image may be uploaded twice; it
 never changes). Safe to rerun. It never creates or changes tables:
 cam_motion and cam_images must already exist (schema.sql).
@@ -96,15 +96,15 @@ def readings(path, since):
     return out
 
 
-def lake_state(images):
+def db_state(images):
     """(cam_motion's columns {name: type}, newest reading per site, keys
     cam_images has from the oldest local image on)."""
     cols = {r["column_name"]: r["data_type"] for r in duckdb(
         "select column_name, data_type from information_schema.columns "
-        "where table_catalog = 'lake' and table_name = 'cam_motion' order by ordinal_position;",
+        "where table_catalog = 'dwp' and table_name = 'cam_motion' order by ordinal_position;",
         json_out=True)}
     if not cols:
-        raise PublishError("no cam_motion table in the lake (see schema.sql)")
+        raise PublishError("no cam_motion table in the database (see schema.sql)")
     newest = {r["site"]: datetime.fromtimestamp(r["ms"] / 1000, timezone.utc) for r in duckdb(
         "select site, epoch_ms(max(ts)) as ms from cam_motion group by site;", json_out=True)}
     known = set()
@@ -118,7 +118,7 @@ def lake_state(images):
 
 def ingest(dirs, dry_run):
     images = cam_images(dirs)
-    have, newest, known = lake_state(images)
+    have, newest, known = db_state(images)
 
     # cam_motion rows, every column in the table's types.
     keep = [c for c in have if c not in ("site", "ts", "day")]
@@ -149,7 +149,7 @@ def ingest(dirs, dry_run):
             dwp_publish.stage_file(tmp, k, images[k][3])
         dwp_publish.upload(tmp, new_images, dwp_publish.IMAGE, False)
 
-    # The temp tables go in before the transaction, which writes only the lake.
+    # The temp tables go in before the transaction, which writes only the database.
     temps, stmts = ["set TimeZone = 'UTC';"], [
         "begin;"]
     if motion:
@@ -176,13 +176,13 @@ def ingest(dirs, dry_run):
     prune(images, known | set(new_images))
 
 
-def prune(images, in_lake):
-    """Delete local images the lake (and so S3) has, once they're old."""
+def prune(images, in_db):
+    """Delete local images the database (and so S3) has, once they're old."""
     cutoff = time.time() - dwp_publish.IMAGE_KEEP_DAYS * 86400
     gone = 0
     for k, (_, _, _, path) in images.items():
         try:
-            if k in in_lake and os.path.getmtime(path) < cutoff:
+            if k in in_db and os.path.getmtime(path) < cutoff:
                 os.unlink(path)
                 gone += 1
         except FileNotFoundError:

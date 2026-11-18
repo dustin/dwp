@@ -1,6 +1,6 @@
 #!/bin/sh -e
 #
-# Collect an NDBC buoy into the lake: its standard readings into swell
+# Collect an NDBC buoy into the database: its standard readings into swell
 # (stdmet.sql) and its spectra into swell_spectrum and swell_partition
 # (update.sql), the same data Pauwela gets.
 #
@@ -18,7 +18,7 @@
 # swell_partition start with the realtime window. A buoy that's out gets
 # just its archived readings.
 #
-# Runs against the lake LAKE points at, like add-run. Never creates
+# Runs against the database DWP_DB points at, like add-run. Never creates
 # tables: swell, swell_spectrum and swell_partition must already exist
 # (db/schema.sql).
 
@@ -35,12 +35,8 @@ station=$1
 site=$2
 
 here=`cd "$(dirname "$0")" && pwd`
-# LAKE: the dwp lake's client dir when this machine has one, else ~/stuff/duck.
-if [ -z "${LAKE-}" ]; then
-  LAKE=$HOME/stuff/duck
-  [ -e "$HOME/.config/lakes/dwp/quack-init.sql" ] && LAKE=$HOME/.config/lakes/dwp
-fi
-lake=$LAKE
+# DWP_DB: the directory whose quack-init.sql connects to the dwp database.
+DWP_DB=${DWP_DB:-$HOME/.config/duckq/dwp}
 ndbc=https://www.ndbc.noaa.gov/data
 
 # A buoy that's out (no recent reports) has no realtime files. Skip it
@@ -70,7 +66,7 @@ if [ -n "$history" ]; then
     files="$(echo $archived $files | tr ' ' ',')"
 fi
 
-cd "$lake"
+cd "$DWP_DB"
 duckdb --init quack-init.sql \
     -cmd "set variable site = '$site'; set variable files = [$files];" \
     < "$here/stdmet.sql"

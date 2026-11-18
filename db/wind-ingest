@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Copy new station wind from InfluxDB into the lake's wind table.
+"""Copy new station wind from InfluxDB into the database's wind table.
 
     ./wind-ingest
 
 Every weather/+ reading lands in InfluxDB on bee1 (aws1's influxer, which
-spools while bee1 is away). This adds the ones newer than the lake's
-latest, so publish and the bot read the lake, not InfluxDB: bee1 being
-down only means the lake's wind stops moving until it's back.
+spools while bee1 is away). This adds the ones newer than the database's
+latest, so publish and the bot read the database, not InfluxDB: bee1 being
+down only means the database's wind stops moving until it's back.
 
-Each run looks back LOOKBACK from the lake's newest reading, so readings
+Each run looks back LOOKBACK from the database's newest reading, so readings
 that reach InfluxDB a little late still go in, and skips any (site, ts)
 already there. It reads at most a few days per query, as many as it takes
-to catch up. One lake commit per query; it never creates or changes
+to catch up. One transaction per query; it never creates or changes
 tables: wind must already exist (schema.sql).
 
 DWP_INFLUX sets InfluxDB's URL (default http://bee1:8086, database
@@ -65,12 +65,12 @@ def fetch(start, end):
 
 
 def latest():
-    if not duckdb("select 1 from information_schema.tables where table_catalog = 'lake' "
+    if not duckdb("select 1 from information_schema.tables where table_catalog = 'dwp' "
                   "and table_name = 'wind' and table_type = 'BASE TABLE';", json_out=True):
-        raise PublishError("wind isn't a table in the lake (see schema.sql)")
+        raise PublishError("wind isn't a table in the database (see schema.sql)")
     r = duckdb("select max(ts)::varchar as t from wind;", json_out=True)
     if not r or r[0]["t"] is None:
-        raise PublishError("the lake's wind table is empty")
+        raise PublishError("the database's wind table is empty")
     return datetime.fromisoformat(r[0]["t"])
 
 

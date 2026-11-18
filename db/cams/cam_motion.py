@@ -11,7 +11,7 @@ dx < 0 is right to left in the picture (energy running down the coast toward
 Makena); dy > 0 is toward the beach. With --log DIR (where {cam} becomes the
 cam's name) it also appends each reading (skips included) to DIR/motion.jsonl
 and keeps an arrow overlay per reading as DIR/<stamp>-flow.jpg; db/cam-ingest
-puts both in the lake, db/publish the images in S3.
+puts both in the database, db/publish the images in S3.
 It skips a cam's video (publishing {"stamp", "skipped": "<station> light"})
 while the station that cam watches for (its "gate" in cams.py, weather/<gate>)
 reads under 9 kn, unless its last measured reading in --log is older than

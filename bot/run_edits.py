@@ -1,5 +1,5 @@
-"""matrix-bot's changes to a run already in the lake: !foil and !board,
-!glitch, !trim, !split / !unsplit and !delete. Each is one lake commit,
+"""matrix-bot's changes to a run already in the database: !foil and !board,
+!glitch, !trim, !split / !unsplit and !delete. Each is one transaction,
 then a publish.
 
 Only the Python standard library, like db/.
@@ -9,7 +9,7 @@ import re
 import uuid
 from datetime import datetime
 
-from common import HST, LAKE_DIR, escape, latest, query, run, sql_str, summary, tail
+from common import HST, DB_DIR, escape, latest, query, run, sql_str, summary, tail
 import dwp_publish  # db/, which common puts on the path
 
 
@@ -56,9 +56,9 @@ def set_gear(mx, room, event_id, rider, kind, name, dwid=None):
                   reply_to=event_id)
         return
     mx.react(room, event_id, "👀")
-    sql = ("use lake; begin; "
+    sql = ("use dwp; begin; "
            f"update dwlist set {kind} = {sql_str(value)} where id = '{r['id']}'; commit;")
-    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -97,11 +97,11 @@ def glitch(mx, room, event_id, dwid, rider, sender, undo=False):
                   f"(select max_speed_kmh from run_top_speed where dwid = '{dwid}') "
                   "and not exists (select 1 from speed_exclusions e "
                   "where e.dwid = d.dwid and e.ts = d.ts) order by ts limit 1; ")
-    sql = ("use lake; begin; "
+    sql = ("use dwp; begin; "
            + change +
            "update dwlist as l set max_speed_kmh = t.max_speed_kmh from run_top_speed t "
            f"where l.id = t.dwid and l.id = '{dwid}'; commit;")
-    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -184,7 +184,7 @@ def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=Fal
     if s is not None or e is not None:
         change += (f"insert into run_trims values ('{dwid}', {ts(s)}, {ts(e)}, "
                    f"{sql_str('!trim by ' + sender)}, now()); ")
-    ok, out = lake_change("trim", dwid, change, [dwid])
+    ok, out = db_change("trim", dwid, change, [dwid])
     if not ok:
         mx.notice(room, f"❌ couldn't trim the run:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't trim the run:<pre><code>{escape(tail(out))}</code></pre>")
@@ -197,12 +197,12 @@ def trim(mx, room, event_id, dwid, rider, sender, start=None, end=None, undo=Fal
               html=f"✅ {escape(what)}<br>{html}")
 
 
-def lake_change(what, dwid, change, dwids):
-    """Run change on the lake, recompute runs dwids' stats in the same
+def db_change(what, dwid, change, dwids):
+    """Run change on the database, recompute runs dwids' stats in the same
     transaction, then re-export; (ok, output)."""
-    sql = ("use lake; begin; "
+    sql = ("use dwp; begin; "
            + change + dwp_publish.run_stats_sql(dwids) + "\ncommit;")
-    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
     if ok:
         try:
             dwp_publish.run()
@@ -250,7 +250,7 @@ def split(mx, room, event_id, dwid, rider, sender, at):
         f"where dwid = '{dwid}' and end_ts is not null; "
         f"update run_trims set end_ts = null where dwid = '{dwid}'; "
         f"delete from run_trims where dwid = '{dwid}' and start_ts is null; ")
-    ok, out = lake_change("split", dwid, change, [dwid, new])
+    ok, out = db_change("split", dwid, change, [dwid, new])
     if not ok:
         mx.notice(room, f"❌ couldn't split the run:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't split the run:<pre><code>{escape(tail(out))}</code></pre>")
@@ -293,7 +293,7 @@ def unsplit(mx, room, event_id, dwid, rider, sender):
         f"update dws set dwid = '{dwid}' where dwid = '{nxt}'; "
         f"update speed_exclusions set dwid = '{dwid}' where dwid = '{nxt}'; "
         f"delete from dwlist where id = '{nxt}'; ")
-    ok, out = lake_change("unsplit", dwid, change, [dwid])
+    ok, out = db_change("unsplit", dwid, change, [dwid])
     if not ok:
         mx.notice(room, f"❌ couldn't unsplit the run:\n{tail(out)}", reply_to=event_id,
                   html=f"❌ couldn't unsplit the run:<pre><code>{escape(tail(out))}</code></pre>")
@@ -304,16 +304,16 @@ def unsplit(mx, room, event_id, dwid, rider, sender):
 
 
 def delete_run(mx, room, event_id, dwid, rider, sender):
-    """Delete run dwid from the lake: its dwlist row, trackpoints, trims and
+    """Delete run dwid from the database: its dwlist row, trackpoints, trims and
     speed exclusions in one commit, then re-publish (the lists drop it; its
     track file in S3 is left for !publish orphans --delete)."""
     mx.react(room, event_id, "👀")
-    sql = ("use lake; begin; "
+    sql = ("use dwp; begin; "
            f"delete from speed_exclusions where dwid = '{dwid}'; "
            f"delete from run_trims where dwid = '{dwid}'; "
            f"delete from dws where dwid = '{dwid}'; "
            f"delete from dwlist where id = '{dwid}'; commit;")
-    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=LAKE_DIR)
+    ok, out = run(["duckdb", "-bail", "--init", "quack-init.sql", "-c", sql], cwd=DB_DIR)
     if ok:
         try:
             dwp_publish.run()

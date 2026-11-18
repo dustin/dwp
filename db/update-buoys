@@ -7,21 +7,18 @@
 # e-paper displays render from the published data on their own timer:
 # display/hm-module.nix.)
 #
-# Runs against the lake LAKE points at (default ~/.config/lakes/dwp, else
-# ~/stuff/duck), like add-run. Needs duckdb, curl, nc and python3 on PATH.
+# Runs against the database DWP_DB points at (default ~/.config/duckq/dwp),
+# like add-run. Needs duckdb, curl, nc and python3 on PATH.
 set -eux
 set -o pipefail
 
 PATH=/bin:/usr/bin:$PATH
 
 here=$(cd "$(dirname "$0")" && pwd)
-# LAKE: the dwp lake's client dir when this machine has one, else ~/stuff/duck.
-if [ -z "${LAKE-}" ]; then
-  LAKE=$HOME/stuff/duck
-  [ -e "$HOME/.config/lakes/dwp/quack-init.sql" ] && LAKE=$HOME/.config/lakes/dwp
-fi
-export LAKE
-cd "$LAKE"
+# DWP_DB: the directory whose quack-init.sql connects to the dwp database.
+DWP_DB=${DWP_DB:-$HOME/.config/duckq/dwp}
+export DWP_DB
+cd "$DWP_DB"
 
 nc -vz -w 3 mqtt 1883 >&2
 
@@ -42,6 +39,6 @@ duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql"
 
 cd "$here"
 ./forecast-ingest
-# bee1's InfluxDB being away only stalls the lake's wind; publish goes on.
+# bee1's InfluxDB being away only stalls the database's wind; publish goes on.
 ./wind-ingest || echo "update-buoys: wind-ingest failed, publishing without new wind" >&2
 ./publish  # through publishd, wherever that runs

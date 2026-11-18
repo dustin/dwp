@@ -1,4 +1,4 @@
-use lake;
+use dwp;
 
 -- Every ST_Point here (and coastline_swapped) is (lat, lon); DuckDB 2.0
 -- makes ST_Distance_Sphere ask which order. Keep the pre-2.0 one.
