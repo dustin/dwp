@@ -37,11 +37,13 @@ let
     "--mqtt" cfg.mqtt
   ]
   ++ lib.optional (!cfg.live) "--no-live"
+  ++ lib.optionals (cfg.ollama != null) [ "--ollama" cfg.ollama ]
   ++ lib.concatMap (room: [ "--room" room ]) (lib.optional (cfg.room != null) cfg.room ++ cfg.rooms)
   ++ lib.concatLists (lib.mapAttrsToList (mxid: rider: [ "--user" "${mxid}=${rider}" ]) cfg.users);
   # The bot's publishes ask publishd on the same broker it reads weather
   # from (on macOS a launchd agent may only reach it by a Tailscale name).
-  publishEnv = lib.optionalAttrs (cfg.mqtt != "") { DWP_MQTT = cfg.mqtt; };
+  publishEnv = lib.optionalAttrs (cfg.mqtt != "") { DWP_MQTT = cfg.mqtt; }
+    // lib.optionalAttrs (cfg.rcloneConfig != null) { RCLONE_CONFIG = cfg.rcloneConfig; };
 in
 {
   # The aws1 publishers (live-wind, surf-alerts, rating) live in ../live;
@@ -94,6 +96,17 @@ in
       type = types.str;
       default = "${config.home.homeDirectory}/.config/dwp/matrix-token";
       description = "File holding the bot account's access token.";
+    };
+    ollama = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      example = "http://100.123.110.66:11434";
+      description = "Ollama's URL for !ask (null: the bot's default, localhost).";
+    };
+    rcloneConfig = mkOption {
+      type = types.nullOr types.str;
+      default = null;
+      description = "RCLONE_CONFIG for the bot: its s3 remote (publish) and one remote per Drive rider (drive-sync).";
     };
   };
 
