@@ -20,25 +20,39 @@ DWP_DB=${DWP_DB:-$HOME/.config/duckq/dwp}
 export DWP_DB
 cd "$DWP_DB"
 
-nc -vz -w 3 mqtt 1883 >&2
+# One step failing (a buoy offline, NDBC or PacIOOS hanging, bee1's
+# InfluxDB away) mustn't stop the rest, and above all not the publish at
+# the end: dwp/publish/status/ok going stale is what bee1's babysitter
+# alerts on. A failed step still fails the job, after the publish.
+failed=
+step() {
+    "$@" || { echo "update-buoys: $* failed (exit $?)" >&2; failed="$failed $1"; }
+}
 
-"$here/swell/collect" 51205 pauwela
-"$here/swell/collect" 51201 waimea
-"$here/swell/collect" 51212 barbers_point
-"$here/swell/collect" 51202 mokapu
-"$here/swell/collect" 51206 hilo
-"$here/swell/collect" 51001 nw_hawaii
-"$here/swell/collect" 51000 n_hawaii
-"$here/swell/collect" 51002 sw_hawaii
-"$here/swell/collect" 51004 se_hawaii
+step nc -vz -w 3 mqtt 1883 >&2
 
-duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql" \
-    | curl -sS --data-binary @- mqtt://mqtt/ocean/buoy-update
+for b in "51205 pauwela" "51201 waimea" "51212 barbers_point" "51202 mokapu" \
+         "51206 hilo" "51001 nw_hawaii" "51000 n_hawaii" "51002 sw_hawaii" \
+         "51004 se_hawaii"; do
+    # shellcheck disable=SC2086
+    step "$here/swell/collect" $b
+done
+
+buoy_update() {
+    duckdb --noheader --list --init quack-init.sql < "$here/swell/recent-export.sql" \
+        | curl -sS --data-binary @- mqtt://mqtt/ocean/buoy-update
+}
+step buoy_update
 
 #   | mosquitto_pub -V 5 -d -h mqtt -t ocean/buoy -r -D publish message-expiry-interval 3600 -s
 
 cd "$here"
-./forecast-ingest
+step ./forecast-ingest
 # bee1's InfluxDB being away only stalls the database's wind; publish goes on.
-./wind-ingest || echo "update-buoys: wind-ingest failed, publishing without new wind" >&2
+step ./wind-ingest
 ./publish  # through publishd, wherever that runs
+
+if [ -n "$failed" ]; then
+    echo "update-buoys: failed:$failed" >&2
+    exit 1
+fi
