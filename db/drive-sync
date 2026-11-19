@@ -64,7 +64,8 @@ FOILS = {
     "png1300": "Axis PNG 1300", "fb940": "Axis Fireball 940", "fb1000": "Axis Fireball 1000",
     "fb1070": "Axis Fireball 1070", "fb950ch": "Axis Fireball 950 Chopped",
     "kt790": "KT Atlas 790", "or685": "F4 Orca 685", "orc800": "F4 Orca 800",
-    "hh510": "F4 Hammerhead 510", "hh688": "F4 Hammerhead 688", "code680r": "Code 680R",
+    "hh510": "F4 Hammerhead 510", "hh585": "F4 Hammerhead 585", "hh688": "F4 Hammerhead 688",
+    "code680r": "Code 680R",
 }
 
 # Riders who want phone positions with the watch's heart rate. The
@@ -102,7 +103,7 @@ def merge_hr(phone, watch):
 def pair_devices(files):
     """Merge each overlapping watch+phone pair in files, a list of
     (fn, date, route, device, foil, points). Returns (fns, foil, route,
-    points) per run.
+    points, note) per run.
 
     Phones read a few percent further and faster than watches over the
     same run (second-to-second zigzag), and sometimes stall for a few
@@ -120,15 +121,14 @@ def pair_devices(files):
             w = next((w for w in watches
                       if w[5][0][0] <= p[5][-1][0] and p[5][0][0] <= w[5][-1][0]), None)
             if w is None:
-                runs.append(([p[0]], p[4], p[2], p[5]))
+                runs.append(([p[0]], p[4], p[2], p[5], ""))
                 continue
             watches.remove(w)
             pts = merge_hr(p[5], w[5])
             n = sum(q[3] is not None for q in pts)
-            print(f"  merged {w[0]} heart rate onto {p[0]} ({n}/{len(pts)} points)",
-                  file=sys.stderr)
-            runs.append(([p[0], w[0]], p[4], p[2], pts))
-        runs.extend(([w[0]], w[4], w[2], w[5]) for w in watches)
+            runs.append(([p[0], w[0]], p[4], p[2], pts,
+                         f"watch heart rate on {n}/{len(pts)} points"))
+        runs.extend(([w[0]], w[4], w[2], w[5], "") for w in watches)
     return runs
 
 
@@ -201,17 +201,18 @@ def main(argv=None):
         if len(pts) >= 10:
             files.append((fn,) + m.groups() + (pts,))
 
-    metas, tracks, foils, names = [], {}, {}, {}
+    metas, tracks, foils, names, notes = [], {}, {}, {}, {}
     merge = args.rider in MERGE_PHONE if args.merge_phone is None else args.merge_phone
     runs = (pair_devices(files) if merge
-            else [([f[0]], f[4], f[2], f[5]) for f in files])
-    for fns, foil, route, pts in runs:
+            else [([f[0]], f[4], f[2], f[5], "") for f in files])
+    for fns, foil, route, pts, note in runs:
         # triage joins duplicate ids with spaces and names temp files
         # after them, so give it plain ids.
         fid = f"f{len(names)}"
         names[fid] = fns
         tracks[fid] = pts
         foils[fid] = foil
+        notes[fid] = note
         # Named after the route so triage.verdict treats it as a SUP downwind.
         metas.append(dict(id=fid, name=route.replace("_", " "), type="Stand Up Paddling"))
 
@@ -237,7 +238,8 @@ def main(argv=None):
             held.update(group)
             continue
         else:
-            note = f" ({r['pick_note']})" if r["pick_note"] else ""
+            note = ", ".join(n for n in (r["pick_note"], notes[r["id"]]) if n)
+            note = f" ({note})" if note else ""
             print(f"  import: {local(r['w_start'])} {group[0]} as {foil}{note}", file=sys.stderr)
             todo.append((r, foil, group))
             continue
