@@ -270,11 +270,16 @@ TABLES = [
     #   runs/rider=<rider>/heatmap/region=<slug>/data.csv: the rider's;
     #   runs/rider=<rider>/heatmap/overview.csv: all the rider's runs, on
     #     the coarser HEATMAP_OVERVIEW_CELL grid.
+    # The speed maps are the same three under heatmap/fastest/ (and
+    # runs/rider=<rider>/heatmap/fastest/), counting only each run's
+    # fastest 1 km: from each point to the first one at least 1000 m on,
+    # the quickest of those, as findFastest1kSegment in
+    # web/lib/components/map.js finds it.
     Heatmap("heatmap", f"""(
         with p as (
           select l.rider, coalesce(r.hub, true) as hub, {REGION_SLUG_SQL.format("l.region")} as region,
-                 x.dwid, x.lat, x.lon,
-                 lag(x.lat) over w as plat, lag(x.lon) over w as plon
+                 x.dwid, x.tsi, x.distance, x.lat, x.lon,
+                 lag(x.lat) over w as plat, lag(x.lon) over w as plon, lag(x.tsi) over w as ptsi
           from run_points x
           join dwlist_resolved l on x.dwid = l.id
           left join riders r on r.rider = l.rider
@@ -282,14 +287,26 @@ TABLES = [
             and not x.synthetic and x.lat is not null
           window w as (partition by x.dwid order by x.ts)
         ),
+        s as (
+          select a.dwid, arg_min([a.tsi, b.tsi], b.tsi - a.tsi) as seg
+          from p a asof join p b on a.dwid = b.dwid and b.distance >= a.distance + 1000
+          group by a.dwid
+        ),
         q as (
           select rider, hub, region, dwid,
                  unnest([lon, (lon + coalesce(plon, lon)) / 2]) as lon,
-                 unnest([lat, (lat + coalesce(plat, lat)) / 2]) as lat
-          from p
+                 unnest([lat, (lat + coalesce(plat, lat)) / 2]) as lat,
+                 unnest([fast, fast and ptsi >= seg[1]]) as fast
+          from (select p.*, s.seg, coalesce(p.tsi between s.seg[1] and s.seg[2], false) as fast
+                from p left join s using (dwid))
         ),
         c as (
           select *, floor((lon + 180) / {HEATMAP_CELL})::int as i, floor((lat + 90) / {HEATMAP_CELL})::int as j
+          from q
+        ),
+        o as (
+          select *, floor((lon + 180) / {HEATMAP_OVERVIEW_CELL})::int as i,
+                 floor((lat + 90) / {HEATMAP_OVERVIEW_CELL})::int as j
           from q
         )
         select 'heatmap/region=' || region || '/data.csv' as k, i, j, count(distinct dwid) as runs
@@ -298,10 +315,17 @@ TABLES = [
         select 'runs/rider=' || rider || '/heatmap/region=' || region || '/data.csv', i, j, count(distinct dwid)
         from c group by all
         union all
-        select 'runs/rider=' || rider || '/heatmap/overview.csv',
-               floor((lon + 180) / {HEATMAP_OVERVIEW_CELL})::int, floor((lat + 90) / {HEATMAP_OVERVIEW_CELL})::int,
-               count(distinct dwid)
-        from q group by all
+        select 'runs/rider=' || rider || '/heatmap/overview.csv', i, j, count(distinct dwid)
+        from o group by all
+        union all
+        select 'heatmap/fastest/region=' || region || '/data.csv', i, j, count(distinct dwid)
+        from c where hub and fast group by all
+        union all
+        select 'runs/rider=' || rider || '/heatmap/fastest/region=' || region || '/data.csv', i, j, count(distinct dwid)
+        from c where fast group by all
+        union all
+        select 'runs/rider=' || rider || '/heatmap/fastest/overview.csv', i, j, count(distinct dwid)
+        from o where fast group by all
     ) x""",
           "x.k", "x.i, x.j, x.runs", "j, i", "true", headers=SHORT),
 ]
@@ -581,6 +605,8 @@ def heatmap_fingerprints(tracks, hub):
         keys = [f"{base}/region={region}/data.csv", f"{base}/overview.csv"]
         if hub(r["rider"]):
             keys.append(f"heatmap/region={region}/data.csv")
+        # The speed maps (heatmap/fastest/), from the same runs.
+        keys += [k.replace("heatmap/", "heatmap/fastest/", 1) for k in keys]
         for k in keys:
             parts.setdefault(k, []).append(fp)
     return {k: (digest(fps), True) for k, fps in parts.items()}

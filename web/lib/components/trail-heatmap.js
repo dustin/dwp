@@ -59,7 +59,8 @@ const islands = () => (islandsP ??= FileAttachment('../data/islands.json').json(
 function cellsAt(path) {
   return d3.csv(`https://${DATAHOST}/${path}`, d => [+d.i, +d.j, +d.runs]).catch(() => []);
 }
-const regionPath = region => `heatmap/region%3D${regionSlug(region)}/data.csv`;
+// fastest: the speed map, each run's fastest 1 km only (heatmap/fastest/).
+const regionPath = (region, fastest) => `heatmap/${fastest ? 'fastest/' : ''}region%3D${regionSlug(region)}/data.csv`;
 const riderPath = (rider, rest) => `runs/rider%3D${rider}/heatmap/${rest}`;
 
 // {cells, islands, ...the spot} for a spot page; cells is [] until
@@ -187,10 +188,10 @@ export function renderHeatmap({ cells, cell = CELL, islands: isl, view, labels =
 
 const pad = ([[w, s], [e, n]], d) => [[w - d, s - d], [e + d, n + d]];
 
-export function heatmapLegend() {
+export function heatmapLegend(fewer = 'fewer runs') {
   const stops = d3.range(0, 1.01, 0.1).map(t => ramp(t)).join(',');
   return html`<div class="muted" style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; margin-top: 0.5rem;">
-    <span>fewer runs</span><span style="width: 140px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, ${stops});"></span><span>more</span></div>`;
+    <span>${fewer}</span><span style="width: 140px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, ${stops});"></span><span>more</span></div>`;
 }
 
 // A spot page's card, from fetchHeatmap's result; resize is Framework's.
@@ -231,10 +232,28 @@ export function riderRegions(runs) {
   }).sort((a, b) => b.runs - a.runs);
 }
 
-// The rider's overview cells and the islands.
+// The rider's overview cells, the speed map's (fastCells) and the islands.
 export async function fetchRiderHeatmap(rider) {
-  const [cells, isl] = await Promise.all([cellsAt(riderPath(rider, 'overview.csv')), islands()]);
-  return { rider, cells, islands: isl };
+  const [cells, fastCells, isl] = await Promise.all([
+    cellsAt(riderPath(rider, 'overview.csv')), cellsAt(riderPath(rider, 'fastest/overview.csv')), islands()]);
+  return { rider, cells, fastCells, islands: isl };
+}
+
+// The two maps a rider's card and popup switch between.
+const MODES = [
+  { key: 'trails', label: 'Trails', legend: 'fewer runs' },
+  { key: 'fastest', label: 'Fastest km', legend: 'fewer fastest kms',
+    note: 'Only each run\'s fastest 1 km: the brighter, the more runs were at their fastest there.' },
+];
+
+// Pills to pick a mode; onPick(mode) on a change.
+function modePills(mode, onPick) {
+  const wrap = html`<div style="display: flex; gap: 0.3rem;">`;
+  const draw = () => wrap.replaceChildren(...MODES.map(m => Object.assign(
+    html`<button style=${PILL + ' white-space: nowrap;' + (m === mode ? ' background: var(--theme-foreground-focus); color: var(--theme-background); border-color: var(--theme-foreground-focus);' : '')}>${m.label}</button>`,
+    { onclick: () => { if (m !== mode) { mode = m; draw(); onPick(m); } } })));
+  draw();
+  return wrap;
 }
 
 // Never closer than this many degrees across, so the islands show.
@@ -266,14 +285,27 @@ function overviewMap({ cells, islands: isl }, regions, { width, onPick }) {
 
 const PILL = 'border: 1px solid var(--theme-foreground-faint); border-radius: 999px; padding: 0.15rem 0.65rem; font: inherit; font-size: 0.8rem; background: var(--theme-background); color: var(--theme-foreground); cursor: pointer;';
 
-// The rider page's card: the overview, a pill per region, and the popup.
+// The rider page's card: the overview, a pill per region, and the popup,
+// showing all trails or the speed map (once publish has made it).
 export function riderHeatmapCard(heat, runs, { resize }) {
   const regions = riderRegions(runs);
   if (!heat.cells.length || !regions.length) return html`<div class="card"><div class="muted">No trail map yet.</div></div>`;
-  const pick = reg => openRegion(heat, reg);
+  let mode = MODES[0];
+  const pick = reg => openRegion(heat, reg, mode);
+  const note = html`<div class="muted" style="font-size: 0.85rem; margin-bottom: 0.5rem; flex: 1;">`;
+  const map = html`<div>`;
+  const legend = html`<div>`;
+  const draw = () => {
+    note.textContent = `${d3.sum(regions, d => d.runs)} runs in ${regions.length} region${regions.length > 1 ? 's' : ''}. ${mode.note ? mode.note + ' ' : ''}Tap a region for a closer look.`;
+    const h = mode.key === 'fastest' ? { ...heat, cells: heat.fastCells } : heat;
+    map.replaceChildren(resize(width => overviewMap(h, regions, { width, onPick: pick })));
+    legend.replaceChildren(heatmapLegend(mode.legend));
+  };
+  draw();
   return html`<div class="card">
-    <div class="muted" style="font-size: 0.85rem; margin-bottom: 0.5rem;">${d3.sum(regions, d => d.runs)} runs in ${regions.length} region${regions.length > 1 ? 's' : ''}. Tap a region for its trails.</div>
-    ${resize(width => overviewMap(heat, regions, { width, onPick: pick }))}
+    <div style="display: flex; flex-wrap: wrap; align-items: start; gap: 0.5rem 1rem;">${note}${heat.fastCells.length ? modePills(mode, m => { mode = m; draw(); }) : ''}</div>
+    ${map}
+    ${legend}
     <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.6rem;">${regions.map(reg =>
       Object.assign(html`<button style=${PILL}>${reg.region} ${reg.runs}</button>`, { onclick: () => pick(reg) }))}</div>
   </div>`;
@@ -292,7 +324,7 @@ function regionView(cells, labels) {
 
 // The region's heatmap in a popup over the page, with everyone's runs in
 // gray behind the rider's at the flip of a switch.
-async function openRegion(heat, reg) {
+async function openRegion(heat, reg, mode = MODES[0]) {
   const dialog = html`<dialog style="padding: 0; border: none; border-radius: 10px; width: fit-content; min-width: min(96vw, 360px); max-width: 96vw; max-height: 96vh;
     background: var(--theme-background-alt, var(--theme-background)); color: var(--theme-foreground); box-shadow: 0 10px 40px rgba(0,0,0,0.45);">`;
   const close = () => dialog.close();
@@ -301,36 +333,49 @@ async function openRegion(heat, reg) {
   dialog.addEventListener('click', e => { if (e.target === dialog) close(); });
   const everyone = html`<input type="checkbox">`;
   const mapDiv = html`<div><div class="muted" style="padding: 2rem; text-align: center;">Loading…</div></div>`;
-  const toggle = html`<label style="display: none; align-items: center; gap: 0.35rem; font-size: 0.85rem;">${everyone} Show everyone's</label>`;
+  const toggle = html`<label style="display: none; align-items: center; gap: 0.35rem; font-size: 0.85rem; white-space: nowrap;">${everyone} Show everyone's</label>`;
   const note = html`<div class="muted" style="font-size: 0.8rem;"></div>`;
-  dialog.append(html`<div style="padding: 0.75rem 1rem 1rem;">
-    <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.25rem;">
-      <h2 style="margin: 0; font-size: 1.1rem; flex: 1;">${reg.region} · ${reg.runs} run${reg.runs > 1 ? 's' : ''}</h2>
+  const legend = html`<div>`;
+  dialog.append(html`<div style="padding: 0.75rem 1rem 1rem; position: relative;">
+    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; margin-bottom: 0.25rem; padding-right: 1.75rem;">
+      <h2 style="margin: 0; font-size: 1.1rem; flex: 1 0 auto; white-space: nowrap;">${reg.region} · ${reg.runs} run${reg.runs > 1 ? 's' : ''}</h2>
+      ${heat.fastCells.length ? modePills(mode, m => { mode = m; load(); }) : ''}
       ${toggle}
-      ${Object.assign(html`<button aria-label="Close" style="border: none; background: none; color: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer;">×</button>`, { onclick: close })}
+      ${Object.assign(html`<button aria-label="Close" style="position: absolute; top: 0.6rem; right: 0.75rem; border: none; background: none; color: inherit; font-size: 1.4rem; line-height: 1; cursor: pointer;">×</button>`, { onclick: close })}
     </div>
     ${note}
     ${mapDiv}
-    ${heatmapLegend()}
+    ${legend}
   </div>`);
   document.body.append(dialog);
   dialog.showModal();
 
-  const [mine, all] = await Promise.all([
-    cellsAt(riderPath(heat.rider, `region%3D${regionSlug(reg.region)}/data.csv`)),
-    cellsAt(regionPath(reg.region)),
-  ]);
-  if (all.length) toggle.style.display = 'flex';
+  let mine = [], all = [];
   const draw = () => {
     if (!dialog.open) return;
     const width = Math.min(window.innerWidth * 0.96, 1100) - 32;
     const maxHeight = window.innerHeight * 0.96 - 120;
-    note.textContent = everyone.checked ? 'Yours in color over every rider\'s in gray.' : '';
+    const fastest = mode.key === 'fastest';
+    note.textContent = [fastest ? 'Each run\'s fastest 1 km.' : '',
+      everyone.checked ? `Yours in color over every rider's${fastest ? ' fastest kms' : ''} in gray.` : ''].join(' ').trim();
+    legend.replaceChildren(heatmapLegend(mode.legend));
     mapDiv.replaceChildren(mine.length
       ? renderHeatmap({ cells: mine, islands: heat.islands, labels: reg.labels, under: everyone.checked ? all : null,
         view: regionView(everyone.checked ? [...mine, ...all] : mine, reg.labels) }, { width, maxHeight })
       : html`<div class="muted" style="padding: 2rem; text-align: center;">No trail map for this region yet.</div>`);
   };
+  // The mode's cells, the rider's and everyone's.
+  const load = async () => {
+    const fastest = mode.key === 'fastest', want = mode;
+    const got = await Promise.all([
+      cellsAt(riderPath(heat.rider, `${fastest ? 'fastest/' : ''}region%3D${regionSlug(reg.region)}/data.csv`)),
+      cellsAt(regionPath(reg.region, fastest)),
+    ]);
+    if (want !== mode) return;  // switched again while loading
+    [mine, all] = got;
+    toggle.style.display = all.length ? 'flex' : 'none';
+    draw();
+  };
   everyone.onchange = draw;
-  draw();
+  await load();
 }
