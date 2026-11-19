@@ -36,6 +36,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
 sys.dont_write_bytecode = True
@@ -101,11 +102,13 @@ def log(msg):
     print(f"forecast-ingest: {msg}", file=sys.stderr, flush=True)
 
 
-def get(url, tries=4):
-    """The body of url; PacIOOS in particular drops connections now and then."""
+def get(url, tries=3):
+    """The body of url; PacIOOS in particular drops connections now and
+    then, or hangs. A healthy answer takes seconds, so give up on one after
+    30 s."""
     for i in range(tries):
         try:
-            with urllib.request.urlopen(url, timeout=120) as r:
+            with urllib.request.urlopen(url, timeout=30) as r:
                 return r.read().decode()
         except OSError as e:
             if i == tries - 1:
@@ -122,55 +125,70 @@ def open_meteo(base, model, lat, lon, hourly, **extra):
 
 
 def live(now):
-    """(site, model, issued, ts, wavg, wdir) for every model's newest run."""
+    """(site, model, issued, ts, wavg, wdir) for every model's newest run.
+    Each model (and PacIOOS for each site) is fetched at the same time, so
+    one slow or hung server doesn't hold up the rest."""
+    jobs = [(model_rows, model, folder, now) for model, folder in META.items()]
+    jobs += [(pacioos_rows, site, cells, now) for site, cells in CELLS.items()]
+    with ThreadPoolExecutor(len(jobs)) as ex:
+        futures = [ex.submit(*j) for j in jobs]
+        return [row for f in futures for row in f.result()]
+
+
+def model_rows(model, folder, now):
+    """One Open-Meteo model's newest run for each site that uses it."""
     rows = []
-    for model, folder in META.items():
-        try:
-            meta = json.loads(get(f"https://openmeteo.s3.amazonaws.com/data/{folder}/static/meta.json"))
-        except OSError as e:
-            log(f"{model}: no run time ({e}); skipped")
-            continue
-        issued = datetime.fromtimestamp(meta["last_run_initialisation_time"], timezone.utc)
-        if now - issued > timedelta(days=1):
-            # The bucket stopped updating for some models (GEM since 2026-05)
-            # while the API keeps serving fresh runs; say when we fetched.
-            issued = now
-        for site, cells in CELLS.items():
-            if model not in cells:
-                continue
-            lat, lon = cells[model]
-            try:
-                h = open_meteo(OPEN_METEO, model, lat, lon, ["wind_speed_10m", "wind_direction_10m"],
-                               forecast_days=8)
-            except (OSError, KeyError, ValueError) as e:
-                log(f"{site} {model}: {e!r}; skipped")
-                continue
-            for t, s, d in zip(h["time"], h["wind_speed_10m"], h["wind_direction_10m"]):
-                ts = datetime.fromtimestamp(t, timezone.utc)
-                if s is not None and d is not None and now <= ts <= now + timedelta(hours=HOURS):
-                    rows.append((site, model, issued, ts, s, d))
-    # PacIOOS's ERDDAP has no run time, so issued is when we asked.
-    # ERDDAP refuses a time range past the run's last hour (wrf_mo runs
-    # about 6 days out), so ask up to (last) and trim here.
-    t0 = now.strftime("%Y-%m-%dT%H:00:00Z")
+    try:
+        meta = json.loads(get(f"https://openmeteo.s3.amazonaws.com/data/{folder}/static/meta.json"))
+    except OSError as e:
+        log(f"{model}: no run time ({e}); skipped")
+        return rows
+    issued = datetime.fromtimestamp(meta["last_run_initialisation_time"], timezone.utc)
+    if now - issued > timedelta(days=1):
+        # The bucket stopped updating for some models (GEM since 2026-05)
+        # while the API keeps serving fresh runs; say when we fetched.
+        issued = now
     for site, cells in CELLS.items():
-        lat, lon = cells["pacioos_wrf_mo"]
-        sel = f"[({t0}):1:(last)][({lat})][({lon})]"
-        try:
-            lines = get(f"{ERDDAP}?Uwind{urllib.parse.quote(sel)},Vwind{urllib.parse.quote(sel)}").splitlines()[2:]
-        except OSError as e:
-            log(f"{site} pacioos_wrf_mo: {e}; skipped")
+        if model not in cells:
             continue
-        for line in lines:
-            t, _, _, u, v = line.split(",")
-            if "NaN" in (u, v):
-                continue
-            ts = datetime.fromisoformat(t.replace("Z", "+00:00"))
-            if ts > now + timedelta(hours=HOURS):
-                continue
-            u, v = float(u), float(v)
-            d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
-            rows.append((site, "pacioos_wrf_mo", now, ts, (u * u + v * v) ** 0.5 * KN, d))
+        lat, lon = cells[model]
+        try:
+            h = open_meteo(OPEN_METEO, model, lat, lon, ["wind_speed_10m", "wind_direction_10m"],
+                           forecast_days=8)
+        except (OSError, KeyError, ValueError) as e:
+            log(f"{site} {model}: {e!r}; skipped")
+            continue
+        for t, s, d in zip(h["time"], h["wind_speed_10m"], h["wind_direction_10m"]):
+            ts = datetime.fromtimestamp(t, timezone.utc)
+            if s is not None and d is not None and now <= ts <= now + timedelta(hours=HOURS):
+                rows.append((site, model, issued, ts, s, d))
+    return rows
+
+
+def pacioos_rows(site, cells, now):
+    """PacIOOS's forecast for one site. Its ERDDAP has no run time, so
+    issued is when we asked. ERDDAP refuses a time range past the run's
+    last hour (wrf_mo runs about 6 days out), so ask up to (last) and trim
+    here."""
+    rows = []
+    t0 = now.strftime("%Y-%m-%dT%H:00:00Z")
+    lat, lon = cells["pacioos_wrf_mo"]
+    sel = f"[({t0}):1:(last)][({lat})][({lon})]"
+    try:
+        lines = get(f"{ERDDAP}?Uwind{urllib.parse.quote(sel)},Vwind{urllib.parse.quote(sel)}").splitlines()[2:]
+    except OSError as e:
+        log(f"{site} pacioos_wrf_mo: {e}; skipped")
+        return rows
+    for line in lines:
+        t, _, _, u, v = line.split(",")
+        if "NaN" in (u, v):
+            continue
+        ts = datetime.fromisoformat(t.replace("Z", "+00:00"))
+        if ts > now + timedelta(hours=HOURS):
+            continue
+        u, v = float(u), float(v)
+        d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
+        rows.append((site, "pacioos_wrf_mo", now, ts, (u * u + v * v) ** 0.5 * KN, d))
     return rows
 
 
