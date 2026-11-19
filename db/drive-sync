@@ -35,7 +35,8 @@ file alone is imported as it is, and when its pair turns up later the
 run is re-imported.
 
 The foil comes from the picked file's name via FOILS below; a session
-with a code not listed there is reported and retried on the next run.
+with a code not listed there is imported with foil "unknown" (fix it
+with the bot's !foil) and the code is reported.
 What's been seen is kept in ~/.config/dwp/drive/<rider>.json.
 
 Run it from db's nix dev shell (python3, duckdb, rclone).
@@ -224,7 +225,7 @@ def main(argv=None):
         return
 
     picked = triage(metas, tracks, *load_geo())
-    todo, held = [], set()
+    todo = []
     for r in picked:
         group = [fn for i in [r["id"]] + r["duplicates"].split() for fn in names[i]]
         if all(seen.get(f) == sums[f] for f in group):
@@ -232,13 +233,12 @@ def main(argv=None):
         foil = foil_name(foils[r["id"]])
         if r["v"] != "downwind":
             print(f"  {r['v']}: {group[0]} ({r['why'] or 'not a downwinder'})", file=sys.stderr)
-        elif foil is None:
-            print(f"  unknown foil code {foils[r['id']]!r} in {group[0]}; add it to FOILS",
-                  file=sys.stderr)
-            held.update(group)
-            continue
         else:
-            note = ", ".join(n for n in (r["pick_note"], notes[r["id"]]) if n)
+            extra = []
+            if foil is None:  # import it anyway; fix it later with !foil
+                extra.append(f"unknown foil code {foils[r['id']]!r}, add it to FOILS")
+                foil = "unknown"
+            note = ", ".join(n for n in [r["pick_note"], notes[r["id"]]] + extra if n)
             note = f" ({note})" if note else ""
             print(f"  import: {local(r['w_start'])} {group[0]} as {foil}{note}", file=sys.stderr)
             todo.append((r, foil, group))
@@ -261,7 +261,7 @@ def main(argv=None):
     if len(todo) > failed:
         upload()
     print(f"imported {len(todo) - failed}, failed {failed}", file=sys.stderr)
-    if failed or held:
+    if failed:
         sys.exit(1)
 
 
