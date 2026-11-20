@@ -15,7 +15,7 @@ import * as tl from "./components/timeline.js";
 import {fetchMeta, riderFile, dryLimit, onePaddleUpLimit, runDataURL} from "./components/data.js";
 import {beachList, beachColorScale, beachColorNamed as beachColorBy} from "./components/beaches.js";
 import {regionList, regionColorScale} from "./components/regions.js";
-import {foilColorScale} from "./components/foils.js";
+import {foilColorScale, boardColorScale} from "./components/foils.js";
 import {responsiveRunsTable, responsive} from "./components/runs-table.js";
 import {computeOdometerCrossings} from "./components/odometer.js";
 import {runCalendar, isReverse} from "./components/calendar.js";
@@ -60,6 +60,7 @@ const beachLegend = Plot.legend({color: ({ domain: beaches, range: d3.schemeObse
 const regions = regionList(runCsv);
 const regionColor = regionColorScale(runCsv);
 const foilColor = foilColorScale(runCsv);
+const boardColor = boardColorScale(runCsv);
 const regionColorSpec = {domain: regions, range: regions.map(r => regionColor(r))};
 ```
 
@@ -297,6 +298,13 @@ function tideRows(ex) {
       .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([f, km]) => htl.html`
       <div class="nav-row"><span class="region-swatch" style=${`background:${foilColor(f)}`}></span>
         <span class="nav-row-name">${f}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}
+  ${navCard("boards.html", "Boards", htl.html`
+    <div class="nav-lead">${boardColor.domain().length} boards</div>
+    <div class="nav-muted">Most used, last 3 months</div>
+    <div class="nav-rows">${d3.rollups(runCsv.filter(d => d.board && d.ts >= hst.timeMonth.offset(latestRun.ts, -3)), v => d3.sum(v, d => d.distance_km), d => d.board)
+      .sort((a, b) => d3.descending(a[1], b[1])).slice(0, 4).map(([b, km]) => htl.html`
+      <div class="nav-row"><span class="region-swatch" style=${`background:${boardColor(b)}`}></span>
+        <span class="nav-row-name">${b}</span><span class="nav-row-value">${fmt.comma(Math.round(km))} km</span></div>`)}</div>`)}
   ${buoyNow?.primary ? htl.html`<a class="card nav-card buoy-card" href="buoy.html">
     <div class="buoy-main">
       <div class="nav-card-title"><h2>Pauwela Buoy <span class="nav-age">${fmt.relativeTime(buoyNow.primaryTs)}</span></h2></div>

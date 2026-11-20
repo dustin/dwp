@@ -11,3 +11,11 @@ export function foilColorScale(runs) {
 export function foilColorNamed(scale, name) {
   return d => scale(d[name]);
 }
+
+export function boardList(runs) {
+  return [...new Set(runs.map(d => d.board))].filter(Boolean).sort();
+}
+
+export function boardColorScale(runs) {
+  return d3.scaleOrdinal(d3.schemeObservable10).domain(boardList(runs));
+}

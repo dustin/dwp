@@ -32,7 +32,7 @@ async function requiredLinks() {
     .sort((a, b) => Number(b.ts) - Number(a.ts))
     .slice(0, RECENT_RUNS)
     .map(r => `${BASE_URL}/run.html?id=${r.id}`);
-  return [`${BASE_URL}/buoy.html`, `${BASE_URL}/foils.html`, ...recent];
+  return [`${BASE_URL}/buoy.html`, `${BASE_URL}/foils.html`, `${BASE_URL}/boards.html`, ...recent];
 }
 
 // Wind/swell CSVs live on the external data host and simply don't exist for
