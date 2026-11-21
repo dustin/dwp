@@ -34,6 +34,8 @@ totals.foil_time = d3.sum(runCsv, d => d.duration_on_foil);
 totals.foil_dist = d3.sum(runCsv, d => d.distance_on_foil) / 1000;
 totals.foil_speed = d3.mean(runCsv, foilSpeed);
 totals.best_foil_speed = bestBy(runCsv, foilSpeed);
+totals.avg_hr = d3.mean(runCsv, avgHr);
+totals.min_hr = lowestBy(runCsv, minHr);
 
 totals.max_speed_id = runCsv.find(d => d.max_speed_kmh === totals.max_speed).id;
 totals.max_speed_1k_id = runCsv.find(d => d.max_speed_1k === totals.max_speed_1k).id;
@@ -53,6 +55,15 @@ function bestBy(rows, f) {
   return rows.reduce((best, d) => (f(d) > (best ? f(best) : -Infinity) ? d : best), null);
 }
 
+// Foiling heart rate per run (db run_foiling_hr: over 15 km/h, stale
+// readings left out). Runs without heart rate have none.
+const avgHr = d => d.avg_foiling_hr > 0 ? d.avg_foiling_hr : undefined;
+const minHr = d => d.min_foiling_hr > 0 ? d.min_foiling_hr : undefined;
+
+function lowestBy(rows, f) {
+  return rows.reduce((low, d) => (f(d) != null && f(d) < (low ? f(low) : Infinity) ? d : low), null);
+}
+
 const foilStats = new Map(foils.map(f => {
   const rows = runCsv.filter(d => d.foil === f);
   return [f, {
@@ -66,6 +77,8 @@ const foilStats = new Map(foils.map(f => {
     foil_dist: d3.sum(rows, d => d.distance_on_foil) / 1000,
     foil_speed: d3.mean(rows, foilSpeed),
     best_foil_speed: bestBy(rows, foilSpeed),
+    avg_hr: d3.mean(rows, avgHr),
+    min_hr: lowestBy(rows, minHr),
     max_speed: bestOf(rows, "max_speed_kmh"),
     max_speed_1k: bestOf(rows, "max_speed_1k"),
     longest_seg: bestOf(rows, "longest_segment_distance"),
@@ -75,10 +88,10 @@ const foilStats = new Map(foils.map(f => {
   }];
 }));
 
-function foilBreakdown(items) {
+function foilBreakdown(items, order = d3.descending) {
   const sorted = items
     .filter(d => d.value != null)
-    .sort((a, b) => d3.descending(a.value, b.value));
+    .sort((a, b) => order(a.value, b.value));
   return htl.html`<div class="foil-breakdown">${sorted.map(d => htl.html`
     <div class="foil-row">
       <span class="foil-swatch" style=${`background:${foilColor(d.foil)}`}></span>
@@ -242,6 +255,27 @@ function foilBreakdown(items) {
       } : { foil: f, value: null };
     }))}
   </div>
+  <div class="card">
+    <h2>Avg Foiling Heart Rate</h2>
+    <span class="big">${totals.avg_hr != null ? fmt.hr(totals.avg_hr) : "—"}</span>
+    ${foilBreakdown(foils.map(f => {
+      const v = foilStats.get(f).avg_hr;
+      return { foil: f, value: v, text: v != null ? fmt.hr(v) : "" };
+    }), d3.ascending)}
+  </div>
+  <div class="card">
+    <h2>Lowest Foiling Heart Rate</h2>
+    <span class="big">${totals.min_hr ? htl.html`<a href="/run.html?id=${totals.min_hr.id}">
+        ${fmt.hr(totals.min_hr.min_foiling_hr)}</a>` : "—"}</span>
+    ${foilBreakdown(foils.map(f => {
+      const low = foilStats.get(f).min_hr;
+      return low ? {
+        foil: f, value: low.min_foiling_hr,
+        text: fmt.hr(low.min_foiling_hr),
+        href: `/run.html?id=${low.id}`
+      } : { foil: f, value: null };
+    }), d3.ascending)}
+  </div>
 </div>
 
 I'm currently riding ${htl.html`<span style="color: ${foilColor(latestRun.foil)}">${latestRun.foil}</span>`},
@@ -290,6 +324,8 @@ Inputs.table(
       longest_seg: { v: s.longest_seg?.longest_segment_distance, id: s.longest_seg?.id },
       max_dist: { v: s.max_dist?.max_distance, id: s.max_dist?.id },
       pct_dist_on_foil: s.pct_dist_on_foil,
+      avg_hr: s.avg_hr,
+      min_hr: { v: s.min_hr?.min_foiling_hr, id: s.min_hr?.id },
       first: s.first,
       last: s.last
     };
@@ -298,7 +334,7 @@ Inputs.table(
     columns: [
       "foil", "sessions", "time", "dist", "paddle_ups", "avg_speed",
       "max_speed", "max_speed_1k", "longest_seg", "max_dist",
-      "pct_dist_on_foil", "first", "last"
+      "pct_dist_on_foil", "avg_hr", "min_hr", "first", "last"
     ],
     header: {
       foil: "Foil",
@@ -312,6 +348,8 @@ Inputs.table(
       longest_seg: "Longest Segment",
       max_dist: "Furthest Land",
       pct_dist_on_foil: "Avg % on Foil",
+      avg_hr: "Avg Foiling HR",
+      min_hr: "Lowest Foiling HR",
       first: "First Used",
       last: "Last Used"
     },
@@ -325,6 +363,8 @@ Inputs.table(
       longest_seg: d => d.v != null ? htl.html`<a href="/run.html?id=${d.id}">${(d.v / 1000).toFixed(2)} km</a>` : "?",
       max_dist: d => d.v != null ? htl.html`<a href="/run.html?id=${d.id}">${(d.v / 1000).toFixed(2)} km</a>` : "?",
       pct_dist_on_foil: d => d ? `${(d * 100).toFixed(0)}%` : "?",
+      avg_hr: d => d != null ? fmt.hr(d) : "?",
+      min_hr: d => d.v != null ? htl.html`<a href="/run.html?id=${d.id}">${fmt.hr(d.v)}</a>` : "?",
       first: fmt.date,
       last: fmt.date
     }
