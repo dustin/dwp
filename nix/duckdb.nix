@@ -18,21 +18,21 @@
 { lib, duckdb, fetchFromGitHub }:
 
 duckdb.overrideAttrs (old: {
-  version = "2.0.0";
-  rev = "d54cbbe3df17e8e5ce68312f483b4155836112aa";
+  version = "2.0.1";
+  rev = "8d78114e90a53823803660bf821f6073ac87da8c";
 
   src = fetchFromGitHub {
     owner = "duckdb";
     repo = "duckdb";
-    tag = "v2.0.0";
-    hash = "sha256-1fhgPD/QGT/fK+BabX2dbTWOsajS6feNl5+9iw8rvwU=";
+    tag = "v2.0.1";
+    hash = "sha256-DJx1RsCwTIhuoSaNfqUIpDIkQ3YIOYbvGTgufBTalmk=";
   };
 
   cmakeFlags =
     builtins.filter (f: !(lib.hasPrefix "-DOVERRIDE_GIT_DESCRIBE" f)) (old.cmakeFlags or [ ])
     ++ [
-      (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v2.0.0")
-      (lib.cmakeFeature "GIT_COMMIT_HASH" "d54cbbe3df17e8e5ce68312f483b4155836112aa")
+      (lib.cmakeFeature "DUCKDB_EXPLICIT_VERSION" "v2.0.1")
+      (lib.cmakeFeature "GIT_COMMIT_HASH" "8d78114e90a53823803660bf821f6073ac87da8c")
       (lib.cmakeFeature "DUCKDB_CAPABILITIES" "httplib;loadable_extensions")
     ];
 
