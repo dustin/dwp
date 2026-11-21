@@ -35,6 +35,7 @@ totals.foil_dist = d3.sum(runCsv, d => d.distance_on_foil) / 1000;
 totals.foil_speed = d3.mean(runCsv, foilSpeed);
 totals.best_foil_speed = bestBy(runCsv, foilSpeed);
 totals.avg_hr = d3.mean(runCsv, avgHr);
+totals.pct_dist_on_foil = d3.mean(runCsv, d => d.pct_dist_on_foil);
 totals.min_hr = lowestBy(runCsv, minHr);
 totals.min_avg_hr = lowestBy(runCsv, avgHr);
 
@@ -255,6 +256,14 @@ function foilBreakdown(items, order = d3.descending) {
         text: fmt.pace(best.max_speed_1k),
         href: `/run.html?id=${best.id}`
       } : { foil: f, value: null };
+    }))}
+  </div>
+  <div class="card">
+    <h2>Avg % of Distance on Foil</h2>
+    <span class="big">${totals.pct_dist_on_foil != null ? `${(totals.pct_dist_on_foil * 100).toFixed(0)}%` : "—"}</span>
+    ${foilBreakdown(foils.map(f => {
+      const v = foilStats.get(f).pct_dist_on_foil;
+      return { foil: f, value: v, text: v != null ? `${(v * 100).toFixed(0)}%` : "" };
     }))}
   </div>
   <div class="card">
