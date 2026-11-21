@@ -15,6 +15,9 @@
 # 2.0 also no longer parses nixpkgs' OVERRIDE_GIT_DESCRIBE
 # ("v2.0.0-0-g<rev>"): it became the version verbatim, and so the
 # extension folder. Give it the plain version and commit instead.
+#
+# nixpkgs carries a catch.hpp fix (duckdb commit 95e44bf) that 2.0.1
+# already has, so that patch is dropped; any other nixpkgs patches stay.
 { lib, duckdb, fetchFromGitHub }:
 
 duckdb.overrideAttrs (old: {
@@ -27,6 +30,10 @@ duckdb.overrideAttrs (old: {
     tag = "v2.0.1";
     hash = "sha256-DJx1RsCwTIhuoSaNfqUIpDIkQ3YIOYbvGTgufBTalmk=";
   };
+
+  patches = builtins.filter (
+    p: !(lib.hasInfix "95e44bf80b7306eac421a16b87507bdec5aa3321" (toString p))
+  ) (old.patches or [ ]);
 
   cmakeFlags =
     builtins.filter (f: !(lib.hasPrefix "-DOVERRIDE_GIT_DESCRIBE" f)) (old.cmakeFlags or [ ])
