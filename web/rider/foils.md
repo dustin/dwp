@@ -36,6 +36,7 @@ totals.foil_speed = d3.mean(runCsv, foilSpeed);
 totals.best_foil_speed = bestBy(runCsv, foilSpeed);
 totals.avg_hr = d3.mean(runCsv, avgHr);
 totals.min_hr = lowestBy(runCsv, minHr);
+totals.min_avg_hr = lowestBy(runCsv, avgHr);
 
 totals.max_speed_id = runCsv.find(d => d.max_speed_kmh === totals.max_speed).id;
 totals.max_speed_1k_id = runCsv.find(d => d.max_speed_1k === totals.max_speed_1k).id;
@@ -79,6 +80,7 @@ const foilStats = new Map(foils.map(f => {
     best_foil_speed: bestBy(rows, foilSpeed),
     avg_hr: d3.mean(rows, avgHr),
     min_hr: lowestBy(rows, minHr),
+    min_avg_hr: lowestBy(rows, avgHr),
     max_speed: bestOf(rows, "max_speed_kmh"),
     max_speed_1k: bestOf(rows, "max_speed_1k"),
     longest_seg: bestOf(rows, "longest_segment_distance"),
@@ -276,6 +278,19 @@ function foilBreakdown(items, order = d3.descending) {
       } : { foil: f, value: null };
     }), d3.ascending)}
   </div>
+  <div class="card">
+    <h2>Lowest Avg Foiling Heart Rate</h2>
+    <span class="big">${totals.min_avg_hr ? htl.html`<a href="/run.html?id=${totals.min_avg_hr.id}">
+        ${fmt.hr(totals.min_avg_hr.avg_foiling_hr)}</a>` : "—"}</span>
+    ${foilBreakdown(foils.map(f => {
+      const low = foilStats.get(f).min_avg_hr;
+      return low ? {
+        foil: f, value: low.avg_foiling_hr,
+        text: fmt.hr(low.avg_foiling_hr),
+        href: `/run.html?id=${low.id}`
+      } : { foil: f, value: null };
+    }), d3.ascending)}
+  </div>
 </div>
 
 I'm currently riding ${htl.html`<span style="color: ${foilColor(latestRun.foil)}">${latestRun.foil}</span>`},
@@ -326,6 +341,7 @@ Inputs.table(
       pct_dist_on_foil: s.pct_dist_on_foil,
       avg_hr: s.avg_hr,
       min_hr: { v: s.min_hr?.min_foiling_hr, id: s.min_hr?.id },
+      min_avg_hr: { v: s.min_avg_hr?.avg_foiling_hr, id: s.min_avg_hr?.id },
       first: s.first,
       last: s.last
     };
@@ -334,7 +350,7 @@ Inputs.table(
     columns: [
       "foil", "sessions", "time", "dist", "paddle_ups", "avg_speed",
       "max_speed", "max_speed_1k", "longest_seg", "max_dist",
-      "pct_dist_on_foil", "avg_hr", "min_hr", "first", "last"
+      "pct_dist_on_foil", "avg_hr", "min_hr", "min_avg_hr", "first", "last"
     ],
     header: {
       foil: "Foil",
@@ -350,6 +366,7 @@ Inputs.table(
       pct_dist_on_foil: "Avg % on Foil",
       avg_hr: "Avg Foiling HR",
       min_hr: "Lowest Foiling HR",
+      min_avg_hr: "Lowest Avg Foiling HR",
       first: "First Used",
       last: "Last Used"
     },
@@ -365,6 +382,7 @@ Inputs.table(
       pct_dist_on_foil: d => d ? `${(d * 100).toFixed(0)}%` : "?",
       avg_hr: d => d != null ? fmt.hr(d) : "?",
       min_hr: d => d.v != null ? htl.html`<a href="/run.html?id=${d.id}">${fmt.hr(d.v)}</a>` : "?",
+      min_avg_hr: d => d.v != null ? htl.html`<a href="/run.html?id=${d.id}">${fmt.hr(d.v)}</a>` : "?",
       first: fmt.date,
       last: fmt.date
     }
