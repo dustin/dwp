@@ -240,6 +240,19 @@ def import_gpx(mx, room, event_id, path, foil, rider):
                            f"{escape(again)}")
         return False
     parse, db = import_times(out)
+    # The summary comes from the database, so it goes out before the
+    # publish rather than waiting on it.
+    new = runs(rider) - before
+    r = latest(rider, new.pop()) if len(new) == 1 else None
+    if r:
+        text, html = summary(r, rider)
+        recs = achievements(rider, r["id"])
+        if recs:
+            text += "\n" + "\n".join(recs)
+            html += "<br>" + "<br>".join(map(escape, recs))
+        mx.notice(room, "✅ " + text, reply_to=event_id, html="✅ " + html)
+    else:
+        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
     status = mx.notice(room, "💾 saved to the database. Publishing…", reply_to=event_id)
     pub_time, failed = publish_timed()
     profile(mx, f"{rider}: 1 GPX: parse {secs(parse)} · db {secs(db)} · "
@@ -250,17 +263,6 @@ def import_gpx(mx, room, event_id, path, foil, rider):
         mx.edit(room, status, done)
     elif failed:
         mx.notice(room, done, reply_to=event_id)
-    new = runs(rider) - before
-    r = latest(rider, new.pop()) if len(new) == 1 else None
-    if not r:
-        mx.notice(room, "✅ imported (couldn't tell which run it is)", reply_to=event_id)
-        return True
-    text, html = summary(r, rider)
-    new = achievements(rider, r["id"])
-    if new:
-        text += "\n" + "\n".join(new)
-        html += "<br>" + "<br>".join(map(escape, new))
-    mx.notice(room, "✅ " + text, reply_to=event_id, html="✅ " + html)
     return True
 
 
