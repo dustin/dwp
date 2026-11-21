@@ -112,7 +112,9 @@ end_island are where a run began and ended: {islands} or 'elsewhere'
 any island but Maui, where beaches and regions are more exact. A trip,
 camp, race or event somewhere means the runs there (and on those dates),
 also matched against name and description. In SQL strings write a quote
-as two ('O''ahu'), never \\'. Use
+as two ('O''ahu'), never \\'. Never write a foil, board or run name in
+the SQL itself: put each name in "params" and write $1, $2, ... for it
+(board = $1 with "params": ["Gator 7'8\\""]), so its quotes are safe. Use
 dayname(date) for days of the week (isodow(date) to order them, Monday
 first) and monthname(date) for months. This is DuckDB, not MySQL. A run goes from start_beach to end_beach;
 "went to X" means either one, and a loose place name means the closest
@@ -122,10 +124,13 @@ Today is {today} (Hawaii). Beaches: {beaches}.
 Their foils: {foils}. Boards: {boards}.
 
 Answer with exactly one of:
-  {{"kind": "query", "sql": "<one SELECT over runs answering the question>"}}
+  {{"kind": "query", "sql": "<one SELECT over runs answering the question>", "params": [<names for $1, $2, ...>]}}
   {{"kind": "edit", "steps": [{{"sql": "<one SELECT id FROM runs WHERE ... picking the runs to change>",
+    "params": [<names for $1, $2, ...>],
     "set": {{"<field>": "<value>", ...}}, "count": <how many runs the message says, or null>}}, ...]}}
   {{"kind": "unclear", "say": "<a short question back to the rider>"}}
+To pick runs by their current board or foil, match the name they have now
+(from the lists above), not the new one the message gives.
 An edit has one step per different change, with SELECTs that pick
 different runs: "my unknown-foil runs until September were the X, after
 that the Y" is two steps, one setting foil X on the unknown-foil runs
@@ -172,6 +177,19 @@ def sql_str(v):
     return "'" + str(v).replace("'", "''") + "'"
 
 
+def bind(sql, params):
+    """sql with each $N replaced by params[N-1] as a quoted SQL string, so
+    names with ' or " in them (Gator 7'8") never pass through the model's
+    own quoting. The result is what runs and what the bot shows."""
+    params = params or []
+    def one(m):
+        n = int(m.group(1))
+        if not 1 <= n <= len(params):
+            raise AskError(f"${n} has no value in params (there are {len(params)})")
+        return sql_str(params[n - 1])
+    return re.sub(r"\$(\d+)\b", one, sql or "")
+
+
 # --- the model --------------------------------------------------------------
 
 PLAN_SCHEMA = {
@@ -179,10 +197,12 @@ PLAN_SCHEMA = {
     "properties": {
         "kind": {"type": "string", "enum": ["query", "edit", "unclear"]},
         "sql": {"type": "string"},
+        "params": {"type": "array", "items": {"type": "string"}},
         "set": {"type": "object"},
         "count": {"type": ["integer", "null"]},
         "steps": {"type": "array", "items": {"type": "object", "properties": {
             "sql": {"type": "string"}, "set": {"type": "object"},
+            "params": {"type": "array", "items": {"type": "string"}},
             "count": {"type": ["integer", "null"]}}, "required": ["sql", "set"]}},
         "say": {"type": "string"},
     },
@@ -222,15 +242,19 @@ def plan(url, model, question, context, parquet, tries=3):
             if p["kind"] == "query":
                 if not p.get("sql"):
                     raise AskError("the model gave no SQL")
+                p["sql"] = bind(p["sql"], p.get("params"))
                 return p, sandboxed(parquet, p["sql"])
-            p["steps"] = p.get("steps") or [{k: p.get(k) for k in ("sql", "set", "count")}]
+            p["steps"] = p.get("steps") or [{k: p.get(k) for k in ("sql", "params", "set", "count")}]
             for st in p["steps"]:
                 if not st.get("sql"):
                     raise AskError("the model gave no SQL")
+                st["sql"] = bind(st["sql"], st.get("params"))
                 try:
                     st["rows"] = sandboxed(parquet, st["sql"])
                 except AskError as e:
-                    raise AskError(f"That SQL failed in DuckDB:\n{e}\n{st['sql']}")
+                    hint = ("\nPut names in params as $1, $2, ... instead of quoting them."
+                            if "string literal" in str(e) else "")
+                    raise AskError(f"That SQL failed in DuckDB:\n{e}\n{st['sql']}{hint}")
             trouble = edit_trouble(question, p["steps"])
             if trouble:
                 raise AskError(trouble)
