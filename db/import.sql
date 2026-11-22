@@ -71,7 +71,8 @@ SELECT
   NULL::DOUBLE                                                    AS calories,      -- still not present in the source data
   -- worked out by the importer (db/nearest_land.py via dwp_publish.import_sql)
   nearest_land_lat,
-  nearest_land_lon
+  nearest_land_lon,
+  avg_speed_1k  -- the importer's too (db/avg_speed_1k.py)
 FROM read_csv_auto(getvariable('csv_path'));
 
 -- Re-import support: match an existing run by overlapping time
@@ -139,12 +140,7 @@ SELECT
   AVG(p.speed) OVER (
     ORDER BY p.ts
     RANGE BETWEEN INTERVAL '15' SECOND PRECEDING AND CURRENT ROW
-  ) AS avg_speed_15s,
-  (
-    SELECT AVG(d2.speed)
-    FROM run_points d2
-    WHERE d2.distance BETWEEN p.distance - 1000 AND p.distance
-  ) AS avg_speed_1k
+  ) AS avg_speed_15s
 FROM run_points p;
 
 INSTALL spatial; LOAD spatial;

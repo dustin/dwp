@@ -525,6 +525,13 @@ def import_sql(env):
         near = nearest_land.nearest_land(pos)
         cols += [("nearest_land_lat", "DOUBLE"), ("nearest_land_lon", "DOUBLE")]
         rows = [row + near.get(p, (None, None)) for row, p in zip(rows, pos)]
+        # And the average speed over the kilometre before it (avg_speed_1k.py).
+        import avg_speed_1k
+        num = lambda v: float(v) if v else None  # noqa: E731
+        avg = avg_speed_1k.avg_speed_1k(
+            [(num(r.get("distance_cumulative_m")), num(r.get("speed_final_kmh"))) for r in recs])
+        cols += [("avg_speed_1k", "DOUBLE")]
+        rows = [row + (a,) for row, a in zip(rows, avg)]
         sql = sql.replace(read, "FROM activity_csv;")
         sql = temp_table("activity_csv", cols, rows) + "\n" + sql
     return sql
