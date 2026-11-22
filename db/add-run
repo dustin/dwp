@@ -68,6 +68,9 @@ def main(argv=None):
     ap.add_argument("--no-publish", action="store_true",
                     help="only import; run ./publish yourself afterwards "
                          "(for importing many files)")
+    ap.add_argument("--echo", action="store_true",
+                    help="print each import statement before it runs (after the "
+                         "trackpoint rows), to see which one fails")
     args = ap.parse_args(argv)
     if args.new_foil and not args.foil:
         die("--new-foil needs the foil's name")
@@ -84,8 +87,11 @@ def main(argv=None):
         env = dict(os.environ, DWP_CSV=csv_path, DWP_FOIL=args.foil,
                    DWP_RIDER=args.rider, DWP_BOARD=args.board or "",
                    DWP_NEW_FOIL="1" if args.new_foil else "")
+        sql = dwp_publish.import_sql(env)
+        if args.echo:
+            sql = sql.replace("use dwp;", ".echo on\nuse dwp;", 1)
         run(["duckdb", "-bail", "--init", "quack-init.sql"], cwd=DWP_DB_DIR, env=env,
-            input=dwp_publish.import_sql(env))
+            input=sql)
         t2 = time.monotonic()
     # The bot reads this line for its timings.
     print(f"add-run: committed parse={t1 - t0:.2f}s db={t2 - t1:.2f}s", file=sys.stderr)
