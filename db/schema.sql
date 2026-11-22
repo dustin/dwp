@@ -184,22 +184,25 @@ group by dwid;
 create or replace view run_foiling_hr as
 with h as (
   select dwid, ts, speed, hr,
-    hr is distinct from lag(hr) over (partition by dwid order by ts) as starts
+    hr is distinct from lag(hr) over w as starts,
+    lead(hr) over w as after
   from run_points
   where hr is not null
+  window w as (partition by dwid order by ts)
 ), g as (
   select *, sum(starts::int) over (partition by dwid order by ts) as held
   from h
 ), n as (
-  select dwid, held, hr,
-    lead(hr) over (partition by dwid order by held) as next_hr
+  -- one chain of windows over run_points (no self-join), so a filter on
+  -- dwid reaches all of it: next_hr is the reading after the stretch.
+  select *, last_value(after) over (partition by dwid, held order by ts
+    rows between unbounded preceding and unbounded following) as next_hr
   from g
-  group by dwid, held, hr
 )
-select g.dwid, min(g.hr) as min_hr, avg(g.hr) as avg_hr
-from g join n using (dwid, held)
-where g.speed > 15 and (n.next_hr is null or n.next_hr < n.hr + 25)
-group by g.dwid;
+select dwid, min(hr) as min_hr, avg(hr) as avg_hr
+from n
+where speed > 15 and (next_hr is null or next_hr < hr + 25)
+group by dwid;
 
 
 -- Cam readings, one row per watcher reading (db/cam-ingest, from

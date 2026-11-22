@@ -8,8 +8,14 @@
 -- Every ST_Point here (and coastline_swapped) is (lat, lon); the caller
 -- sets geometry_always_xy = false.
 
+-- The runs as a constant list: a filter on it reaches below run_points'
+-- (and the views') windows, so they only see these runs' points. Joining
+-- on restat instead runs the windows over every run's trackpoints, which
+-- ran the database server out of memory (2026-11-22).
+SET VARIABLE restat_ids = (SELECT list(dwid) FROM restat);
+
 CREATE TEMP TABLE restat_points AS
-SELECT * FROM run_points WHERE dwid IN (SELECT dwid FROM restat);
+SELECT * FROM run_points WHERE list_contains(getvariable('restat_ids'), dwid);
 
 UPDATE dwlist AS l
 SET ts = ups.ts,
@@ -32,7 +38,7 @@ WHERE l.id = ups.dwid;
 UPDATE dwlist AS l
 SET    max_speed_kmh = t.max_speed_kmh
 FROM   run_top_speed t
-WHERE  l.id = t.dwid AND l.id IN (SELECT dwid FROM restat);
+WHERE  l.id = t.dwid AND list_contains(getvariable('restat_ids'), t.dwid);
 
 -- Name the start and end beaches: the nearest beach to the first and last
 -- trackpoints, or none (null, an unknown beach) when even that one is
@@ -80,7 +86,7 @@ UPDATE dwlist AS l
 SET    min_foiling_hr = x.min_hr,
        avg_foiling_hr = x.avg_hr
 FROM   run_foiling_hr x
-WHERE  l.id = x.dwid AND l.id IN (SELECT dwid FROM restat);
+WHERE  l.id = x.dwid AND list_contains(getvariable('restat_ids'), x.dwid);
 
 -- max distance, or null (unknown) past 60 km: about half the widest channel
 -- between the main islands (Kaʻieʻiewaho, ~116 km), so the most any
@@ -235,3 +241,4 @@ WHERE dl.id = fo.dwid;
 DROP TABLE fast_islands_merged;
 DROP TABLE restat_points;
 DROP TABLE restat;
+RESET VARIABLE restat_ids;
