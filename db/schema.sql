@@ -180,7 +180,8 @@ group by dwid;
 -- trackpoints over 15 km/h, skipping stale readings. A watch can hold its
 -- last heart rate through a paddle-up and then jump to the real one, so a
 -- stretch of one unchanged value followed by a rise of 25 bpm or more is
--- left out. run-stats.sql sets dwlist from it.
+-- left out. run-stats.sql sets dwlist from it. Points sharing a timestamp
+-- are taken in hr, speed order, so the answer doesn't change run to run.
 create or replace view run_foiling_hr as
 with h as (
   select dwid, ts, speed, hr,
@@ -188,14 +189,15 @@ with h as (
     lead(hr) over w as after
   from run_points
   where hr is not null
-  window w as (partition by dwid order by ts)
+  window w as (partition by dwid order by ts, hr, speed)
 ), g as (
-  select *, sum(starts::int) over (partition by dwid order by ts) as held
+  select *, sum(starts::int) over (partition by dwid order by ts, hr, speed
+    rows between unbounded preceding and current row) as held
   from h
 ), n as (
   -- one chain of windows over run_points (no self-join), so a filter on
   -- dwid reaches all of it: next_hr is the reading after the stretch.
-  select *, last_value(after) over (partition by dwid, held order by ts
+  select *, last_value(after) over (partition by dwid, held order by ts, hr, speed
     rows between unbounded preceding and unbounded following) as next_hr
   from g
 )

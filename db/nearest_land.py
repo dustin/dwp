@@ -180,11 +180,11 @@ class Coast:
                         if isl not in best or c[0] < best[isl][0]:
                             best[isl] = c
             # An island's planar nearest is final once its nearest edge is
-            # seen; one that isn't can't beat the bound above anyway.
-            for _, px, py in best.values():
-                m = haversine(x, y, px, py)
-                if win is None or m < win[0]:
-                    win = (m, px, py)
+            # seen; one that isn't can't beat the bound above anyway. Taken
+            # afresh each ring: an island's planar nearest can move further
+            # away on the sphere as more of its edges are seen.
+            if best:
+                win = min((haversine(x, y, px, py), px, py) for _, px, py in best.values())
         # Far from Hawaii (e.g. Hood River): every edge, per island.
         for isl, *seg in self.edges:
             c = closest(x, y, *seg)
