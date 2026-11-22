@@ -1,9 +1,8 @@
 use dwp;
 
--- Every ST_Point here (and coastline_swapped) is (lat, lon); DuckDB 2.0
--- makes ST_Distance_Sphere ask which order. Keep the pre-2.0 one.
-LOAD spatial;
-SET geometry_always_xy = false;
+-- No spatial here: nearest land, the 1 km average and the beach shapes are
+-- worked out by the importer (dwp_publish.import_sql), so a spatial
+-- extension problem can't stop an import.
 
 begin;
 
@@ -142,8 +141,6 @@ SELECT
     RANGE BETWEEN INTERVAL '15' SECOND PRECEDING AND CURRENT ROW
   ) AS avg_speed_15s
 FROM run_points p;
-
-INSTALL spatial; LOAD spatial;
 
 INSERT INTO dws (
   dwid, tsi, ts, date, time, lat, lon, speed, heading, hr,

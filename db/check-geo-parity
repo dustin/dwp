@@ -1,0 +1,83 @@
+#!/usr/bin/env python3
+"""One-off (2026-11-22): check that the spatial-free geometry gives what
+DuckDB spatial gave, against the database's stored results. Reads only:
+the run-stats recompute runs in a transaction that's rolled back.
+
+    db/check-geo-parity          # 3000 sampled trackpoints, latest 100 runs
+    db/check-geo-parity 500 20
+
+1. nearest land: nearest_land.py for sampled dws points vs the
+   nearest_land_lat/lon import.sql stored with ST_ShortestLine.
+2. run stats: run-stats.sql (now spatial-free) recomputed for the latest
+   runs vs what dwlist holds, column by column, start/end beach and
+   max_distance included. Delete this script once it's agreed.
+"""
+
+import json
+import os
+import sys
+
+DB_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.dont_write_bytecode = True
+sys.path.insert(0, DB_DIR)
+import dwp_publish  # noqa: E402
+import nearest_land  # noqa: E402
+
+COLS = ["ts", "max_speed_kmh", "avg_speed_kmh", "duration_sec", "distance_km",
+        "start_pos", "end_pos", "min_foiling_hr", "avg_foiling_hr", "max_distance",
+        "max_speed_1k", "longest_segment_distance", "paddle_up_count",
+        "distance_to_first_paddle_up", "duration_on_foil", "distance_on_foil"]
+
+
+def main():
+    npts = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
+    nruns = int(sys.argv[2]) if len(sys.argv) > 2 else 100
+
+    rows = dwp_publish.duckdb(
+        f"select lat, lon, nearest_land_lat as nlat, nearest_land_lon as nlon from dws "
+        f"where lat is not null and nearest_land_lat is not null using sample {npts} rows;",
+        json_out=True, what="sample points")
+    near = nearest_land.nearest_land([(r["lat"], r["lon"]) for r in rows])
+    off = sorted(((nearest_land.haversine(r["nlat"], r["nlon"], *near[(r["lat"], r["lon"])]), r)
+                  for r in rows), key=lambda o: o[0])
+    over = [o for o in off if o[0] > 1.0]
+    print(f"nearest land: {len(rows)} points, {len(over)} more than 1 m from the stored answer, "
+          f"worst {off[-1][0]:.3f} m" if off else "nearest land: no points")
+    for m, r in over[-5:]:
+        print(f"  {m:.1f} m at {r['lat']}, {r['lon']}: stored {r['nlat']}, {r['nlon']}, "
+              f"now {near[(r['lat'], r['lon'])]}")
+
+    ids = [r["id"] for r in dwp_publish.duckdb(
+        "select id::varchar as id from dwlist where id in (select distinct dwid from dws) "
+        f"order by ts desc limit {nruns};", json_out=True, what="latest runs")]
+    sel = ", ".join(f"{c}" for c in COLS)
+    idl = ", ".join(dwp_publish.sql_str(i) + "::uuid" for i in ids)
+    sql = (f"begin;\ncreate temp table before_stats as select id, {sel} from dwlist where id in ({idl});\n"
+           + dwp_publish.run_stats_sql(ids)
+           + f"\nselect b.id::varchar as id, "
+           + ", ".join(f"b.{c}::varchar as old_{c}, a.{c}::varchar as new_{c}" for c in COLS)
+           + f" from before_stats b join dwlist a using (id);\nrollback;\n")
+    out = dwp_publish.duckdb(sql, json_out="all", what="recompute stats")
+    res = [a for a in dwp_publish.all_json(out) if a and isinstance(a[0], dict) and "old_ts" in a[0]]
+    if not res:
+        sys.exit("run stats: no comparison came back:\n" + out[-2000:])
+    diffs = {}
+    for r in res[-1]:
+        for c in COLS:
+            o, n = r[f"old_{c}"], r[f"new_{c}"]
+            same = o == n
+            if not same and o is not None and n is not None:
+                try:
+                    same = abs(float(o) - float(n)) <= 1e-6 * max(1.0, abs(float(o)))
+                except ValueError:
+                    pass
+            if not same:
+                diffs.setdefault(c, []).append((r["id"], o, n))
+    print(f"run stats: {len(res[-1])} runs recomputed and rolled back")
+    for c in COLS:
+        d = diffs.get(c, [])
+        print(f"  {c}: {'same' if not d else f'{len(d)} differ, e.g. ' + json.dumps(d[:3])}")
+
+
+if __name__ == "__main__":
+    main()

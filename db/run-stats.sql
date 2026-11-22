@@ -5,14 +5,24 @@
 -- bot's !trim for a run it trims (dwp_publish.run_stats_sql). Runs with
 -- no trackpoints are left alone.
 --
--- Every ST_Point here (and coastline_swapped) is (lat, lon); the caller
--- sets geometry_always_xy = false.
+-- No spatial: distances are dwp_haversine below, the formula DuckDB
+-- spatial's ST_Distance_Sphere uses (db/nearest_land.py haversine), and the
+-- beach shapes come in as plain edges (beach_edges, which the caller makes
+-- with dwp_publish.beach_edges_sql).
 
 -- The runs as a constant list: a filter on it reaches below run_points'
 -- (and the views') windows, so they only see these runs' points. Joining
 -- on restat instead runs the windows over every run's trackpoints, which
 -- ran the database server out of memory (2026-11-22).
 SET VARIABLE restat_ids = (SELECT list(dwid) FROM restat);
+
+-- ST_Distance_Sphere's haversine (DuckDB spatial sgl.hpp), points (lat, lon).
+CREATE OR REPLACE TEMP MACRO dwp_hav_a(la1, lo1, la2, lo2) AS
+  pow(sin((la2 - la1) / 2.0), 2.0) + cos(la1) * cos(la2) * pow(sin((lo2 - lo1) / 2.0), 2.0);
+CREATE OR REPLACE TEMP MACRO dwp_haversine(lat1, lon1, lat2, lon2) AS
+  6371000.0 * (2.0 * atan2(
+    sqrt(dwp_hav_a(lat1 * pi() / 180.0, lon1 * pi() / 180.0, lat2 * pi() / 180.0, lon2 * pi() / 180.0)),
+    sqrt(1.0 - dwp_hav_a(lat1 * pi() / 180.0, lon1 * pi() / 180.0, lat2 * pi() / 180.0, lon2 * pi() / 180.0))));
 
 CREATE TEMP TABLE restat_points AS
 SELECT * FROM run_points WHERE list_contains(getvariable('restat_ids'), dwid);
@@ -43,43 +53,74 @@ WHERE  l.id = t.dwid AND list_contains(getvariable('restat_ids'), t.dwid);
 -- Name the start and end beaches: the nearest beach to the first and last
 -- trackpoints, or none (null, an unknown beach) when even that one is
 -- over 10 km away, e.g. a run off Hood River.
+-- "Nearest" is what ST_ShortestLine gave before this stopped using spatial
+-- (2026-11-22): planar distance in (lat, lon) degrees to each beach shape,
+-- 0 inside a polygon; the 10 km is dwp_haversine (ST_Distance_Sphere's
+-- formula) to that nearest point. beach_edges (dwp_publish.beach_edges_sql)
+-- holds the shapes' edges.
+CREATE TEMP TABLE restat_ends AS
+WITH e AS (
+  SELECT dwid,
+         arg_min({'lat': lat, 'lon': lon}, ts) AS s,
+         arg_max({'lat': lat, 'lon': lon}, ts) AS e,
+         count(*) AS n
+  FROM restat_points
+  GROUP BY dwid
+)
+SELECT dwid, 'first' AS which, s.lat, s.lon FROM e
+UNION ALL
+-- a one-point run has a first point only, as before
+SELECT dwid, 'last', e.lat, e.lon FROM e WHERE n > 1;
+
 UPDATE dwlist AS l
 SET    start_pos = x.start_loc,
        end_pos   = x.end_loc
 FROM   (
-        SELECT
-            dwid,
-            MAX(CASE WHEN which_row = 'first' THEN beach_id END) AS start_loc,
-            MAX(CASE WHEN which_row = 'last'  THEN beach_id END) AS end_loc
-        FROM (
-                SELECT
-                    d.dwid,
-                    CASE
-                        WHEN ROW_NUMBER() OVER (PARTITION BY d.dwid
-                                                ORDER BY d.ts) = 1
-                             THEN 'first'
-                        ELSE 'last'
-                    END                                               AS which_row,
-                    ( SELECT CASE WHEN ST_Distance_Sphere(
-                                 ST_Point(d.lat, d.lon),
-                                 ST_PointN(ST_ShortestLine(
-                                     ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)), 2)) <= 10000
-                                 THEN b.id END
-                      FROM   beaches b
-                      ORDER BY ST_Length(
-                                 ST_ShortestLine(
-                                     ST_Point(d.lat, d.lon), ST_FlipCoordinates(b.geom)))
-                      LIMIT 1 )                                      AS beach_id
-                FROM   restat_points d
-                QUALIFY
-                    ROW_NUMBER() OVER (PARTITION BY d.dwid
-                                       ORDER BY d.ts) = 1
-                 OR ROW_NUMBER() OVER (PARTITION BY d.dwid
-                                       ORDER BY d.ts DESC) = 1
-             ) sub
-        GROUP BY dwid
-      ) x
+  WITH seg AS (
+    SELECT p.dwid, p.which, p.lat, p.lon, b.beach, b.part, b.poly,
+           b.ax, b.ay, b.bx - b.ax AS dx, b.by - b.ay AS dy,
+           b.poly AND ((b.ay > p.lon) <> (b.by > p.lon))
+             AND p.lat < b.ax + (p.lon - b.ay) * (b.bx - b.ax) / (b.by - b.ay) AS crosses
+    FROM restat_ends p CROSS JOIN beach_edges b
+    WHERE p.lat IS NOT NULL AND p.lon IS NOT NULL
+  ), t AS (
+    SELECT *, greatest(0.0, least(1.0, coalesce(
+             ((lat - ax) * dx + (lon - ay) * dy) / nullif(dx * dx + dy * dy, 0), 0.0))) AS t
+    FROM seg
+  ), near AS (
+    SELECT *, ax + t * dx AS px, ay + t * dy AS py FROM t
+  ), parts AS (
+    SELECT dwid, which, lat, lon, beach, part,
+           sum(crosses::int) % 2 = 1 AS inside,
+           arg_min({'d2': (px - lat) ** 2 + (py - lon) ** 2, 'px': px, 'py': py},
+                   (px - lat) ** 2 + (py - lon) ** 2) AS c
+    FROM near
+    GROUP BY ALL
+  ), per_beach AS (
+    SELECT dwid, which, lat, lon, beach,
+           CASE WHEN bool_or(inside) THEN {'d2': 0.0, 'px': any_value(lat), 'py': any_value(lon)}
+                ELSE arg_min(c, c.d2) END AS c
+    FROM parts
+    GROUP BY dwid, which, lat, lon, beach
+  ), best AS (
+    SELECT dwid, which, lat, lon, arg_min({'beach': beach, 'px': c.px, 'py': c.py}, c.d2) AS b
+    FROM per_beach
+    GROUP BY dwid, which, lat, lon
+  )
+  -- every run with points gets a row, so one with no position gets nulls
+  SELECT r.dwid,
+         max(CASE WHEN r.which = 'first'
+                   AND dwp_haversine(r.lat, r.lon, best.b.px, best.b.py) <= 10000
+                  THEN best.b.beach END) AS start_loc,
+         max(CASE WHEN r.which = 'last'
+                   AND dwp_haversine(r.lat, r.lon, best.b.px, best.b.py) <= 10000
+                  THEN best.b.beach END) AS end_loc
+  FROM restat_ends r LEFT JOIN best USING (dwid, which)
+  GROUP BY r.dwid
+) x
 WHERE l.id = x.dwid;
+
+DROP TABLE restat_ends;
 
 -- heart rates, without stale readings (schema.sql)
 UPDATE dwlist AS l
@@ -95,7 +136,7 @@ WHERE  l.id = x.dwid AND list_contains(getvariable('restat_ids'), x.dwid);
 -- dwp_publish.py's tracks use the same 60000.
 UPDATE dwlist AS l
 SET    max_distance = CASE WHEN x.dist <= 60000 THEN x.dist END
-FROM   (select dwid, max(ST_Distance_Sphere(ST_Point(lat, lon), ST_Point(nearest_land_lat, nearest_land_lon))) as dist
+FROM   (select dwid, max(dwp_haversine(lat, lon, nearest_land_lat, nearest_land_lon)) as dist
           from restat_points
           group by dwid
         ) x
@@ -241,4 +282,5 @@ WHERE dl.id = fo.dwid;
 DROP TABLE fast_islands_merged;
 DROP TABLE restat_points;
 DROP TABLE restat;
+DROP TABLE beach_edges;
 RESET VARIABLE restat_ids;

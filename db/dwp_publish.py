@@ -534,7 +534,29 @@ def import_sql(env):
         rows = [row + (a,) for row, a in zip(rows, avg)]
         sql = sql.replace(read, "FROM activity_csv;")
         sql = temp_table("activity_csv", cols, rows) + "\n" + sql
-    return sql
+    return beach_edges_sql() + "\n" + sql
+
+
+def beach_edges_sql():
+    """Statements making temp table beach_edges, which run-stats.sql finds
+    the start and end beaches with: every edge of every beach shape, (lat,
+    lon) like the trackpoints, one part per polygon, line or point (a point
+    is an edge from itself to itself). The shapes come from the database's
+    beaches table, read as WKB, so run-stats.sql needs no spatial."""
+    import nearest_land
+    rows = []
+    for b in duckdb("select id::varchar as id, hex(geom::blob) as wkb from beaches "
+                    "where geom is not null;", json_out=True, what="beach shapes"):
+        for part, (kind, shape) in enumerate(nearest_land.wkb_parts(bytes.fromhex(b["wkb"]))):
+            lines = shape if kind == "polygon" else [shape]
+            for line in lines:
+                pts = [(lat, lon) for lon, lat in line]
+                segs = list(zip(pts, pts[1:])) if len(pts) > 1 else [(pts[0], pts[0])]
+                rows += [(b["id"], part, kind == "polygon", a[0], a[1], c[0], c[1])
+                         for a, c in segs]
+    cols = [("beach", "UUID"), ("part", "INTEGER"), ("poly", "BOOLEAN"),
+            ("ax", "DOUBLE"), ("ay", "DOUBLE"), ("bx", "DOUBLE"), ("by", "DOUBLE")]
+    return temp_table("beach_edges", cols, rows)
 
 
 # The columns import.sql takes from gpx_filter.py's CSV.
@@ -546,7 +568,7 @@ def run_stats_sql(dwids):
     """Statements recomputing the stats of runs dwids (run-stats.sql), to
     go inside a transaction on the database."""
     ids = ", ".join(f"({sql_str(d)}::uuid)" for d in dwids)
-    return ("load spatial; set geometry_always_xy = false; "
+    return (beach_edges_sql() + "\n"
             f"create temp table restat as select * from (values {ids}) v(dwid);\n"
             + read_sql("run-stats.sql"))
 
