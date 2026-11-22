@@ -518,6 +518,13 @@ def import_sql(env):
             recs = list(csv.DictReader(fh))
         cols = [(c, "VARCHAR" if c == "time_utc" else "DOUBLE") for c in IMPORT_CSV_COLS]
         rows = [tuple((r.get(c) or None) for c in IMPORT_CSV_COLS) for r in recs]
+        # Each point's nearest land, worked out here (nearest_land.py).
+        import nearest_land  # only importers need it (and coastline.parquet)
+        pos = [(float(r["lat_filtered"]) if r.get("lat_filtered") else None,
+                float(r["lon_filtered"]) if r.get("lon_filtered") else None) for r in recs]
+        near = nearest_land.nearest_land(pos)
+        cols += [("nearest_land_lat", "DOUBLE"), ("nearest_land_lon", "DOUBLE")]
+        rows = [row + near.get(p, (None, None)) for row, p in zip(rows, pos)]
         sql = sql.replace(read, "FROM activity_csv;")
         sql = temp_table("activity_csv", cols, rows) + "\n" + sql
     return sql

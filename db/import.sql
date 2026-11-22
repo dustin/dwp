@@ -68,7 +68,10 @@ SELECT
   hr,
   NULL::DOUBLE                                                    AS distance_orig, -- still not present in the source data
   distance_cumulative_m                                           AS distance,
-  NULL::DOUBLE                                                    AS calories       -- still not present in the source data
+  NULL::DOUBLE                                                    AS calories,      -- still not present in the source data
+  -- worked out by the importer (db/nearest_land.py via dwp_publish.import_sql)
+  nearest_land_lat,
+  nearest_land_lon
 FROM read_csv_auto(getvariable('csv_path'));
 
 -- Re-import support: match an existing run by overlapping time
@@ -146,26 +149,6 @@ FROM run_points p;
 
 INSTALL spatial; LOAD spatial;
 
--- Each position's nearest point on land: the closest of the coastline's
--- islands (coastline_swapped). Worked out per (position, island) pair and
--- reduced to plain numbers straight away; a LATERAL ... ORDER BY ... LIMIT 1
--- here carried each island's (megabytes of) geometry along with every
--- pair and ran the database out of memory (2026-11-22, DuckDB 2.0.1).
-CREATE TEMP TABLE nearest_land AS
-SELECT lat, lon,
-       arg_min(ST_X(np), d) AS nearest_lat,
-       arg_min(ST_Y(np), d) AS nearest_lon
-FROM (
-  SELECT lat, lon, np, ST_Distance_Sphere(ST_Point(lat, lon), np) AS d
-  FROM (
-    SELECT p.lat, p.lon,
-           ST_PointN(ST_ShortestLine(ST_Point(p.lat, p.lon), pp.geom), 2) AS np
-    FROM (SELECT DISTINCT lat, lon FROM run_points_avg) AS p
-    CROSS JOIN coastline_swapped AS pp
-  )
-)
-GROUP BY lat, lon;
-
 INSERT INTO dws (
   dwid, tsi, ts, date, time, lat, lon, speed, heading, hr,
   distance, calories, nearest_land_lat, nearest_land_lon,
@@ -182,12 +165,9 @@ SELECT
   nullif(p.hr, 0),
   p.distance,
   p.calories,
-  nl.nearest_lat, nl.nearest_lon,
+  p.nearest_land_lat, p.nearest_land_lon,
   p.avg_speed_15s, p.avg_speed_1k
-FROM run_points_avg AS p
-LEFT JOIN nearest_land AS nl ON nl.lat = p.lat AND nl.lon = p.lon;
-
-DROP TABLE nearest_land;
+FROM run_points_avg AS p;
 
 DROP TABLE run_points;
 DROP TABLE run_points_avg;
