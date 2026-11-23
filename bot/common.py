@@ -114,6 +114,14 @@ def summary(r, rider):
     return text, html
 
 
+UNCHECKED = "⚠️ couldn't check for records (the site's achievements page has them): "
+
+
+def last_line(text):
+    lines = [ln.strip() for ln in text.strip().splitlines() if ln.strip()]
+    return (lines[-1] if lines else "unknown error")[:200]
+
+
 def achievements(rider, dwid):
     """Lines for the records run dwid set, from achievements.mjs (the web's
     own achievements code) over a fresh export of the rider's runs.csv."""
@@ -126,11 +134,12 @@ def achievements(rider, dwid):
                                timeout=120)
         if r.returncode != 0:
             log(f"achievements.mjs failed:\n{r.stderr}")
-            return []
+            return [UNCHECKED + last_line(r.stderr)]
         found = json.loads(r.stdout)
     except (dwp_publish.PublishError, OSError, subprocess.SubprocessError, ValueError) as e:
+        # Say so in the reply: a silent [] reads as "no records".
         log(f"achievements failed: {e}")
-        return []
+        return [UNCHECKED + last_line(str(e))]
     lines = []
     for a in found[0]["records"] if found else []:
         if a["event"]:
