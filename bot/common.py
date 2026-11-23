@@ -128,6 +128,14 @@ def achievements(rider, dwid):
     try:
         with tempfile.TemporaryDirectory(prefix="dwp-ach-") as tmp:
             dwp_publish.export_lists(rider, tmp)
+            csv_path = os.path.join(tmp, "runs.csv")
+            with open(csv_path) as f:
+                exported = f.read()
+            n = max(exported.count("\n") - 1, 0)
+            log(f"achievements: {rider} export has {n} runs, {dwid} "
+                + ("in it" if dwid in exported else "MISSING"))
+            if dwid not in exported:
+                return [UNCHECKED + "the new run isn't in the export yet"]
             r = subprocess.run(["node", os.path.join(BOT_DIR, "achievements.mjs"),
                                 os.path.join(tmp, "runs.csv"), "--run", dwid],
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -136,6 +144,7 @@ def achievements(rider, dwid):
             log(f"achievements.mjs failed:\n{r.stderr}")
             return [UNCHECKED + last_line(r.stderr)]
         found = json.loads(r.stdout)
+        log(f"achievements: {dwid}: {len(found[0]['records']) if found else 0} records")
     except (dwp_publish.PublishError, OSError, subprocess.SubprocessError, ValueError) as e:
         # Say so in the reply: a silent [] reads as "no records".
         log(f"achievements failed: {e}")
