@@ -98,19 +98,27 @@ def kml_table(marks):
 
 
 # Each tracked run's first and last point within its trim (run_points), and
-# the beach nearest each (by the same measure as import.sql) among the
-# beaches in {f}.
+# the beach nearest each (by the same measure as run-stats.sql) among the
+# beaches in {f}, or none (null) when even that one is over 10 km away, as
+# run-stats.sql does: a run off Hood River has no beach.
 ENDS = """ends as (
     select dwid, arg_min(lat, ts) as lat0, arg_min(lon, ts) as lon0,
            arg_max(lat, ts) as lat1, arg_max(lon, ts) as lon1
     from run_points group by dwid),
-near as (
+best as (
     select e.dwid,
-        (select f.{key} from {f} f order by ST_Length(ST_ShortestLine(
+        (select {{'k': f.{key}, 'l': ST_ShortestLine(ST_Point(e.lat0, e.lon0), ST_FlipCoordinates(f.geom))}}
+         from {f} f order by ST_Length(ST_ShortestLine(
             ST_Point(e.lat0, e.lon0), ST_FlipCoordinates(f.geom))) limit 1) as s,
-        (select f.{key} from {f} f order by ST_Length(ST_ShortestLine(
+        (select {{'k': f.{key}, 'l': ST_ShortestLine(ST_Point(e.lat1, e.lon1), ST_FlipCoordinates(f.geom))}}
+         from {f} f order by ST_Length(ST_ShortestLine(
             ST_Point(e.lat1, e.lon1), ST_FlipCoordinates(f.geom))) limit 1) as e
-    from ends e)"""
+    from ends e),
+near as (
+    select dwid,
+        case when ST_Distance_Sphere(ST_StartPoint(s.l), ST_EndPoint(s.l)) <= 10000 then s.k end as s,
+        case when ST_Distance_Sphere(ST_StartPoint(e.l), ST_EndPoint(e.l)) <= 10000 then e.k end as e
+    from best)"""
 
 
 def relabels(kml, kept):
