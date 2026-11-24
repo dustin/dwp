@@ -34,18 +34,16 @@ Run it from db's nix dev shell, like add-run.
 """
 
 import argparse
-import csv
 import os
 import sys
-import tempfile
 
 sys.dont_write_bytecode = True
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from dwp_publish import duckdb, sql_str, PublishError  # noqa: E402
+from dwp_publish import duckdb, sql_str, temp_table, PublishError  # noqa: E402
 from kml import placemarks  # noqa: E402
 
 
-def plan(csv_path, region, relabel):
+def plan(marks, region, relabel):
     """What makes the database match the KML: (has_region, adds, changes, deletes, kept, runs)."""
     cols = {r["column_name"] for r in duckdb(
         "select column_name from information_schema.columns "
@@ -53,14 +51,15 @@ def plan(csv_path, region, relabel):
     if not {"id", "name", "geom"} <= cols:
         raise PublishError("no beaches table with id, name and geom in the database (see schema.sql)")
     has_region = "region" in cols
-    src = kml_src(csv_path)
+    kml = kml_table(marks)
     # Both sides through ST_AsText, so equal shapes compare equal as text.
     new = duckdb(f"""load spatial;
+        {kml}
         select k.name, k.folder, ST_AsText(ST_GeomFromText(k.wkt)) as g,
                {'''(select b.region from beaches b where b.region is not null
                     order by ST_Distance(ST_GeomFromText(k.wkt), b.geom) limit 1)'''
                 if has_region else 'null'} as near
-        from {src} k;""", json_out=True)
+        from kml k;""", json_out=True)
     old = duckdb(f"""load spatial;
         select b.id::varchar as id, b.name, ST_AsText(b.geom) as g,
                {'b.region' if has_region else 'null'} as region,
@@ -86,13 +85,16 @@ def plan(csv_path, region, relabel):
                                 moved=o["g"] != n["g"], region=r, old_region=o["region"]))
     deletes = [o for o in gone.values() if not o["runs"]]
     kept = [o for o in gone.values() if o["runs"]]
-    runs = relabels(src, [k["name"] for k in kept]) if relabel else []
+    runs = relabels(kml, [k["name"] for k in kept]) if relabel else []
     return has_region, adds, changes, deletes, kept, runs
 
 
-def kml_src(path):
-    return (f"read_csv({sql_str(path)}, header = true, "
-            "columns = {'name': 'VARCHAR', 'folder': 'VARCHAR', 'wkt': 'VARCHAR'})")
+def kml_table(marks):
+    """Statements making temp table kml (name, folder, wkt) from the
+    placemarks, rows inline: through quack the SQL runs on the database's
+    host, which can't read a local file. Each duckdb() call needs its own."""
+    return temp_table("kml", [("name", "VARCHAR"), ("folder", "VARCHAR"), ("wkt", "VARCHAR")],
+                      [(n, f or None, w) for n, f, w in marks])
 
 
 # Each tracked run's first and last point within its trim (run_points), and
@@ -111,12 +113,13 @@ near as (
     from ends e)"""
 
 
-def relabels(src, kept):
+def relabels(kml, kept):
     """Runs whose start or end beach the KML's beaches (plus kept) would change."""
     keep = ", ".join(sql_str(k) for k in kept) or "null"
     return duckdb(f"""load spatial;
+        {kml}
         with f as (
-            select name, ST_GeomFromText(wkt) as geom from {src}
+            select name, ST_GeomFromText(wkt) as geom from kml
             union all select name, geom from beaches where name in ({keep})),
         {ENDS.format(f="f", key="name")}
         select l.rider, l.date::varchar as date, l.time::varchar as time,
@@ -152,20 +155,13 @@ def show(has_region, adds, changes, deletes, kept, runs):
         print(f"{len(runs)} run(s) relabeled")
 
 
-def apply(has_region, adds, changes, deletes, runs, tmp):
-    path = os.path.join(tmp, "apply.csv")
-    with open(path, "w", newline="") as f:
-        w = csv.writer(f)
-        w.writerow(["op", "id", "name", "wkt", "region"])
-        for a in adds:
-            w.writerow(["add", "", a["name"], a["g"], a["region"] or ""])
-        for c in changes:
-            w.writerow(["change", c["id"], c["name"], c["g"], c["region"] or ""])
-        for d in deletes:
-            w.writerow(["delete", d["id"], d["name"], "", ""])
-    src = (f"read_csv({sql_str(path)}, header = true, "
-           "columns = {'op': 'VARCHAR', 'id': 'VARCHAR', 'name': 'VARCHAR', "
-           "'wkt': 'VARCHAR', 'region': 'VARCHAR'})")
+def apply(has_region, adds, changes, deletes, runs):
+    # The changes go in the SQL as rows, like kml_table().
+    rows = ([("add", None, a["name"], a["g"], a["region"]) for a in adds]
+            + [("change", c["id"], c["name"], c["g"], c["region"]) for c in changes]
+            + [("delete", d["id"], d["name"], None, None) for d in deletes])
+    ops = temp_table("beach_ops", [(c, "VARCHAR") for c in ("op", "id", "name", "wkt", "region")], rows)
+    src = "beach_ops"
     region = ", nullif(region, '') as region" if has_region else ""
     set_region = ", region = nullif(x.region, '')" if has_region else ""
     # After the beaches change, in the same commit: the same pick as
@@ -175,6 +171,7 @@ def apply(has_region, adds, changes, deletes, runs, tmp):
         from (with {ENDS.format(f="beaches", key="id")} select * from near) x
         where l.id = x.dwid and (l.start_pos is distinct from x.s or l.end_pos is distinct from x.e);""" if runs else ""
     duckdb(f"""load spatial;
+        {ops}
         begin;
         update beaches as b set name = x.name, geom = ST_GeomFromText(x.wkt){set_region}
         from (select * from {src} where op = 'change') x
@@ -203,22 +200,16 @@ def main(argv=None):
     except ValueError as e:
         sys.exit(f"update-beaches: {e}")
     try:
-        with tempfile.TemporaryDirectory(prefix="dwp-beaches-") as tmp:
-            kml_csv = os.path.join(tmp, "kml.csv")
-            with open(kml_csv, "w", newline="") as f:
-                w = csv.writer(f)
-                w.writerow(["name", "folder", "wkt"])
-                w.writerows(marks)
-            has_region, adds, changes, deletes, kept, runs = p = plan(kml_csv, a.region, not a.no_relabel)
-            show(*p)
-            if a.dry_run or not (adds or changes or deletes or runs):
-                return 0
-            if not a.yes:
-                if input("apply? [y/N] ").strip().lower() not in ("y", "yes"):
-                    return 1
-            apply(has_region, adds, changes, deletes, runs, tmp)
-            print(f"{len(adds)} added, {len(changes)} changed, {len(deletes)} deleted, "
-                  f"{len(runs)} run(s) relabeled")
+        has_region, adds, changes, deletes, kept, runs = p = plan(marks, a.region, not a.no_relabel)
+        show(*p)
+        if a.dry_run or not (adds or changes or deletes or runs):
+            return 0
+        if not a.yes:
+            if input("apply? [y/N] ").strip().lower() not in ("y", "yes"):
+                return 1
+        apply(has_region, adds, changes, deletes, runs)
+        print(f"{len(adds)} added, {len(changes)} changed, {len(deletes)} deleted, "
+              f"{len(runs)} run(s) relabeled")
     except PublishError as e:
         print(f"update-beaches: {e}", file=sys.stderr)
         return 1
