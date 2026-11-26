@@ -3,7 +3,7 @@
 <Document id="12MOPybLO7fpg3ypjQ5O9cpIYBzm_piUQ">
 	<ex:extension>base64;Co4BCoEBCn8KAggBEnkKdwokCiAKAwjQDxoHCNLtZRD_ASEAAAAAAADwPykAAAAAAAAAABgAEg8KCAitgO8HEP8BEKAfGAAaGgoHCP___wcQQBIICK2A7wcQ_wEYoB8gACgAIgkIARIFCP___wcqFwgBEggI____BxD_ARkAAAAAAADwPyAAEgQIARAAGgIIAA</ex:extension>
 	<name>DW Beaches.kmz</name>
-	<gx:CascadingStyle kml:id="__managed_style_0767D1852E43414195B6_normal">
+	<gx:CascadingStyle kml:id="__managed_style_49BCC66D49434F4FC3C8_normal">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -25,40 +25,17 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_0767D1852E43414195B6">
+	<StyleMap id="__managed_style_348BDE1603434F4FC3C8">
 		<Pair>
 			<key>normal</key>
-			<styleUrl>#__managed_style_0767D1852E43414195B6_normal</styleUrl>
+			<styleUrl>#__managed_style_348BDE1603434F4FC3C8_normal</styleUrl>
 		</Pair>
 		<Pair>
 			<key>highlight</key>
-			<styleUrl>#__managed_style_0767D1852E43414195B6_highlight</styleUrl>
+			<styleUrl>#__managed_style_348BDE1603434F4FC3C8_highlight</styleUrl>
 		</Pair>
 	</StyleMap>
-	<gx:CascadingStyle kml:id="__managed_style_12599AF3EB43414195B6_highlight">
-		<ex:extension>base64;EgIYAQ</ex:extension>
-		<Style>
-			<IconStyle>
-				<scale>1.2</scale>
-				<Icon>
-					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
-				</Icon>
-				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
-			</IconStyle>
-			<LabelStyle>
-			</LabelStyle>
-			<LineStyle>
-				<color>ff2dc0fb</color>
-				<width>6</width>
-			</LineStyle>
-			<PolyStyle>
-				<color>40ffffff</color>
-			</PolyStyle>
-			<BalloonStyle>
-			</BalloonStyle>
-		</Style>
-	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_12599AF3EB43414195B6_normal">
+	<gx:CascadingStyle kml:id="__managed_style_27DC835EC9434F4FC3C8_normal">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -80,17 +57,27 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_12599AF3EB43414195B6">
+	<StyleMap id="__managed_style_49BCC66D49434F4FC3C8">
 		<Pair>
 			<key>normal</key>
-			<styleUrl>#__managed_style_12599AF3EB43414195B6_normal</styleUrl>
+			<styleUrl>#__managed_style_49BCC66D49434F4FC3C8_normal</styleUrl>
 		</Pair>
 		<Pair>
 			<key>highlight</key>
-			<styleUrl>#__managed_style_12599AF3EB43414195B6_highlight</styleUrl>
+			<styleUrl>#__managed_style_49BCC66D49434F4FC3C8_highlight</styleUrl>
 		</Pair>
 	</StyleMap>
-	<gx:CascadingStyle kml:id="__managed_style_23E9B464BE43414195B4_highlight">
+	<StyleMap id="__managed_style_27DC835EC9434F4FC3C8">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_27DC835EC9434F4FC3C8_normal</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_27DC835EC9434F4FC3C8_highlight</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_124EDACCE9434F4FC3C8_highlight">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -113,118 +100,7 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_3539AC2A8F43414195B4">
-		<Pair>
-			<key>normal</key>
-			<styleUrl>#__managed_style_3539AC2A8F43414195B4_normal</styleUrl>
-		</Pair>
-		<Pair>
-			<key>highlight</key>
-			<styleUrl>#__managed_style_3539AC2A8F43414195B4_highlight</styleUrl>
-		</Pair>
-	</StyleMap>
-	<gx:CascadingStyle kml:id="__managed_style_23E9B464BE43414195B4_normal">
-		<ex:extension>base64;EgIYAQ</ex:extension>
-		<Style>
-			<IconStyle>
-				<scale>1.1</scale>
-				<Icon>
-					<href>data:image/png;base64,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</href>
-				</Icon>
-				<hotSpot x="20" y="62" xunits="pixels" yunits="insetPixels"/>
-			</IconStyle>
-			<LabelStyle>
-			</LabelStyle>
-			<LineStyle>
-				<color>ff2dc0fb</color>
-				<width>4</width>
-			</LineStyle>
-			<PolyStyle>
-				<color>40ffffff</color>
-			</PolyStyle>
-			<BalloonStyle>
-			</BalloonStyle>
-		</Style>
-	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_101FEC082143414195B4_normal">
-		<ex:extension>base64;EgIYAQ</ex:extension>
-		<Style>
-			<IconStyle>
-				<scale>1.1</scale>
-				<Icon>
-					<href>data:image/png;base64,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</href>
-				</Icon>
-				<hotSpot x="20" y="62" xunits="pixels" yunits="insetPixels"/>
-			</IconStyle>
-			<LabelStyle>
-			</LabelStyle>
-			<LineStyle>
-				<color>ff2dc0fb</color>
-				<width>4</width>
-			</LineStyle>
-			<PolyStyle>
-				<color>54ffffff</color>
-			</PolyStyle>
-			<BalloonStyle>
-			</BalloonStyle>
-		</Style>
-	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_0B67C9349943414195B4_highlight">
-		<ex:extension>base64;EgIYAQ</ex:extension>
-		<Style>
-			<IconStyle>
-				<scale>1.2</scale>
-				<Icon>
-					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
-				</Icon>
-				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
-			</IconStyle>
-			<LabelStyle>
-			</LabelStyle>
-			<LineStyle>
-				<color>ff2dc0fb</color>
-				<width>6</width>
-			</LineStyle>
-			<PolyStyle>
-				<color>40ffffff</color>
-			</PolyStyle>
-			<BalloonStyle>
-			</BalloonStyle>
-		</Style>
-	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_3539AC2A8F43414195B4_normal">
-		<ex:extension>base64;EgIYAQ</ex:extension>
-		<Style>
-			<IconStyle>
-				<Icon>
-					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
-				</Icon>
-				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
-			</IconStyle>
-			<LabelStyle>
-			</LabelStyle>
-			<LineStyle>
-				<color>ff2dc0fb</color>
-				<width>4</width>
-			</LineStyle>
-			<PolyStyle>
-				<color>40ffffff</color>
-			</PolyStyle>
-			<BalloonStyle>
-			</BalloonStyle>
-		</Style>
-	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_101FEC082143414195B4">
-		<Pair>
-			<key>normal</key>
-			<styleUrl>#__managed_style_101FEC082143414195B4_normal</styleUrl>
-		</Pair>
-		<Pair>
-			<key>highlight</key>
-			<styleUrl>#__managed_style_101FEC082143414195B4_highlight</styleUrl>
-		</Pair>
-	</StyleMap>
-	<gx:CascadingStyle kml:id="__managed_style_101FEC082143414195B4_highlight">
+	<gx:CascadingStyle kml:id="__managed_style_0023543A0D434F4FC3C7_highlight">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -247,7 +123,7 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_0767D1852E43414195B6_highlight">
+	<gx:CascadingStyle kml:id="__managed_style_49BCC66D49434F4FC3C8_highlight">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -270,7 +146,7 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_3539AC2A8F43414195B4_highlight">
+	<gx:CascadingStyle kml:id="__managed_style_348BDE1603434F4FC3C8_highlight">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -293,7 +169,96 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<gx:CascadingStyle kml:id="__managed_style_0B67C9349943414195B4_normal">
+	<gx:CascadingStyle kml:id="__managed_style_27DC835EC9434F4FC3C8_highlight">
+		<ex:extension>base64;EgIYAQ</ex:extension>
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>6</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_124EDACCE9434F4FC3C8_normal">
+		<ex:extension>base64;EgIYAQ</ex:extension>
+		<Style>
+			<IconStyle>
+				<scale>1.1</scale>
+				<Icon>
+					<href>data:image/png;base64,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</href>
+				</Icon>
+				<hotSpot x="20" y="62" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>4</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_0023543A0D434F4FC3C7_normal">
+		<ex:extension>base64;EgIYAQ</ex:extension>
+		<Style>
+			<IconStyle>
+				<scale>1.1</scale>
+				<Icon>
+					<href>data:image/png;base64,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</href>
+				</Icon>
+				<hotSpot x="20" y="62" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>4</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>54ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_0023543A0D434F4FC3C7">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_0023543A0D434F4FC3C7_normal</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_0023543A0D434F4FC3C7_highlight</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="__managed_style_124EDACCE9434F4FC3C8">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#__managed_style_124EDACCE9434F4FC3C8_normal</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#__managed_style_124EDACCE9434F4FC3C8_highlight</styleUrl>
+		</Pair>
+	</StyleMap>
+	<gx:CascadingStyle kml:id="__managed_style_348BDE1603434F4FC3C8_normal">
 		<ex:extension>base64;EgIYAQ</ex:extension>
 		<Style>
 			<IconStyle>
@@ -315,38 +280,73 @@
 			</BalloonStyle>
 		</Style>
 	</gx:CascadingStyle>
-	<StyleMap id="__managed_style_23E9B464BE43414195B4">
+	<gx:CascadingStyle kml:id="__managed_style_0511437842434F4FC3C8_highlight">
+		<ex:extension>base64;EgIYAQ</ex:extension>
+		<Style>
+			<IconStyle>
+				<scale>1.2</scale>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>6</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<gx:CascadingStyle kml:id="__managed_style_0511437842434F4FC3C8_normal">
+		<ex:extension>base64;EgIYAQ</ex:extension>
+		<Style>
+			<IconStyle>
+				<Icon>
+					<href>https://earth.google.com/earth/document/icon?color=1976d2&amp;id=2000&amp;scale=4</href>
+				</Icon>
+				<hotSpot x="64" y="128" xunits="pixels" yunits="insetPixels"/>
+			</IconStyle>
+			<LabelStyle>
+			</LabelStyle>
+			<LineStyle>
+				<color>ff2dc0fb</color>
+				<width>4</width>
+			</LineStyle>
+			<PolyStyle>
+				<color>40ffffff</color>
+			</PolyStyle>
+			<BalloonStyle>
+			</BalloonStyle>
+		</Style>
+	</gx:CascadingStyle>
+	<StyleMap id="__managed_style_0511437842434F4FC3C8">
 		<Pair>
 			<key>normal</key>
-			<styleUrl>#__managed_style_23E9B464BE43414195B4_normal</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8_normal</styleUrl>
 		</Pair>
 		<Pair>
 			<key>highlight</key>
-			<styleUrl>#__managed_style_23E9B464BE43414195B4_highlight</styleUrl>
-		</Pair>
-	</StyleMap>
-	<StyleMap id="__managed_style_0B67C9349943414195B4">
-		<Pair>
-			<key>normal</key>
-			<styleUrl>#__managed_style_0B67C9349943414195B4_normal</styleUrl>
-		</Pair>
-		<Pair>
-			<key>highlight</key>
-			<styleUrl>#__managed_style_0B67C9349943414195B4_highlight</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8_highlight</styleUrl>
 		</Pair>
 	</StyleMap>
 	<Folder id="5F6B391888000001">
 		<ex:extension>base64;GgA</ex:extension>
 		<name>DW Beaches</name>
 		<open>1</open>
-		<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+		<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
 		<Folder id="5F6B391889000002">
 			<ex:extension>base64;GgA</ex:extension>
 			<name>Maui North Shore</name>
-			<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
 			<Placemark id="5F6B391889000003">
 				<name>Maliko</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -359,7 +359,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000004">
 				<name>Baldwin Beach</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -372,7 +372,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000005">
 				<name>Sugar Cove</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -385,7 +385,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000006">
 				<name>Kanaha</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -398,7 +398,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000007">
 				<name>Ka&apos;a</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -411,7 +411,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000008">
 				<name>Kahului Harbor</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -424,7 +424,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000009">
 				<name>Ku&apos;au</name>
-				<styleUrl>#__managed_style_23E9B464BE43414195B4</styleUrl>
+				<styleUrl>#__managed_style_124EDACCE9434F4FC3C8</styleUrl>
 				<LineString>
 					<tessellate>1</tessellate>
 					<coordinates>
@@ -437,10 +437,79 @@
 			<ex:extension>base64;GgA</ex:extension>
 			<name>Kihei</name>
 			<open>1</open>
-			<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
+			<Placemark id="04FEFF0B0E434F505918">
+				<name>Ukumehame</name>
+				<LookAt>
+					<longitude>-156.5688886225673</longitude>
+					<latitude>20.78909491460164</latitude>
+					<altitude>-0.7588999965757148</altitude>
+					<heading>0.004249088025305165</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>8652.206741200063</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_27DC835EC9434F4FC3C8</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.593253076449,20.79707801262391,0 -156.5866452119525,20.79104822683534,0 -156.5785761510362,20.789632377036,0 -156.5605136028767,20.78932509072748,0 -156.5665239724768,20.79278787137687,0 -156.5767258129422,20.79432750187952,0 -156.5839047684055,20.79584090684853,0 -156.5918187607954,20.79962476114417,0 -156.593253076449,20.79707801262391,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="086A2A8F1D434F50DB2C">
+				<name>Ma&apos;alaea Harbor</name>
+				<LookAt>
+					<longitude>-156.5054873754841</longitude>
+					<latitude>20.79470135599375</latitude>
+					<altitude>0.4054849624833468</altitude>
+					<heading>353.9933807678897</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>3585.831614178023</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_27DC835EC9434F4FC3C8</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.5145385871036,20.79113166370771,0 -156.5144067391533,20.78898174051791,0 -156.5088914053287,20.78983785673672,0 -156.5095096005462,20.79264800612037,0 -156.5145385871036,20.79113166370771,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
+			<Placemark id="042CCAE834434F513C20">
+				<name>Haycraft Park</name>
+				<LookAt>
+					<longitude>-156.5052904878504</longitude>
+					<latitude>20.79481427618033</latitude>
+					<altitude>0.4052281316519646</altitude>
+					<heading>353.9933803125793</heading>
+					<tilt>0</tilt>
+					<gx:fovy>35</gx:fovy>
+					<range>3161.199451827561</range>
+					<altitudeMode>absolute</altitudeMode>
+				</LookAt>
+				<styleUrl>#__managed_style_27DC835EC9434F4FC3C8</styleUrl>
+				<Polygon>
+					<outerBoundaryIs>
+						<LinearRing>
+							<coordinates>
+								-156.5038753490357,20.79571353125399,0 -156.501416961727,20.79635342061713,0 -156.502217609984,20.7969653479231,0 -156.5041467970608,20.79641983313425,0 -156.5038753490357,20.79571353125399,0 
+							</coordinates>
+						</LinearRing>
+					</outerBoundaryIs>
+				</Polygon>
+			</Placemark>
 			<Placemark id="5F6B39188900000B">
 				<name>Keālia Boardwalk</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -453,7 +522,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900000C">
 				<name>Sugar Beach</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -466,7 +535,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900000D">
 				<name>Green Church</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -479,7 +548,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900000E">
 				<name>Ohukai Rd</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -492,7 +561,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900000F">
 				<name>Kalepolepo</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -505,7 +574,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000010">
 				<name>Coconut Channel</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -518,7 +587,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000011">
 				<name>Kam I</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -531,7 +600,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000012">
 				<name>Kam II</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -544,7 +613,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000013">
 				<name>Kam III</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -567,7 +636,7 @@
 					<range>2846.45173177938</range>
 					<altitudeMode>absolute</altitudeMode>
 				</LookAt>
-				<styleUrl>#__managed_style_12599AF3EB43414195B6</styleUrl>
+				<styleUrl>#__managed_style_27DC835EC9434F4FC3C8</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -580,7 +649,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000014">
 				<name>Keawakapu</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -593,7 +662,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000015">
 				<name>Keawakapu II</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -606,7 +675,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000016">
 				<name>Mokapu</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -619,7 +688,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000017">
 				<name>Wailea</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -632,7 +701,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000018">
 				<name>Ulua</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -645,7 +714,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000019">
 				<name>Polo</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -658,7 +727,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001A">
 				<name>Palauea</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -671,7 +740,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001B">
 				<name>Po&apos;olenalena</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -684,7 +753,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001C">
 				<name>Makena Landing</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -697,7 +766,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001D">
 				<name>Maluaka</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -710,7 +779,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001E">
 				<name>Big Beach</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -723,7 +792,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188900001F">
 				<name>Oneuli</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -736,7 +805,7 @@
 			</Placemark>
 			<Placemark id="5F6B391889000020">
 				<name>Mai Poina</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -751,7 +820,7 @@
 		<Folder id="5F6B391889000021">
 			<ex:extension>base64;GgA</ex:extension>
 			<name>West Maui</name>
-			<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
 			<Placemark id="5F6B391889000022">
 				<name>DT Fleming</name>
 				<LookAt>
@@ -764,7 +833,7 @@
 					<range>5578.558538614889</range>
 					<altitudeMode>absolute</altitudeMode>
 				</LookAt>
-				<styleUrl>#__managed_style_3539AC2A8F43414195B4</styleUrl>
+				<styleUrl>#__managed_style_348BDE1603434F4FC3C8</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -787,7 +856,7 @@
 					<range>3404.719256889658</range>
 					<altitudeMode>absolute</altitudeMode>
 				</LookAt>
-				<styleUrl>#__managed_style_3539AC2A8F43414195B4</styleUrl>
+				<styleUrl>#__managed_style_348BDE1603434F4FC3C8</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -803,10 +872,10 @@
 			<ex:extension>base64;GgA</ex:extension>
 			<name>Molokai</name>
 			<open>1</open>
-			<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
 			<Placemark id="5F6B39188A000025">
 				<name>Kaunakakai</name>
-				<styleUrl>#__managed_style_23E9B464BE43414195B4</styleUrl>
+				<styleUrl>#__managed_style_124EDACCE9434F4FC3C8</styleUrl>
 				<LineString>
 					<tessellate>1</tessellate>
 					<coordinates>
@@ -826,7 +895,7 @@
 					<range>14629.67401529197</range>
 					<altitudeMode>absolute</altitudeMode>
 				</LookAt>
-				<styleUrl>#__managed_style_12599AF3EB43414195B6</styleUrl>
+				<styleUrl>#__managed_style_27DC835EC9434F4FC3C8</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -849,7 +918,7 @@
 					<range>3972.101326592965</range>
 					<altitudeMode>absolute</altitudeMode>
 				</LookAt>
-				<styleUrl>#__managed_style_0767D1852E43414195B6</styleUrl>
+				<styleUrl>#__managed_style_49BCC66D49434F4FC3C8</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -864,10 +933,10 @@
 		<Folder id="5F6B39188A000026">
 			<ex:extension>base64;GgA</ex:extension>
 			<name>Oahu</name>
-			<styleUrl>#__managed_style_0B67C9349943414195B4</styleUrl>
+			<styleUrl>#__managed_style_0511437842434F4FC3C8</styleUrl>
 			<Placemark id="5F6B39188A000027">
 				<name>China Walls</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -880,7 +949,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188A000028">
 				<name>ADs</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -893,7 +962,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188A000029">
 				<name>Kaimana</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -906,7 +975,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188A00002A">
 				<name>Tonggs</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
@@ -919,7 +988,7 @@
 			</Placemark>
 			<Placemark id="5F6B39188A00002B">
 				<name>Kaiko&apos;os</name>
-				<styleUrl>#__managed_style_101FEC082143414195B4</styleUrl>
+				<styleUrl>#__managed_style_0023543A0D434F4FC3C7</styleUrl>
 				<Polygon>
 					<outerBoundaryIs>
 						<LinearRing>
